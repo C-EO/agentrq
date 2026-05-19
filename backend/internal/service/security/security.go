@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math/big"
 )
 
 // Encrypt encrypts a plain text string using AES-256 GCM with the provided key.
@@ -70,14 +71,17 @@ func Decrypt(ciphertextHex, key, nonceHex string) (string, error) {
 }
 
 // GenerateSecret generates a random base62 string of a certain length.
+// It uses crypto/rand.Int to ensure a uniform distribution and eliminate modulo bias.
 func GenerateSecret(n int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
+	max := big.NewInt(int64(len(charset)))
 	for i := 0; i < n; i++ {
-		b[i] = charset[int(b[i])%len(charset)]
+		num, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[num.Int64()]
 	}
 	return string(b), nil
 }
