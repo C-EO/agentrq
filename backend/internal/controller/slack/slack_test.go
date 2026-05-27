@@ -76,6 +76,8 @@ func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 	return nil
 }
 
+func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {}
+
 func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 	gomockCtrl := gomock.NewController(t)
 	defer gomockCtrl.Finish()

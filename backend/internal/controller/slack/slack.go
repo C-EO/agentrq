@@ -23,10 +23,11 @@ import (
 	zlog "github.com/rs/zerolog/log"
 )
 
-// MCPVerdictSender is a minimal interface so the Slack controller can dispatch
-// permission verdicts without importing the full mcp.Manager.
-type MCPVerdictSender interface {
+// MCPManager is a minimal interface so the Slack controller can dispatch
+// permission verdicts and channel notifications without importing the full mcp.Manager.
+type MCPManager interface {
 	SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, requestID, behavior string) error
+	SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string)
 }
 
 // CRUDRespondToTask is a minimal interface for responding to tasks.
@@ -42,7 +43,7 @@ type Params struct {
 	Repository base.Repository
 	SlackSvc   slacksvc.Service
 	Crud       CRUDRespondToTask
-	MCPManager MCPVerdictSender
+	MCPManager MCPManager
 	PubSub     pubsub.Service
 	TokenKey   string
 	BaseURL    string
@@ -114,7 +115,7 @@ type controller struct {
 	repo     base.Repository
 	slack    slacksvc.Service
 	crud     CRUDRespondToTask
-	mcp      MCPVerdictSender
+	mcp      MCPManager
 	pubsub   pubsub.Service
 	tokenKey string
 	baseURL  string
@@ -534,8 +535,17 @@ func (c *controller) HandleSlackEvent(ctx context.Context, payload SlackEventPay
 	})
 	if err != nil {
 		zlog.Error().Err(err).Int64("taskID", thread.TaskID).Msg("[slack] failed to reply to task from Slack")
+		return err
 	}
-	return err
+
+	if c.mcp != nil {
+		content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(thread.TaskID).String(), text)
+		if atts := formatSlackAttachments(attachments); atts != "" {
+			content += "\n" + atts
+		}
+		c.mcp.SendChannelNotification(ctx, thread.WorkspaceID, ownerID, thread.TaskID, content)
+	}
+	return nil
 }
 
 // HandleSlashCommand creates a new AgentRQ task inside the workspace connected to the Slack channel.
@@ -585,7 +595,7 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 	}
 
 	ctx = entity.WithOrigin(ctx, entity.OriginSlack)
-	_, err = c.crud.CreateTask(ctx, entity.CreateTaskRequest{
+	resp, err := c.crud.CreateTask(ctx, entity.CreateTaskRequest{
 		UserID: ownerID,
 		Task: entity.Task{
 			WorkspaceID: link.WorkspaceID,
@@ -599,6 +609,14 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 	})
 	if err != nil {
 		return fmt.Sprintf("⚠️ Failed to create task: %s", err.Error()), true, err
+	}
+
+	if c.mcp != nil && resp != nil {
+		content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Title, resp.Task.Body)
+		if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
+			content += "\n" + atts
+		}
+		c.mcp.SendChannelNotification(ctx, link.WorkspaceID, ownerID, resp.Task.ID, content)
 	}
 
 	return fmt.Sprintf("🚀 *Task created successfully:* %s", title), false, nil
@@ -998,3 +1016,20 @@ func (c *controller) handleSlackError(ctx context.Context, workspaceID int64, er
 		}
 	}
 }
+
+func formatSlackAttachments(atts []entity.Attachment) string {
+	if len(atts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(atts))
+	for _, a := range atts {
+		if a.ID != "" {
+			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Attachments:\n" + strings.Join(parts, "\n")
+}
+

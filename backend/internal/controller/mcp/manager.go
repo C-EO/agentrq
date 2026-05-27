@@ -73,3 +73,17 @@ func (m *Manager) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 	}
 	return srv.SendPermissionVerdict(ctx, requestID, behavior)
 }
+
+// SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
+func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok {
+		srv = m.Get(workspaceID, userID)
+	}
+	if srv != nil {
+		srv.SendChannelNotification(ctx, taskID, content)
+	}
+}
+
