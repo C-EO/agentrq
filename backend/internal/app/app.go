@@ -42,6 +42,8 @@ import (
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ddos"
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ratelimit"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -75,6 +77,17 @@ type (
 		} `yaml:"auth"`
 		SMTP      smtp.Config     `yaml:"smtp"`
 		Slack     slacksvc.Config `yaml:"slack"`
+		Ddos      struct {
+			Enabled              bool          `yaml:"enabled"`
+			MaxRequestsPerSecond int           `yaml:"maxRequestsPerSecond"`
+			BlockDuration        time.Duration `yaml:"blockDuration"`
+		} `yaml:"ddos"`
+		Ratelimit struct {
+			Enabled    bool          `yaml:"enabled"`
+			MaxPerIP   int           `yaml:"maxPerIP"`
+			MaxPerUser int           `yaml:"maxPerUser"`
+			Window     time.Duration `yaml:"window"`
+		} `yaml:"ratelimit"`
 		ConfigSvc config.Service  `yaml:"-"` // injected, not from YAML
 	}
 
@@ -674,6 +687,10 @@ func New(cfg Config) (*App, error) {
 	mux.Handle("/api/v1/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
+	var finalRouter http.Handler = mux
+	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
+	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
+
 	serverSvc, err := server.New(server.Params{
 		Config: server.Config{
 			Port:               cfg.App.Port,
@@ -684,7 +701,7 @@ func New(cfg Config) (*App, error) {
 			LetsencryptEmail:   cfg.SSL.LetsencryptEmail,
 			CloudflareAPIToken: cfg.SSL.CloudflareAPIToken,
 		},
-		Router: mux,
+		Router: finalRouter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server service: %w", err)

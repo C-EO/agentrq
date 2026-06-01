@@ -77,9 +77,13 @@ func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequ
 		status = strings.Split(statusStr, ",")
 	}
 
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	if limit <= 0 {
-		limit = 10
+	limitStr := c.Query("limit")
+	var limit int
+	if limitStr != "" {
+		limit, _ = strconv.Atoi(limitStr)
+		if limit <= 0 {
+			limit = 10
+		}
 	}
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
