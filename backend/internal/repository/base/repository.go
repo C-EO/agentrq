@@ -208,7 +208,14 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	} else if len(req.Status) == 1 {
 		status := req.Status[0]
 		if status == "notstarted" {
-			orderBy = "sort_order desc, created_at desc"
+			dialect := r.conn(ctx).Dialector.Name()
+			var sortExpr string
+			if dialect == "sqlite" {
+				sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE CAST(strftime('%s', created_at) AS REAL) END)"
+			} else {
+				sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE EXTRACT(EPOCH FROM created_at) END)"
+			}
+			orderBy = fmt.Sprintf("%s ASC, id ASC", sortExpr)
 		} else if status != "cron" {
 			orderBy = "updated_at desc"
 		}
