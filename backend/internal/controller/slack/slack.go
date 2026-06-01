@@ -612,11 +612,34 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 	}
 
 	if c.mcp != nil && resp != nil {
-		content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Title, resp.Task.Body)
-		if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
-			content += "\n" + atts
+		shouldNotifyMCP := true
+		listRs, listErr := c.repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: link.WorkspaceID}, ws.UserID)
+		if listErr == nil {
+			hasOngoing := false
+			hasOtherNotStarted := false
+			for _, t := range listRs {
+				if t.ID == resp.Task.ID {
+					continue // skip the newly created task itself
+				}
+				if t.Status == "ongoing" {
+					hasOngoing = true
+				}
+				if t.Status == "notstarted" && t.Assignee == "agent" {
+					hasOtherNotStarted = true
+				}
+			}
+			if hasOngoing || hasOtherNotStarted {
+				shouldNotifyMCP = false
+			}
 		}
-		c.mcp.SendChannelNotification(ctx, link.WorkspaceID, ownerID, resp.Task.ID, content)
+
+		if shouldNotifyMCP {
+			content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Title, resp.Task.Body)
+			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
+				content += "\n" + atts
+			}
+			c.mcp.SendChannelNotification(ctx, link.WorkspaceID, ownerID, resp.Task.ID, content)
+		}
 	}
 
 	return fmt.Sprintf("🚀 *Task created successfully:* %s", title), false, nil

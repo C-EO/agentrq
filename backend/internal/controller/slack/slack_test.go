@@ -180,6 +180,10 @@ func TestHandleSlashCommand_Success_Unquoted(t *testing.T) {
 		SystemGetWorkspace(gomock.Any(), int64(42)).
 		Return(model.Workspace{ID: 42, UserID: 100}, nil)
 
+	mockRepo.EXPECT().
+		ListTasks(gomock.Any(), entity.ListTasksRequest{WorkspaceID: int64(42)}, int64(100)).
+		Return([]model.Task{}, nil)
+
 	msg, ephemeral, err := c.HandleSlashCommand(context.Background(), "C123", "Write a binary search function")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -243,6 +247,10 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 		SystemGetWorkspace(gomock.Any(), int64(42)).
 		Return(model.Workspace{ID: 42, UserID: 100}, nil)
 
+	mockRepo.EXPECT().
+		ListTasks(gomock.Any(), entity.ListTasksRequest{WorkspaceID: int64(42)}, int64(100)).
+		Return([]model.Task{}, nil)
+
 	msg, _, err := c.HandleSlashCommand(context.Background(), "C123", `"Task Title Here" "Description goes in second quotes here"`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -292,6 +300,10 @@ func TestHandleSlashCommand_Success_SmartQuotes(t *testing.T) {
 	mockRepo.EXPECT().
 		SystemGetWorkspace(gomock.Any(), int64(42)).
 		Return(model.Workspace{ID: 42, UserID: 100}, nil)
+
+	mockRepo.EXPECT().
+		ListTasks(gomock.Any(), entity.ListTasksRequest{WorkspaceID: int64(42)}, int64(100)).
+		Return([]model.Task{}, nil)
 
 	// Test iOS/macOS smart quotes normalization
 	msg, _, err := c.HandleSlashCommand(context.Background(), "C123", `“Smart Title” “Smart Description”`)
@@ -343,6 +355,10 @@ func TestHandleSlashCommand_Success_Truncation(t *testing.T) {
 	mockRepo.EXPECT().
 		SystemGetWorkspace(gomock.Any(), int64(42)).
 		Return(model.Workspace{ID: 42, UserID: 100}, nil)
+
+	mockRepo.EXPECT().
+		ListTasks(gomock.Any(), entity.ListTasksRequest{WorkspaceID: int64(42)}, int64(100)).
+		Return([]model.Task{}, nil)
 
 	longTitle := "This is an extremely long title that spans over sixty characters to test if the truncation works correctly"
 	// Title is 108 characters. First 60 characters is "This is an extremely long title that spans over sixty charac"
