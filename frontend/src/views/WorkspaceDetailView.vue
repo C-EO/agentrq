@@ -200,7 +200,7 @@ const filters = [
 ];
 const taskFeed = ref(null);
 
-const { connect, disconnect, events, isConnected } = useEventBus(workspaceId.value);
+const { connect, disconnect, events, isConnected } = useEventBus(workspaceId);
 
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
 const activeTaskCount = computed(() => tasks.value.length - scheduledCount.value);
@@ -245,7 +245,9 @@ watch(events, (evts) => {
   if (!last) return;
 
   if (last.type === 'agent.connected') {
-    isAgentConnected.value = last.payload.connected;
+    if (last.payload && String(last.payload.workspaceId) === String(workspaceId.value)) {
+      isAgentConnected.value = last.payload.connected;
+    }
   }
 }, { deep: true });
 

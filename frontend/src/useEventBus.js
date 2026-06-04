@@ -8,6 +8,7 @@ export function useEventBus(workspaceId) {
   function connect() {
     if (eventSource) return;
     
+    events.value = [];
     const wsId = unref(workspaceId);
     const url = wsId ? `/api/v1/workspaces/${wsId}/events` : `/api/v1/events`;
     eventSource = new EventSource(url);

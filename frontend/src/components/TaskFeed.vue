@@ -280,6 +280,9 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
 
       if (ev.type === 'task.updated' || ev.type === 'task.created' || ev.type === 'status.updated' || ev.type === 'respond.ack') {
         const t = ev.payload;
+        if (t && t.workspaceId && String(t.workspaceId) !== String(props.workspaceId)) {
+          return;
+        }
         ongoingTasks.value = ongoingTasks.value.filter(x => String(x.id) !== String(t.id));
         notStartedTasks.value = notStartedTasks.value.filter(x => String(x.id) !== String(t.id));
         scheduledTasks.value = scheduledTasks.value.filter(x => String(x.id) !== String(t.id));
