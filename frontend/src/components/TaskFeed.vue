@@ -309,6 +309,21 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
         if (t && t.workspaceId && String(t.workspaceId) !== String(props.workspaceId)) {
           return;
         }
+
+        const getListForStatus = (status) => {
+          if (status === 'cron') return scheduledTasks.value;
+          if (['completed', 'rejected'].includes(status)) return completedTasks.value;
+          if (status === 'notstarted') return notStartedTasks.value;
+          if (['ongoing', 'blocked'].includes(status)) return ongoingTasks.value;
+          return [];
+        };
+
+        const targetList = getListForStatus(t.status);
+        const existing = targetList.find(x => String(x.id) === String(t.id));
+        if (existing && new Date(existing.updatedAt).getTime() >= new Date(t.updatedAt).getTime()) {
+          return;
+        }
+
         ongoingTasks.value = ongoingTasks.value.filter(x => String(x.id) !== String(t.id));
         notStartedTasks.value = notStartedTasks.value.filter(x => String(x.id) !== String(t.id));
         scheduledTasks.value = scheduledTasks.value.filter(x => String(x.id) !== String(t.id));
