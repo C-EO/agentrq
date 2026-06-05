@@ -1,5 +1,9 @@
 <template>
-  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-900" v-if="task && workspace">
+  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-900" v-if="task && workspace"
+       @dragenter="onDragEnter"
+       @dragover="onDragOver"
+       @dragleave="onDragLeave"
+       @drop="onDrop">
 
     <!-- Main Header Section (Matching KeywordInbox Design) -->
     <div class="px-1.5 md:px-4 pt-1 pb-1 shrink-0">
@@ -112,7 +116,22 @@
     </div>
 
     <!-- Scrollable chat area -->
-    <div ref="scrollContainer" class="flex-1 overflow-y-auto pl-4 pr-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
+    <div ref="scrollContainer" class="flex-1 overflow-y-auto pl-4 pr-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
+
+      <!-- Drag & Drop Overlay -->
+      <div v-if="isDragging" class="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 z-50 flex flex-col items-center justify-center border-4 border-dashed border-gray-300 dark:border-zinc-700 m-4 rounded-xl transition-all duration-200 animate-in fade-in zoom-in-95">
+        <div class="flex flex-col items-center gap-3 text-center pointer-events-none">
+          <div class="w-16 h-16 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-600 dark:text-zinc-300 shadow-md">
+            <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-gray-800 dark:text-zinc-200">Drop files to attach</p>
+            <p class="text-[10px] text-gray-500 dark:text-zinc-500 mt-1">Files will be uploaded with your next message</p>
+          </div>
+        </div>
+      </div>
 
       <!-- Messages -->
       <template v-for="m in sortedMessages" :key="m.id">
@@ -285,7 +304,7 @@
               @keydown.ctrl.enter="submitReply"
               rows="1"
               :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-              :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions...'"
+              :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (⌘Enter to send)'"
               class="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none placeholder-gray-400 dark:placeholder-zinc-500 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
@@ -393,6 +412,59 @@ const descExpanded = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
 const scrollContainer = ref(null);
+
+const isDragging = ref(false);
+let dragCounter = 0;
+
+function processFiles(files) {
+  if (!files || files.length === 0) return;
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Str = event.target.result.split(',')[1];
+      replyAttachments.value.push({
+        filename: file.name,
+        mimeType: file.type,
+        data: base64Str
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function onDragEnter(e) {
+  e.preventDefault();
+  if (workspace.value?.archivedAt) return;
+  if (!workspace.value?.agentConnected && task.value?.assignee !== 'human' && task.value?.status !== 'pending') {
+    return;
+  }
+  dragCounter++;
+  isDragging.value = true;
+}
+
+function onDragLeave(e) {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    isDragging.value = false;
+    dragCounter = 0;
+  }
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  isDragging.value = false;
+  dragCounter = 0;
+  if (workspace.value?.archivedAt) return;
+  if (!workspace.value?.agentConnected && task.value?.assignee !== 'human' && task.value?.status !== 'pending') {
+    return;
+  }
+  processFiles(e.dataTransfer.files);
+}
 const isStatusMenuOpen = ref(false);
 const isDescriptionCollapsed = ref(true);
 
@@ -473,19 +545,7 @@ watch(() => route.params.taskId, (newTaskId) => {
 });
 
 async function handleFileUpload(e) {
-  const files = e.target.files;
-  for (const file of files) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64Str = event.target.result.split(',')[1];
-      replyAttachments.value.push({
-        filename: file.name,
-        mimeType: file.type,
-        data: base64Str
-      });
-    };
-    reader.readAsDataURL(file);
-  }
+  processFiles(e.target.files);
   e.target.value = '';
 }
 
