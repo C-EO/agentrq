@@ -1,10 +1,11 @@
 # AgentRQ Backend Coding Style and Naming Conventions
 
-This document outlines the coding style and naming conventions for the AgentRQ backend workspace. AI assistants (like Gemini) should strictly adhere to these guidelines when generating or modifying code.
+This document outlines the coding style and naming conventions for the AgentRQ backend workspace. Coding agents should adhere to these guidelines when generating or modifying code.
 
 ## 1. Workspace Structure
 
 The workspace follows a standard Go layered architecture:
+
 - `internal/handler/{transport}`: Transport layer handlers (e.g., Fiber HTTP handlers in `api`).
 - `internal/controller/{domain}`: Business logic implementation (e.g., CRUD actions or domain-specific modules).
 - `internal/data/model`: Database models (GORM) and table definitions.
@@ -16,6 +17,7 @@ The workspace follows a standard Go layered architecture:
 ## 2. Naming Conventions
 
 ### Handlers (`internal/handler/{transport}/`)
+
 Handlers process incoming HTTP requests and format responses.
 
 - **Naming**: File names should match the entity being handled (e.g., `provider_tool.go`).
@@ -30,6 +32,7 @@ Handlers process incoming HTTP requests and format responses.
   6. Set `fiber.HeaderContentType` to `fiber.MIMEApplicationJSON` before returning `c.Send(payload)`.
 
 ### Controllers (`internal/controller/{domain}/`)
+
 Controllers contain the core business logic.
 
 - **Naming**: File names match the entity or domain logic (e.g., `provider_tool.go`).
@@ -38,12 +41,14 @@ Controllers contain the core business logic.
 - **Methods**: Methods typically accept a `context.Context` and a specific request entity (e.g., `*entity.CreateProviderToolRequest`), and return a specific response entity (e.g., `*entity.CreateProviderToolResponse`, `error`).
 
 ### Services (`internal/service/{domain}/`)
+
 Services provide low-level utility or integration logic (e.g., SMTP, Image processing, Auth).
 
 - **Methods**: Every service method MUST accept `ctx context.Context` as its FIRST parameter. This ensures consistent trace propagation and situational timeout management across the infrastructure.
 - **Interface**: Define a `Service` interface to allow for situational mocking and dependency injection.
 
 ### Mappers (`internal/mapper/{transport}/`, `internal/mapper/model/`)
+
 Mappers transform data between the different layers (View <-> Entity <-> Model). Focus on explicitly naming the source and target formats. Mappers must not return error. It can return `nil` if the conversion is not possible. The validation should be done in the controller/service layers.
 
 - **Naming Constraints**:
@@ -57,15 +62,19 @@ Mappers transform data between the different layers (View <-> Entity <-> Model).
     - Example: `func FromProviderToolModelToProviderToolEntity(m model.ProviderTool) entity.ProviderTool`
 
 ### Entities (`internal/data/entity/`)
+
 Entities are standard Go structs that specify the data passing between the controller layer and the handler/repository layers. Usually there's a `<Action><Entity>Request` and `<Action><Entity>Response` definition.
 
 ### Views (`internal/data/view/`)
+
 Views define the external structures, like JSON inputs/outputs.
+
 - Structs use `json:"fieldName"` struct tags with **camelCase** naming (e.g., `workspaceId`, `createdAt`).
 - **CRITICAL**: No `snake_case` is allowed in the JSON API surface.
 - Do not contain behavior/business logic or persistence details here.
 
 ## 3. General Best Practices
+
 - **ID parsing:** Use `monoflake.IDFromBase62(c.Params("id")).Int64()` to parse base-62 ID strings from route parameters to standard int64 IDs.
 - **Param validation:** Always check for missing route parameters inside `FromHTTPRequestTo...RequestEntity` and return `nil` if validation fails.
 - **Payload transformation:** Return raw `[]byte` payloads from `...ToHTTPResponse` mappers using `json.Marshal` internally, preventing the caller (handler) from doing repetitive marshaling.
@@ -73,7 +82,7 @@ Views define the external structures, like JSON inputs/outputs.
 
 ## 4. Unit Testing and Mocking
 
-Unit testing is critical for maintaining service reliability. 
+Unit testing is critical for maintaining service reliability.
 
 - **Coverage**: Every new service addition or significant change MUST include unit tests. Aim for **100% code coverage** for the service layer logic.
 - **Mocking**: Use `gomock` to mock external dependencies (repositories, other services, etc.).
