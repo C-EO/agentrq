@@ -34,11 +34,19 @@ func (h *handler) pushSubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
 		}
-		userID := monoflake.IDFromBase62(c.Locals("user_id").(string)).Int64()
+
+		userIDStr := c.Locals("user_id").(string)
+		userID := monoflake.IDFromBase62(userIDStr).Int64()
 		rq.UserID = userID
 
 		ctx, cancel := newContext(c)
 		defer cancel()
+
+		// Verify the user owns the workspace before saving a subscription for it.
+		if _, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{ID: rq.WorkspaceID, UserID: userIDStr}); err != nil {
+			c.Status(http.StatusForbidden)
+			return c.JSON(fiber.Map{"error": "access denied"})
+		}
 
 		if err := pushCtrl.SaveSubscription(ctx, entity.SavePushSubscriptionRequest{
 			UserID:      rq.UserID,
