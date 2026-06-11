@@ -256,9 +256,14 @@
                    <div class="pt-8 border-t border-gray-100 dark:border-zinc-800">
                       <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1 mb-4">Delivery Channels</h3>
                       <div class="flex flex-wrap gap-3">
-                        <label class="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-sm cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all group shadow-sm">
-                          <input type="checkbox" checked disabled class="accent-indigo-600 w-4 h-4" />
-                          <span class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-widest">Email Delivery</span>
+                        <label class="flex items-center gap-3 px-4 py-2.5 rounded-sm cursor-pointer transition-all shadow-sm border"
+                               :class="form.notification_settings.channels.includes('email') ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20' : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700'">
+                          <input type="checkbox"
+                                 :checked="form.notification_settings.channels.includes('email')"
+                                 @change="e => { const ch = form.notification_settings.channels; e.target.checked ? ch.push('email') : form.notification_settings.channels = ch.filter(c => c !== 'email') }"
+                                 class="accent-indigo-600 w-4 h-4" />
+                          <span class="text-[10px] font-bold uppercase tracking-widest"
+                                :class="form.notification_settings.channels.includes('email') ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-500 dark:text-zinc-400'">Email Delivery</span>
                         </label>
                         <button type="button" @click="activeTab = 'slack'"
                                 class="flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all group shadow-sm border text-left"
