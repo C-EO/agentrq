@@ -18,4 +18,4 @@ A marketplace for Model Context Protocol (MCP) servers — enabling teams to dis
 
 ## 5. Workflow Marketplace
 
-A library of pre-built end-to-end workflows that can be imported into any workspace. Covers common use cases across engineering, ops, and product — ready to run or fork and customize.
+A library of pre-built end-to-end workflows described in plain English that orchestrate multiple workspaces in sequence. Each step in a workflow can be handled by a different specialized agent, enabling powerful cross-domain pipelines — for example: coding → docs → blogs → SEO indexing → social posts. Workflows can be imported, forked, and customized to fit any team's process.
