@@ -4,7 +4,11 @@
   <a href="README.md">English</a>
 </p>
 
-> 本文是面向中文开发者的导读，帮助快速理解 AgentRQ 的定位、架构和本地运行方式。中文版本可能滞后于英文文档；如需获取最新信息，请尽可能优先参考英文 [README.md](README.md)。英文 [README.md](README.md)、[SETUP.md](SETUP.md)、[DOCKER.md](DOCKER.md) 和 [ARCHITECTURE.md](ARCHITECTURE.md) 仍是维护时的权威资料；如果两者不一致，请以英文文档和当前代码为准。
+> 本文是面向中文开发者的导读，帮助快速理解 AgentRQ 的定位、架构和本地运行方式。
+>
+> 注意：中文版本可能滞后于英文文档；如需获取最新信息，请尽可能优先参考英文 [README.md](README.md)。英文 [README.md](README.md)、[SETUP.md](SETUP.md)、[DOCKER.md](DOCKER.md) 和 [ARCHITECTURE.md](ARCHITECTURE.md) 仍是维护时的权威资料；如果两者不一致，请以英文文档和当前代码为准。
+>
+> Note: This Simplified Chinese version may lag behind the English documentation. For the most up-to-date information, please refer to the English [README.md](README.md). The English README, SETUP, DOCKER, and ARCHITECTURE docs remain the source of truth.
 
 ## AgentRQ 是什么
 
