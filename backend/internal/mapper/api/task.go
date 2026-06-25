@@ -70,7 +70,13 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 }
 
 func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	var workspaceID int64
+	if idParam := c.Params("id"); idParam != "" {
+		workspaceID = monoflake.IDFromBase62(idParam).Int64()
+		if workspaceID == 0 {
+			return nil
+		}
+	}
 
 	statusStr := c.Query("status")
 	var status []string
@@ -406,12 +412,12 @@ func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.Upd
 		return nil
 	}
 	return &entity.UpdateScheduledTaskRequest{
-		WorkspaceID:  workspaceID,
-		TaskID:       taskID,
-		Title:        payload.Task.Title,
-		Body:         payload.Task.Body,
-		Assignee:     payload.Task.Assignee,
-		CronSchedule: payload.Task.CronSchedule,
+		WorkspaceID:      workspaceID,
+		TaskID:           taskID,
+		Title:            payload.Task.Title,
+		Body:             payload.Task.Body,
+		Assignee:         payload.Task.Assignee,
+		CronSchedule:     payload.Task.CronSchedule,
 		AllowAllCommands: payload.Task.AllowAllCommands,
 	}
 }
