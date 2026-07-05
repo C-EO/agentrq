@@ -31,11 +31,15 @@ type (
 		CreatedAt time.Time
 		UpdatedAt time.Time
 
-		UserID      int64  `gorm:"index:idx_tasks_user_id"`
-		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id"`
-		CreatedBy   string `gorm:"type:varchar(16)"`    // "human" | "agent"
-		Assignee    string `gorm:"type:varchar(16)"`    // "human" | "agent"
-		Status      string `json:"status" gorm:"index"` // notstarted, ongoing, completed, rejected, cron, blocked
+		// idx_tasks_dequeue is a composite index matching the equality prefix of the
+		// agent work-dequeue query (ClaimNextTask / GetNextTask): workspace_id, user_id,
+		// status. Column order mirrors the query. assignee and sort_order are left out
+		// deliberately to keep the index small.
+		UserID      int64  `gorm:"index:idx_tasks_user_id;index:idx_tasks_dequeue,priority:2"`
+		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id;index:idx_tasks_dequeue,priority:1"`
+		CreatedBy   string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
+		Assignee    string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
+		Status      string `json:"status" gorm:"index;index:idx_tasks_dequeue,priority:3"` // notstarted, ongoing, completed, rejected, cron, blocked
 		Title       string `gorm:"type:varchar(255)"`
 		Body        string `gorm:"type:text"`
 		Response    string `gorm:"type:text"`
@@ -57,7 +61,7 @@ type (
 		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt         time.Time
 		UpdatedAt         time.Time
-		UserID            int64          `gorm:"index:idx_events_user_id"`
+		UserID            int64  `gorm:"index:idx_events_user_id"`
 		Name              string `gorm:"type:varchar(140);uniqueIndex:idx_events_name_user_id"`
 		PayloadGuidelines string `gorm:"type:text"`
 	}
