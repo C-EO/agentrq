@@ -118,6 +118,18 @@ type (
 		OccurredAt  int64 `gorm:"index:idx_telemetry_occurred_at"`
 		Action      uint8 `gorm:"index:idx_telemetry_action"`
 		Actor       uint8 `gorm:"index:idx_telemetry_actor"`
+		ClientID    int64 `gorm:"index:idx_telemetry_client_id"` // xxhash64(name+version) of the MCP client (reinterpreted as int64; no unsigned bigint in Postgres), 0 if unknown; see MCPClient
+	}
+
+	// MCPClient is a lookup table of distinct MCP client identities seen on
+	// requests, keyed by xxhash64(name+"@"+version) reinterpreted as int64 so
+	// Telemetry rows can reference "which agent" (Claude Code, Codex, ...)
+	// without repeating the raw name/version on every row.
+	MCPClient struct {
+		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
+		Name      string `gorm:"type:varchar(255)"`
+		Version   string `gorm:"type:varchar(64)"`
+		CreatedAt time.Time
 	}
 
 	// User represents a human user
