@@ -163,26 +163,29 @@ type (
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {
-		ID               int64
-		CreatedAt        time.Time
-		UpdatedAt        time.Time
-		UserID           int64
-		WorkspaceID      int64
-		CreatedBy        string
-		Assignee         string
-		Status           string
-		Title            string
-		Body             string
-		Response         string
-		ReplyText        string
-		Attachments      []Attachment
-		Messages         []Message
-		ToolCalls        []ToolCall
-		CronSchedule     string
-		ParentID         int64
-		SortOrder        float64
-		AllowAllCommands bool
-		EventID          int64
+		ID                    int64
+		CreatedAt             time.Time
+		UpdatedAt             time.Time
+		UserID                int64
+		WorkspaceID           int64
+		CreatedBy             string
+		Assignee              string
+		Status                string
+		Title                 string
+		Body                  string
+		Response              string
+		ReplyText             string
+		Attachments           []Attachment
+		Messages              []Message
+		ToolCalls             []ToolCall
+		CronSchedule          string
+		ParentID              int64
+		SortOrder             float64
+		AllowAllCommands      bool
+		EventID               int64
+		WorkflowID            int64
+		WorkflowDepth         int
+		CompletionTriggerType int16
 	}
 
 	CreateTaskRequest struct {
@@ -570,6 +573,147 @@ type (
 	ListTasksFromEventResponse struct {
 		Tasks []Task
 	}
+
+	// Workflow entities (experimental)
+
+	Workflow struct {
+		ID           int64
+		CreatedAt    time.Time
+		UpdatedAt    time.Time
+		UserID       int64
+		Name         string
+		Description  string
+		StartEventID int64
+		Layout       string
+	}
+
+	CreateWorkflowRequest struct {
+		Name         string
+		Description  string
+		StartEventID int64
+		UserID       string
+	}
+
+	CreateWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	GetWorkflowRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	ListWorkflowsRequest struct {
+		UserID string
+	}
+
+	ListWorkflowsResponse struct {
+		Workflows []Workflow
+	}
+
+	// UpdateWorkflowRequest carries only the mutable fields. Each is a pointer
+	// so a PATCH can distinguish "not supplied" from "set to empty" — a layout
+	// save must not blank the description, and vice versa.
+	UpdateWorkflowRequest struct {
+		ID           int64
+		UserID       string
+		Name         *string
+		Description  *string
+		StartEventID *int64
+		Layout       *string
+	}
+
+	UpdateWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	DeleteWorkflowRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	// WorkflowStep entities
+
+	WorkflowStep struct {
+		ID               int64
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		WorkflowID       int64
+		UserID           int64
+		EventID          int64
+		WorkspaceID      int64
+		EmitEventID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		AllowAllCommands bool
+	}
+
+	CreateWorkflowStepRequest struct {
+		WorkflowID       int64
+		EventID          int64
+		WorkspaceID      int64
+		EmitEventID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		AllowAllCommands bool
+		UserID           string
+	}
+
+	CreateWorkflowStepResponse struct {
+		WorkflowStep WorkflowStep
+	}
+
+	ListWorkflowStepsRequest struct {
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListWorkflowStepsResponse struct {
+		WorkflowSteps []WorkflowStep
+	}
+
+	DeleteWorkflowStepRequest struct {
+		ID         int64
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListTasksFromWorkflowRequest struct {
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListTasksFromWorkflowResponse struct {
+		Tasks []Task
+	}
+
+	// Workflow text mode
+
+	GetWorkflowTextRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetWorkflowTextResponse struct {
+		Text string
+	}
+
+	ReplaceWorkflowFromTextRequest struct {
+		ID     int64
+		UserID string
+		Text   string
+	}
+
+	ReplaceWorkflowFromTextResponse struct {
+		Workflow  Workflow
+		StepCount int
+	}
 )
 
 const (
@@ -578,12 +722,28 @@ const (
 	PubSubTopicEvents int64 = 3
 )
 
+// What a task fires when it completes. Stored on Task.CompletionTriggerType to
+// record the author's choice, which a non-zero WorkflowID alone cannot express:
+// choosing a workflow also sets EventID to that workflow's start event.
+const (
+	CompletionTriggerNone     int16 = 0
+	CompletionTriggerEvent    int16 = 1
+	CompletionTriggerWorkflow int16 = 2
+)
+
 // EventPublishedPayload is the message sent on PubSubTopicEvents when an event fires.
 type EventPublishedPayload struct {
 	EventID int64
 	Name    string
 	Payload string
 	FAQ     []EventFAQ
+	// WorkflowID is set when the publishing task was part of a workflow run.
+	// It scopes the consumer's fan-out to that workflow's steps instead of the
+	// global event triggers; zero keeps the original global behavior.
+	WorkflowID int64
+	// Depth counts how many hops this run has already taken, so a cyclic graph
+	// exhausts a budget instead of spawning tasks forever.
+	Depth int
 }
 
 const (

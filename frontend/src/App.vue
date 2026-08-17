@@ -201,6 +201,19 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Events</span>
           </router-link>
+
+          <router-link to="/workflows"
+              @mouseenter="showTooltip($event, 'Workflows')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/workflows') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.769-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Workflows</span>
+          </router-link>
         </div>
 
         <!-- Sidebar Footer -->
@@ -455,6 +468,8 @@ watch(() => route.fullPath, (fullPath) => {
   const path = route.path;
   if (path === '/') document.title = 'Workspaces | AgentRQ';
   else if (path === '/login') document.title = 'Login | AgentRQ';
+  else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
+  else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';
   else if (path.startsWith('/tasks/')) {
     const filter = route.params.filter || '';
     const title = filter ? filter.charAt(0).toUpperCase() + filter.slice(1) : 'All';

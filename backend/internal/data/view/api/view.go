@@ -1,6 +1,9 @@
 package api
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type (
 	// Workspace views
@@ -117,6 +120,12 @@ type (
 		SortOrder        float64      `json:"sortOrder"`
 		AllowAllCommands bool         `json:"allowAllCommands"`
 		EventID          string       `json:"eventId,omitempty"`
+		// WorkflowID runs a whole named pipeline on completion instead of
+		// firing a single event. Choosing one also sets EventID to that
+		// workflow's start event, so CompletionTriggerType records which of the
+		// two the author actually picked.
+		WorkflowID            string `json:"workflowId,omitempty"`
+		CompletionTriggerType int16  `json:"completionTriggerType,omitempty"`
 	}
 
 	CreateTaskRequest struct {
@@ -315,5 +324,111 @@ type (
 
 	ListEventTriggersResponse struct {
 		EventTriggers []EventTrigger `json:"eventTriggers"`
+	}
+
+	// Workflow views (experimental)
+
+	Workflow struct {
+		ID           string    `json:"id"`
+		CreatedAt    time.Time `json:"createdAt"`
+		UpdatedAt    time.Time `json:"updatedAt"`
+		Name         string    `json:"name"`
+		Description  string    `json:"description"`
+		StartEventID string    `json:"startEventId,omitempty"`
+		// Layout is opaque canvas state owned by the editor: raw JSON, stored
+		// and returned verbatim so the graph editor can evolve its own shape
+		// without a backend change.
+		Layout json.RawMessage `json:"layout,omitempty"`
+	}
+
+	CreateWorkflowRequest struct {
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		StartEventID string `json:"startEventId,omitempty"`
+	}
+
+	CreateWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	// UpdateWorkflowRequest uses pointers so an omitted field stays unchanged:
+	// saving a canvas layout must not blank the name or description.
+	UpdateWorkflowRequest struct {
+		Name         *string          `json:"name,omitempty"`
+		Description  *string          `json:"description,omitempty"`
+		StartEventID *string          `json:"startEventId,omitempty"`
+		Layout       *json.RawMessage `json:"layout,omitempty"`
+	}
+
+	UpdateWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	GetWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	ListWorkflowsResponse struct {
+		Workflows []Workflow `json:"workflows"`
+	}
+
+	// WorkflowStep views
+
+	WorkflowStep struct {
+		ID               string    `json:"id"`
+		CreatedAt        time.Time `json:"createdAt"`
+		WorkflowID       string    `json:"workflowId"`
+		EventID          string    `json:"eventId"`
+		WorkspaceID      string    `json:"workspaceId"`
+		EmitEventID      string    `json:"emitEventId,omitempty"`
+		Title            string    `json:"title"`
+		Body             string    `json:"body"`
+		Assignee         string    `json:"assignee"`
+		AllowAllCommands bool      `json:"allowAllCommands"`
+	}
+
+	CreateWorkflowStepRequest struct {
+		EventID          string `json:"eventId"`
+		WorkspaceID      string `json:"workspaceId"`
+		EmitEventID      string `json:"emitEventId,omitempty"`
+		Title            string `json:"title"`
+		Body             string `json:"body"`
+		Assignee         string `json:"assignee"`
+		AllowAllCommands bool   `json:"allowAllCommands"`
+	}
+
+	CreateWorkflowStepResponse struct {
+		WorkflowStep WorkflowStep `json:"workflowStep"`
+	}
+
+	ListWorkflowStepsResponse struct {
+		WorkflowSteps []WorkflowStep `json:"workflowSteps"`
+	}
+
+	// Workflow text mode
+
+	GetWorkflowTextResponse struct {
+		Text string `json:"text"`
+	}
+
+	ReplaceWorkflowFromTextRequest struct {
+		Text string `json:"text"`
+	}
+
+	ReplaceWorkflowFromTextResponse struct {
+		Workflow  Workflow `json:"workflow"`
+		StepCount int      `json:"stepCount"`
+	}
+
+	// WorkflowTextError reports a parse or validation failure with the source
+	// line, so the editor can mark the offending row rather than showing a bare
+	// message above the document.
+	WorkflowTextError struct {
+		Message string `json:"message"`
+		Line    int    `json:"line,omitempty"`
+	}
+
+	WorkflowTextErrorResponse struct {
+		Error WorkflowTextError `json:"error"`
 	}
 )

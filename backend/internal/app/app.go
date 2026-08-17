@@ -175,6 +175,17 @@ func New(cfg Config) (*App, error) {
 	// browser per workspace.
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS uni_push_subscriptions_endpoint").Error
 
+	// idx_events_name_user_id / idx_workflows_name_user_id were created over
+	// `name` alone despite their names, because only the Name field carried
+	// the uniqueIndex tag. That made event and workflow names unique across
+	// every account rather than per user. AutoMigrate will not redefine an
+	// index that already exists, so the stale ones are dropped here and
+	// recreated as the composite the model now declares. Dropping is safe:
+	// the new index is strictly looser, so any data valid under the old one
+	// is valid under the new one.
+	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_events_name_user_id").Error
+	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_workflows_name_user_id").Error
+
 	if err := db.Conn(context.Background()).AutoMigrate(
 		&model.Workspace{},
 		&model.Task{},
@@ -187,6 +198,8 @@ func New(cfg Config) (*App, error) {
 		&model.PushSubscription{},
 		&model.Event{},
 		&model.EventTrigger{},
+		&model.Workflow{},
+		&model.WorkflowStep{},
 		&model.ToolCall{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
@@ -537,19 +550,35 @@ func New(cfg Config) (*App, error) {
 					UserID:      monoflake.ID(workspace.UserID).String(),
 				})
 			},
-			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error {
+			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ, run mcp.WorkflowRunContext) error {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				ev, err := repo.GetEventByName(ctx, eventName, uid)
 				if err != nil {
 					return fmt.Errorf("event %q not found", eventName)
 				}
+
+				// Naming a workflow explicitly starts a fresh run of it, which
+				// overrides whichever run the publishing task belonged to. Depth
+				// restarts with it: this is a new run, not a continuation, and
+				// inheriting the old count would retire it early.
+				workflowID, depth := run.WorkflowID, run.Depth
+				if run.WorkflowName != "" {
+					wf, wfErr := repo.GetWorkflowByName(ctx, run.WorkflowName, uid)
+					if wfErr != nil {
+						return fmt.Errorf("workflow %q not found", run.WorkflowName)
+					}
+					workflowID, depth = wf.ID, 0
+				}
+
 				pubsubSvc.Publish(ctx, pubsub.PublishRequest{
 					PubSubID: entity.PubSubTopicEvents,
 					Event: entity.EventPublishedPayload{
-						EventID: ev.ID,
-						Name:    ev.Name,
-						Payload: payload,
-						FAQ:     faq,
+						EventID:    ev.ID,
+						Name:       ev.Name,
+						Payload:    payload,
+						FAQ:        faq,
+						WorkflowID: workflowID,
+						Depth:      depth,
 					},
 				})
 				return nil
