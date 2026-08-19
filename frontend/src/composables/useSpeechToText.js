@@ -2,6 +2,7 @@ import { ref, onUnmounted, watch } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
+import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_END } from '../api';
 
 let hasShownMobileToast = false;
 
@@ -37,11 +38,17 @@ export function useSpeechToText(targetRef, workspaceId) {
 
   const SUPPORTED_LANGUAGES = Object.keys(WHISPER_LANGUAGES);
 
+  // Callers pass the workspace id as a plain string, a ref or a getter,
+  // depending on whether their route makes it reactive.
+  function resolveWorkspaceId() {
+    return typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
+  }
+
   function getResolvedLanguage() {
     if (typeof window === 'undefined') return 'en';
-    
+
     // 1. Check workspace settings override
-    const wsId = typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
+    const wsId = resolveWorkspaceId();
     if (wsId) {
       const saved = localStorage.getItem(`stt_lang_${wsId}`);
       if (saved && saved !== 'auto') return saved;
@@ -245,10 +252,20 @@ export function useSpeechToText(targetRef, workspaceId) {
   }
 
   function stopRecording() {
+    // Captured before the flag is cleared, and the count is gated on it:
+    // onUnmounted calls this unconditionally, so without the guard every
+    // teardown of a view holding this composable would report a recording that
+    // never happened. It also keeps a second stop from counting twice.
+    const wasRecording = isRecording.value;
+
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
     isRecording.value = false;
+
+    if (wasRecording) {
+      recordTelemetry(TELEMETRY_LOCAL_AI_RECORDING_END, resolveWorkspaceId());
+    }
   }
 
   function toggleRecording() {
