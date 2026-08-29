@@ -876,7 +876,8 @@ func extractPermissionRequestFields(msg entity.Message) (requestID, toolDesc str
 		RequestID  string `json:"requestId"`
 		RequestID2 string `json:"request_id"`
 		Tool       string `json:"tool"`
-		ToolName   string `json:"tool_name"`
+		ToolName   string `json:"toolName"`
+		ToolName2  string `json:"tool_name"`
 		Args       string `json:"args"`
 		Desc       string `json:"description"`
 	}
@@ -890,6 +891,9 @@ func extractPermissionRequestFields(msg entity.Message) (requestID, toolDesc str
 	tool := m.Tool
 	if tool == "" {
 		tool = m.ToolName
+	}
+	if tool == "" {
+		tool = m.ToolName2
 	}
 	args := m.Args
 	if args == "" {
@@ -987,14 +991,14 @@ func (c *controller) processEvent(ctx context.Context, event entity.CRUDEvent) {
 
 func (c *controller) fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 	return entity.Workspace{
-		ID:             m.ID,
-		CreatedAt:      m.CreatedAt,
-		UpdatedAt:      m.UpdatedAt,
-		UserID:         m.UserID,
-		Name:           m.Name,
-		Description:    m.Description,
-		Icon:           m.Icon,
-		ArchivedAt:     m.ArchivedAt,
+		ID:          m.ID,
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
+		UserID:      m.UserID,
+		Name:        m.Name,
+		Description: m.Description,
+		Icon:        m.Icon,
+		ArchivedAt:  m.ArchivedAt,
 	}
 }
 
@@ -1063,4 +1067,3 @@ func formatSlackAttachments(atts []entity.Attachment) string {
 	}
 	return "Attachments:\n" + strings.Join(parts, "\n")
 }
-

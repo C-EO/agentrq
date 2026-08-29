@@ -129,8 +129,8 @@ func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -164,8 +164,8 @@ func TestHandleSlashCommand_WorkspaceNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -204,8 +204,8 @@ func TestHandleSlashCommand_Success_Unquoted(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -271,8 +271,8 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -325,8 +325,8 @@ func TestHandleSlashCommand_Success_SmartQuotes(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -380,8 +380,8 @@ func TestHandleSlashCommand_Success_Truncation(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	mockRepo.EXPECT().
@@ -428,8 +428,8 @@ func TestProcessEvent_OriginSlack(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "test-key",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "test-key",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	// If event.Origin is OriginSlack and it is a ResourceMessage, processEvent should immediately return and NOT query the DB or call handlers.
@@ -478,8 +478,8 @@ func TestHandleSlackEvent_WithFiles(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "12345678901234567890123456789012",
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "12345678901234567890123456789012",
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	// Setup thread and workspace mocks
@@ -582,8 +582,8 @@ func TestOnTaskCreated_ChannelNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	decToken := "xoxb-test-token"
@@ -640,8 +640,8 @@ func TestOnMessageCreated_HumanUserName(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	decToken := "xoxb-test-token"
@@ -740,8 +740,8 @@ func TestOnMessageUpdated_Success(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	decToken := "xoxb-test-token"
@@ -810,8 +810,8 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
-		TokenSvc:   &mockTokenSvc{}, TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
-		BaseURL:    "https://app.agentrq.com",
+		TokenSvc:   &mockTokenSvc{}, TokenKey: "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL: "https://app.agentrq.com",
 	})
 
 	msg := entity.Message{
@@ -1238,5 +1238,47 @@ func TestHandleMCPPermission_NoMCPManager(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "MCP manager not available") {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestExtractPermissionRequestFields(t *testing.T) {
+	tests := []struct {
+		name         string
+		metadata     map[string]any
+		wantRequest  string
+		wantToolDesc string
+	}{
+		{
+			name: "camelCase metadata (current API format)",
+			metadata: map[string]any{
+				"requestId":    "req-1",
+				"toolName":     "bash",
+				"inputPreview": `{"command":"ls"}`,
+			},
+			wantRequest:  "req-1",
+			wantToolDesc: "bash",
+		},
+		{
+			name: "snake_case metadata (legacy stored messages)",
+			metadata: map[string]any{
+				"request_id": "req-2",
+				"tool_name":  "bash",
+			},
+			wantRequest:  "req-2",
+			wantToolDesc: "bash",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := entity.Message{Metadata: tt.metadata}
+			gotRequest, gotToolDesc := extractPermissionRequestFields(msg)
+			if gotRequest != tt.wantRequest {
+				t.Errorf("requestID = %q, want %q", gotRequest, tt.wantRequest)
+			}
+			if gotToolDesc != tt.wantToolDesc {
+				t.Errorf("toolDesc = %q, want %q", gotToolDesc, tt.wantToolDesc)
+			}
+		})
 	}
 }

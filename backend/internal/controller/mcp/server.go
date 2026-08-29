@@ -1158,6 +1158,18 @@ func (ps *WorkspaceServer) discoverCacheMiddleware(next mcp.MethodHandler) mcp.M
 	}
 }
 
+// permissionRequestMessageText is the chat message shown for a pending permission
+// request. The tool/command itself is already rendered in full in the
+// "Authorization Required" card below, so the message text only needs the
+// human-readable question; the tool name is a fallback for when the harness
+// didn't supply one.
+func permissionRequestMessageText(toolName, description string) string {
+	if description != "" {
+		return description
+	}
+	return fmt.Sprintf("Permission requested for %s", toolName)
+}
+
 func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		zlog.Debug().Str("method", method).Msg("MCP incoming")
@@ -1219,14 +1231,15 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				}
 
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("relaying permission request")
-				// Type "permission_request" helps UI render buttons
+				// Type "permission_request" helps UI render buttons. Keys are camelCase
+				// to match the API surface convention consumed by the frontend.
 				metadata := map[string]any{
-					"type":          "permission_request",
-					"request_id":    p.RequestID,
-					"tool_name":     p.ToolName,
-					"description":   p.Description,
-					"input_preview": p.InputPreview,
-					"status":        "pending",
+					"type":         "permission_request",
+					"requestId":    p.RequestID,
+					"toolName":     p.ToolName,
+					"description":  p.Description,
+					"inputPreview": p.InputPreview,
+					"status":       "pending",
 				}
 				// Store resolved taskID with the request for later use in SendPermissionVerdict
 				ps.requestTaskIDsMu.Lock()
@@ -1239,7 +1252,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					ps.toolCallIDsMu.Unlock()
 				}
 
-				msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
+				msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), permissionRequestMessageText(p.ToolName, p.Description), nil, metadata)
 				if msgID != 0 {
 					ps.permissionResponsesMu.Lock()
 					ps.permissionResponses[p.RequestID] = msgID
@@ -1575,12 +1588,12 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
 			metadata := map[string]any{
-				"type":          "permission_request",
-				"request_id":    p.RequestID,
-				"tool_name":     p.ToolName,
-				"description":   p.Description,
-				"input_preview": p.InputPreview,
-				"status":        "pending",
+				"type":         "permission_request",
+				"requestId":    p.RequestID,
+				"toolName":     p.ToolName,
+				"description":  p.Description,
+				"inputPreview": p.InputPreview,
+				"status":       "pending",
 			}
 			// Store resolved taskID with the request for later use in SendPermissionVerdict
 			ps.requestTaskIDsMu.Lock()
@@ -1593,7 +1606,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				ps.toolCallIDsMu.Unlock()
 			}
 
-			msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
+			msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), permissionRequestMessageText(p.ToolName, p.Description), nil, metadata)
 			if msgID != 0 {
 				ps.permissionResponsesMu.Lock()
 				ps.permissionResponses[p.RequestID] = msgID
