@@ -278,6 +278,123 @@
                  </div>
                </div>
 
+               <!-- Elicitation Request (agent message) -->
+               <div v-else-if="m.metadata?.type === 'elicitation_request'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
+                 <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center justify-between gap-3">
+                   <div class="flex items-center gap-2">
+                     <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                     <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Input Requested</span>
+                   </div>
+                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ m.metadata.requestId }}</span>
+                 </div>
+                 <div class="p-3 flex flex-col gap-3 min-w-0">
+                   <template v-if="m.metadata.status === 'pending'">
+                     <template v-if="m.metadata.mode === 'form'">
+                       <div v-for="field in schemaFields(m)" :key="field.name" class="min-w-0">
+                         <label class="text-[10px] font-semibold text-gray-700 dark:text-zinc-300">
+                           {{ field.title || field.name }}<span v-if="(m.metadata.requestedSchema.required || []).includes(field.name)" class="text-red-500">*</span>
+                         </label>
+                         <p v-if="field.description" class="text-[9px] text-gray-400 dark:text-zinc-500 mb-1">{{ field.description }}</p>
+                         <!-- Multi-select: array of primitives (checkboxes) -->
+                         <div v-if="field.type === 'array' && fieldChoices(field)" class="flex flex-col gap-1.5 mt-1">
+                           <label v-for="choice in fieldChoices(field)" :key="choice.value"
+                                  class="flex items-center gap-2 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors text-[11px]"
+                                  :class="(getElicitFormValue(m, field.name) || []).includes(choice.value)
+                                    ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white'
+                                    : 'border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600'">
+                             <input type="checkbox" :value="choice.value"
+                                    :checked="(getElicitFormValue(m, field.name) || []).includes(choice.value)"
+                                    @change="toggleElicitArrayValue(m, field.name, choice.value)"
+                                    class="sr-only" />
+                             <span class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0"
+                                   :class="(getElicitFormValue(m, field.name) || []).includes(choice.value) ? 'border-gray-900 dark:border-white bg-gray-900 dark:bg-white' : 'border-gray-300 dark:border-zinc-600'">
+                               <svg v-if="(getElicitFormValue(m, field.name) || []).includes(choice.value)" class="w-2.5 h-2.5 text-white dark:text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                             </span>
+                             <span class="flex flex-col">
+                               <span class="font-medium">{{ choice.label }}</span>
+                               <span v-if="choice.description" class="text-[9px] text-gray-400 dark:text-zinc-500">{{ choice.description }}</span>
+                             </span>
+                           </label>
+                         </div>
+                         <!-- Single-select: enum / oneOf / anyOf (radio) -->
+                         <div v-else-if="fieldChoices(field)" class="flex flex-col gap-1.5 mt-1">
+                           <label v-for="choice in fieldChoices(field)" :key="choice.value"
+                                  class="flex items-center gap-2 px-2.5 py-1.5 rounded-sm border cursor-pointer transition-colors text-[11px]"
+                                  :class="getElicitFormValue(m, field.name) === choice.value
+                                    ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white'
+                                    : 'border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600'">
+                             <input type="radio" :name="`${m.id}-${field.name}`" :value="choice.value"
+                                    :checked="getElicitFormValue(m, field.name) === choice.value"
+                                    @change="setElicitFormValue(m, field.name, choice.value)"
+                                    class="sr-only" />
+                             <span class="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                                   :class="getElicitFormValue(m, field.name) === choice.value ? 'border-gray-900 dark:border-white' : 'border-gray-300 dark:border-zinc-600'">
+                               <span v-if="getElicitFormValue(m, field.name) === choice.value" class="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white"></span>
+                             </span>
+                             <span class="flex flex-col">
+                               <span class="font-medium">{{ choice.label }}</span>
+                               <span v-if="choice.description" class="text-[9px] text-gray-400 dark:text-zinc-500">{{ choice.description }}</span>
+                             </span>
+                           </label>
+                         </div>
+                         <label v-else-if="field.type === 'boolean'" class="flex items-center gap-2 mt-1">
+                           <input type="checkbox" :checked="!!getElicitFormValue(m, field.name)" @change="setElicitFormValue(m, field.name, $event.target.checked)" />
+                           <span class="text-[10px] text-gray-600 dark:text-zinc-400">Yes</span>
+                         </label>
+                         <input v-else :type="elicitInputType(field)"
+                                :pattern="field.pattern" :minlength="field.minLength" :maxlength="field.maxLength"
+                                :min="field.minimum" :max="field.maximum"
+                                :value="getElicitFormValue(m, field.name)" @input="setElicitFormValue(m, field.name, $event.target.value)"
+                                class="w-full mt-0.5 px-2 py-1.5 text-[11px] bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm text-gray-800 dark:text-zinc-200" />
+                       </div>
+                       <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                          <button @click="submitElicitation(m, 'accept')" :disabled="!!workspace.archivedAt"
+                                  class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                            Submit
+                          </button>
+                          <button @click="submitElicitation(m, 'decline')" :disabled="!!workspace.archivedAt"
+                                  class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                            Decline
+                          </button>
+                       </div>
+                     </template>
+                     <template v-else>
+                       <a :href="m.metadata.url" target="_blank" rel="noopener noreferrer"
+                          class="text-[11px] text-blue-600 dark:text-blue-400 underline break-all">{{ m.metadata.url }}</a>
+                       <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                          <button @click="submitElicitation(m, 'accept')" :disabled="!!workspace.archivedAt"
+                                  class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                            I'm Done
+                          </button>
+                          <button @click="submitElicitation(m, 'cancel')" :disabled="!!workspace.archivedAt"
+                                  class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                            Cancel
+                          </button>
+                       </div>
+                     </template>
+                   </template>
+                   <div v-else
+                        @click="m.metadata.content && (m._detailsExpanded = !m._detailsExpanded)"
+                        class="border rounded-sm select-none overflow-hidden min-w-0 transition-all"
+                        :class="[m.metadata.content ? 'cursor-pointer' : '', m.metadata.status === 'accept' ? 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/5']">
+                     <div class="flex items-center gap-2.5 px-3 py-2 min-w-0">
+                       <svg v-if="m.metadata.status === 'accept'" class="w-3.5 h-3.5 text-gray-700 dark:text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                       <svg v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                       <span class="text-[10px] font-semibold flex-1 min-w-0 truncate" :class="m.metadata.status === 'accept' ? 'text-gray-700 dark:text-zinc-100' : 'text-red-700 dark:text-red-500'">
+                         {{ m.metadata.status === 'accept' ? 'Answered' : m.metadata.status === 'decline' ? 'Declined' : 'Cancelled' }}
+                       </span>
+                       <svg v-if="m.metadata.content" class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                     </div>
+                     <div v-if="m._detailsExpanded && m.metadata.content" class="px-3 pb-3 pt-1 border-t border-dashed border-gray-200 dark:border-zinc-700 min-w-0 flex flex-col gap-1.5">
+                       <div v-for="(value, key) in m.metadata.content" :key="key" class="text-[10px] flex items-start gap-2 min-w-0">
+                         <span class="font-semibold text-gray-500 dark:text-zinc-400 shrink-0">{{ elicitAnswerLabel(m, key) }}:</span>
+                         <span class="text-gray-800 dark:text-zinc-200 break-all min-w-0">{{ formatElicitAnswerValue(value) }}</span>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
                <!-- Attachments on agent message -->
                <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-zinc-700">
                  <div v-for="(att, i) in m.attachments" :key="i"
@@ -521,7 +638,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, updateTaskAllowAllCommands, fetchUser } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, updateTaskAllowAllCommands, fetchUser } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -767,6 +884,79 @@ const handleVerdict = async (requestId, behavior) => {
     notifyError('Failed to send verdict: ' + err.message);
   }
 };
+
+function schemaFields(m) {
+  const props = m.metadata?.requestedSchema?.properties;
+  if (!props) return [];
+  return Object.entries(props).map(([name, def]) => ({ name, ...def }));
+}
+
+// Normalizes a field's enum, whichever form it's expressed in (ACP allows
+// both a plain `enum: [...]` array and titled `oneOf`/`anyOf` options), into
+// a consistent {value, label, description} list. For an array-typed field
+// (multi-select) the choices come from its `items` sub-schema instead.
+function fieldChoices(field) {
+  const source = field.type === 'array' ? field.items : field;
+  if (!source) return null;
+  if (Array.isArray(source.enum)) {
+    return source.enum.map(v => ({ value: v, label: String(v) }));
+  }
+  const options = source.oneOf || source.anyOf;
+  if (Array.isArray(options)) {
+    return options.map(o => ({ value: o.const, label: o.title || String(o.const), description: o.description }));
+  }
+  return null;
+}
+
+// Maps a schema property to the best-matching native <input type="...">,
+// so browser-native validation/keyboards apply (e.g. a numeric keypad on
+// mobile for 'number', native date picker for 'date').
+function elicitInputType(field) {
+  if (field.type === 'number' || field.type === 'integer') return 'number';
+  const byFormat = { email: 'email', date: 'date', 'date-time': 'datetime-local', uri: 'url', url: 'url' };
+  return byFormat[field.format] || 'text';
+}
+
+const elicitFormValues = ref({});
+function getElicitFormValue(m, field) {
+  return (elicitFormValues.value[m.id] || {})[field];
+}
+function setElicitFormValue(m, field, value) {
+  if (!elicitFormValues.value[m.id]) elicitFormValues.value[m.id] = {};
+  elicitFormValues.value[m.id][field] = value;
+}
+function toggleElicitArrayValue(m, field, value) {
+  if (!elicitFormValues.value[m.id]) elicitFormValues.value[m.id] = {};
+  const current = elicitFormValues.value[m.id][field] || [];
+  elicitFormValues.value[m.id][field] = current.includes(value)
+    ? current.filter(v => v !== value)
+    : [...current, value];
+}
+
+async function submitElicitation(m, action) {
+  const requestId = m.metadata?.requestId;
+  if (!requestId) return;
+  const content = action === 'accept' && m.metadata.mode === 'form' ? (elicitFormValues.value[m.id] || {}) : undefined;
+  try {
+    await respondToElicitation(workspaceId.value, taskId.value, requestId, action, content);
+    notifySuccess(action === 'accept' ? 'Response sent' : action === 'decline' ? 'Declined' : 'Cancelled');
+  } catch (err) {
+    notifyError('Failed to send response: ' + err.message);
+  }
+}
+
+// Once resolved, m.metadata.content holds the answer keyed by schema property
+// name — look up that property's own title for a human-readable label.
+function elicitAnswerLabel(m, key) {
+  return m.metadata?.requestedSchema?.properties?.[key]?.title || key;
+}
+
+function formatElicitAnswerValue(value) {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '(none)';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (value === undefined || value === null || value === '') return '(empty)';
+  return String(value);
+}
 
 async function updateStatus(newStatus) {
   try {

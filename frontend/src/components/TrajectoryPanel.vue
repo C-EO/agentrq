@@ -171,6 +171,27 @@ const items = computed(() => {
         },
       };
     }
+    if (m.metadata?.type === 'elicitation_request') {
+      const label = m.metadata.message || (m.metadata.mode === 'url' ? 'Open link' : 'Answer question');
+      const payload = m.metadata.mode === 'form'
+        ? { mode: 'form', requestedSchema: m.metadata.requestedSchema }
+        : { mode: 'url', url: m.metadata.url };
+      if (m.metadata.content) payload.answer = m.metadata.content;
+      return {
+        id: `m-${m.id}`,
+        lane: 'tool',
+        laneLabel: 'ASK',
+        createdAt: m.createdAt,
+        label,
+        preview: truncate(label, 140),
+        raw: {
+          ...m,
+          toolName: label,
+          inputPreview: JSON.stringify(payload),
+          status: m.metadata.status || 'pending',
+        },
+      };
+    }
     return {
       id: `m-${m.id}`,
       lane: m.sender === 'agent' ? 'agent' : 'input',
@@ -261,10 +282,14 @@ async function copyContentText(id, text) {
 function laneDotClass(it) {
   if (it.lane === 'tool') {
     switch (it.raw.status) {
-      case 'denied': return 'bg-red-500';
+      case 'denied':
+      case 'decline':
+      case 'cancel':
+        return 'bg-red-500';
       case 'pending': return 'bg-amber-400';
       case 'allowed':
       case 'auto_allowed':
+      case 'accept':
       default:
         return 'bg-emerald-500';
     }
@@ -283,8 +308,11 @@ function toolCallStatusStyle(status) {
   switch (status) {
     case 'allowed':
     case 'auto_allowed':
+    case 'accept':
       return 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800';
     case 'denied':
+    case 'decline':
+    case 'cancel':
       return 'text-red-700 dark:text-red-500 bg-red-50 dark:bg-red-500/10';
     case 'pending':
       return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10';
@@ -299,6 +327,9 @@ function toolCallStatusLabel(status) {
     case 'auto_allowed': return 'Auto-allowed';
     case 'denied': return 'Denied';
     case 'pending': return 'Pending';
+    case 'accept': return 'Answered';
+    case 'decline': return 'Declined';
+    case 'cancel': return 'Cancelled';
     default: return status;
   }
 }

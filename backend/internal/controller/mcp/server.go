@@ -122,6 +122,8 @@ type WorkspaceServer struct {
 	permissionResponses   map[string]int64 // requestID -> messageID
 	toolCallIDsMu         sync.RWMutex
 	toolCallIDs           map[string]int64 // requestID -> ToolCall row ID (manual requests only, until resolved)
+	elicitationsMu        sync.Mutex
+	elicitations          map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
 	metadataMu            sync.RWMutex
 	icon                  string
 	name                  string
@@ -197,6 +199,102 @@ type GetTaskParams struct {
 	Limit               int    `json:"limit,omitempty" jsonschema:"Maximum number of messages to return; only used when includeConversation is true. Default is 5."`
 }
 
+// ElicitParams is the input to the elicit tool. It mirrors the MCP protocol's
+// client-side "elicitation/create" request (message + a flat requestedSchema),
+// plus a "url" mode for asking the human to open a link rather than fill a form.
+type ElicitParams struct {
+	TaskID          string         `json:"taskId" jsonschema:"The ID of the task this question relates to (base62)."`
+	Message         string         `json:"message" jsonschema:"The human-readable question or prompt to show the user."`
+	Mode            string         `json:"mode" jsonschema:"'form' to request structured input via a JSON schema (mirrors MCP's elicitation/create requestedSchema), or 'url' to ask the user to open a link and confirm when done."`
+	RequestedSchema map[string]any `json:"requestedSchema,omitempty" jsonschema:"Required when mode is 'form'. A flat JSON Schema object: type must be 'object', with each property either primitive-typed (string, number, integer, boolean — optionally with 'enum'), an array of one of those primitive types (renders as a multi-select), or an enum expressed as 'oneOf'/'anyOf' options (each {const, title, description}) — no nested objects. Matches ACP's elicitation/create schema restrictions."`
+	URL             string         `json:"url,omitempty" jsonschema:"Required when mode is 'url'. The URL to show the user."`
+	TimeoutSeconds  int            `json:"timeoutSeconds,omitempty" jsonschema:"How long to wait for the user's response before giving up. Default 3600 (1 hour), max 3600 (1 hour). On timeout the tool returns {action: 'cancel'} rather than an error, since the human simply didn't respond in time."`
+}
+
+// elicitationResponse is the human's answer to a pending elicit tool call,
+// mirroring MCP's ElicitResult shape (action + optional content).
+type elicitationResponse struct {
+	Action  string         `json:"action"` // "accept" | "decline" | "cancel"
+	Content map[string]any `json:"content,omitempty"`
+}
+
+// validateElicitRequestedSchema enforces the same restriction MCP's
+// elicitation/create places on requestedSchema: a flat object whose properties
+// are all primitive-typed, so any client can render it as a simple form.
+// elicitPrimitiveTypes are the JSON Schema types a single (non-array) property
+// may declare, matching both MCP's and ACP's elicitation schema restriction.
+var elicitPrimitiveTypes = map[string]bool{"string": true, "number": true, "integer": true, "boolean": true}
+
+func validateElicitRequestedSchema(schema map[string]any) error {
+	if t, _ := schema["type"].(string); t != "object" {
+		return fmt.Errorf(`"type" must be "object"`)
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok || len(props) == 0 {
+		return fmt.Errorf(`must have a non-empty "properties" object`)
+	}
+	for name, raw := range props {
+		prop, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("property %q must be an object", name)
+		}
+		if err := validateElicitPropertySchema(prop); err != nil {
+			return fmt.Errorf("property %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// validateElicitPropertySchema accepts a primitive-typed property (string,
+// number, integer, boolean — optionally with an "enum"), an array of
+// primitives (multi-select), or an enum expressed as "oneOf"/"anyOf" options
+// (each a {const, title, description} object) — matching ACP's elicitation
+// schema extensions on top of MCP's restricted subset. Nested objects/arrays
+// are rejected either way, so the result always renders as a flat form.
+func validateElicitPropertySchema(prop map[string]any) error {
+	propType, _ := prop["type"].(string)
+	if propType == "array" {
+		items, ok := prop["items"].(map[string]any)
+		if !ok {
+			return fmt.Errorf(`"array" properties must have an "items" object`)
+		}
+		itemType, _ := items["type"].(string)
+		if !elicitPrimitiveTypes[itemType] {
+			return fmt.Errorf(`"items" must have a primitive type (string, number, integer, boolean); nested arrays/objects are not supported`)
+		}
+		return nil
+	}
+	if elicitPrimitiveTypes[propType] {
+		return nil
+	}
+	if options, ok := prop["oneOf"]; ok {
+		return validateElicitEnumOptions(options)
+	}
+	if options, ok := prop["anyOf"]; ok {
+		return validateElicitEnumOptions(options)
+	}
+	return fmt.Errorf(`must have a primitive "type" (string, number, integer, boolean, or an array of one of those), or "oneOf"/"anyOf" enum options; nested objects are not supported`)
+}
+
+// validateElicitEnumOptions checks a "oneOf"/"anyOf" enum: a non-empty array
+// of objects each carrying a "const" value (ACP's titled-enum-option form).
+func validateElicitEnumOptions(raw any) error {
+	opts, ok := raw.([]any)
+	if !ok || len(opts) == 0 {
+		return fmt.Errorf(`"oneOf"/"anyOf" must be a non-empty array`)
+	}
+	for _, o := range opts {
+		opt, ok := o.(map[string]any)
+		if !ok {
+			return fmt.Errorf(`each "oneOf"/"anyOf" option must be an object`)
+		}
+		if _, hasConst := opt["const"]; !hasConst {
+			return fmt.Errorf(`each "oneOf"/"anyOf" option must have a "const" value`)
+		}
+	}
+	return nil
+}
+
 func NewWorkspaceServer(
 	workspaceID int64,
 	userID string,
@@ -251,6 +349,7 @@ func NewWorkspaceServer(
 		requestTaskIDs:        make(map[string]int64),
 		permissionResponses:   make(map[string]int64),
 		toolCallIDs:           make(map[string]int64),
+		elicitations:          make(map[string]chan elicitationResponse),
 		icon:                  icon,
 		name:                  name,
 		description:           description,
@@ -341,6 +440,11 @@ func NewWorkspaceServer(
 		Name:        "publishEvent",
 		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When the task you are completing includes a publishEvent instruction, copy the name and taskId from it exactly as written — taskId is what identifies the workflow run being continued. Write the payload yourself, plus an optional faq.",
 	}, ps.handlePublishEvent)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "elicit",
+		Description: "Ask the human a question and wait for their answer, mirroring the MCP protocol's client-side elicitation/create capability. Use mode='form' with a flat requestedSchema (primitive-typed properties only) to collect structured input, or mode='url' to point the human at a link and wait for them to confirm they're done. Blocks until the human responds or the timeout elapses. Returns {action, content} — action is 'accept' (content has the form values, if mode='form'), 'decline', or 'cancel'.",
+	}, ps.handleElicit)
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware, ps.discoverCacheMiddleware)
@@ -892,6 +996,152 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 			Text: fmt.Sprintf("event %q published", params.Name),
 		}},
 	}, nil, nil
+}
+
+const (
+	elicitDefaultTimeout = time.Hour
+	elicitMaxTimeout     = time.Hour
+)
+
+// handleElicit asks the human a question via the chat and blocks until they
+// answer (or the timeout elapses), unlike permission requests — which are
+// resolved by the agent's own harness out-of-band — this is a plain
+// synchronous tool call: the HTTP request simply stays open while this
+// handler waits on a channel for the REST response endpoint to deliver
+// the human's answer.
+func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRequest, params ElicitParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "elicit", clientIdentityFromRequest(req))
+
+	if params.TaskID == "" || params.Message == "" {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId and message are required"}},
+		}, nil, nil
+	}
+
+	metadata := map[string]any{
+		"type":    "elicitation_request",
+		"message": params.Message,
+		"mode":    params.Mode,
+		"status":  "pending",
+	}
+	switch params.Mode {
+	case "form":
+		if len(params.RequestedSchema) == 0 {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "requestedSchema is required when mode is 'form'"}},
+			}, nil, nil
+		}
+		if err := validateElicitRequestedSchema(params.RequestedSchema); err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("invalid requestedSchema: %v", err)}},
+			}, nil, nil
+		}
+		metadata["requestedSchema"] = params.RequestedSchema
+	case "url":
+		if params.URL == "" {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "url is required when mode is 'url'"}},
+			}, nil, nil
+		}
+		metadata["url"] = params.URL
+	default:
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "mode must be 'form' or 'url'"}},
+		}, nil, nil
+	}
+
+	id := monoflake.IDFromBase62(params.TaskID)
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
+	}
+	taskID := id.Int64()
+
+	timeout := elicitDefaultTimeout
+	if params.TimeoutSeconds > 0 {
+		timeout = time.Duration(params.TimeoutSeconds) * time.Second
+		if timeout > elicitMaxTimeout {
+			timeout = elicitMaxTimeout
+		}
+	}
+
+	requestID := monoflake.ID(ps.idgen.NextID()).String()
+	metadata["requestId"] = requestID
+
+	ch := make(chan elicitationResponse, 1)
+	ps.elicitationsMu.Lock()
+	if ps.elicitations == nil {
+		ps.elicitations = make(map[string]chan elicitationResponse)
+	}
+	ps.elicitations[requestID] = ch
+	ps.elicitationsMu.Unlock()
+	defer func() {
+		ps.elicitationsMu.Lock()
+		delete(ps.elicitations, requestID)
+		ps.elicitationsMu.Unlock()
+	}()
+
+	msgID, err := ps.reply(ctx, monoflake.ID(taskID).String(), params.Message, nil, metadata)
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to send elicitation request: %v", err)}},
+		}, nil, nil
+	}
+
+	select {
+	case resp := <-ch:
+		if msgID != 0 {
+			// Persist the human's answer alongside the resolved status so the
+			// chat and history views can still show what was actually submitted,
+			// not just that the request was resolved.
+			metaUpdate := map[string]any{"status": resp.Action}
+			if resp.Content != nil {
+				metaUpdate["content"] = resp.Content
+			}
+			_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, metaUpdate)
+		}
+		resultJSON, _ := json.Marshal(resp)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}}}, nil, nil
+	case <-time.After(timeout):
+		// The human simply didn't respond in time — matching ACP's model where
+		// "cancel" is a legitimate response action (not a protocol error).
+		if msgID != 0 {
+			_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, map[string]any{"status": "cancel"})
+		}
+		resultJSON, _ := json.Marshal(elicitationResponse{Action: "cancel"})
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}}}, nil, nil
+	case <-ctx.Done():
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "request cancelled"}},
+		}, nil, nil
+	}
+}
+
+// RespondToElicitation delivers the human's answer to a still-waiting elicit
+// tool call. Returns an error if the request is unknown (already answered,
+// timed out, or the server restarted since the tool call started).
+func (ps *WorkspaceServer) RespondToElicitation(requestID, action string, content map[string]any) error {
+	ps.elicitationsMu.Lock()
+	ch, ok := ps.elicitations[requestID]
+	ps.elicitationsMu.Unlock()
+	if !ok {
+		return fmt.Errorf("elicitation request %q not found (expired)", requestID)
+	}
+	select {
+	case ch <- elicitationResponse{Action: action, Content: content}:
+	default:
+		// Already answered or the tool call already timed out.
+	}
+	return nil
 }
 
 // currentWorkflowRun reports the workflow run the publishing task belongs to,
