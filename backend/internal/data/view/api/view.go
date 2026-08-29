@@ -238,6 +238,12 @@ type (
 		Behavior  string `json:"behavior"` // "allow" | "deny"
 	}
 
+	RespondToElicitationRequest struct {
+		RequestID string         `json:"requestId"`
+		Action    string         `json:"action"` // "accept" | "decline" | "cancel"
+		Content   map[string]any `json:"content,omitempty"`
+	}
+
 	UpdateScheduledTaskRequest struct {
 		Task Task `json:"task"`
 	}

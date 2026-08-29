@@ -846,3 +846,566 @@ func TestWorkspaceServer_PersistToolCall_RecordError(t *testing.T) {
 		t.Errorf("expected 0 on record error, got %d", gotID)
 	}
 }
+
+func TestValidateElicitRequestedSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		schema  map[string]any
+		wantErr bool
+	}{
+		{
+			name: "valid flat schema",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+					"age":  map[string]any{"type": "integer"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "missing type",
+			schema:  map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}},
+			wantErr: true,
+		},
+		{
+			name:    "wrong type",
+			schema:  map[string]any{"type": "array", "properties": map[string]any{"name": map[string]any{"type": "string"}}},
+			wantErr: true,
+		},
+		{
+			name:    "missing properties",
+			schema:  map[string]any{"type": "object"},
+			wantErr: true,
+		},
+		{
+			name:    "empty properties",
+			schema:  map[string]any{"type": "object", "properties": map[string]any{}},
+			wantErr: true,
+		},
+		{
+			name: "property not an object",
+			schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"name": "not-an-object"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "nested object property rejected",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"address": map[string]any{"type": "object"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing property type",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "array of primitives (multi-select) is valid",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tags": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "array without items rejected",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tags": map[string]any{"type": "array"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "array of non-primitive items rejected",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tags": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "object"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "oneOf enum with const options is valid",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"priority": map[string]any{
+						"oneOf": []any{
+							map[string]any{"const": "low", "title": "Low"},
+							map[string]any{"const": "high", "title": "High"},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "anyOf enum with const options is valid",
+			schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"priority": map[string]any{
+						"anyOf": []any{
+							map[string]any{"const": "low"},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "oneOf not an array rejected",
+			schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"priority": map[string]any{"oneOf": "not-an-array"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "oneOf empty array rejected",
+			schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"priority": map[string]any{"oneOf": []any{}}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "oneOf option not an object rejected",
+			schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"priority": map[string]any{"oneOf": []any{"low"}}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "oneOf option missing const rejected",
+			schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"priority": map[string]any{"oneOf": []any{map[string]any{"title": "Low"}}}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateElicitRequestedSchema(tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateElicitRequestedSchema() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_MissingRequiredFields(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
+	ps := &WorkspaceServer{pubsub: mockPS}
+
+	tests := []struct {
+		name   string
+		params ElicitParams
+	}{
+		{"missing taskId", ElicitParams{Message: "q?", Mode: "url", URL: "https://example.com"}},
+		{"missing message", ElicitParams{TaskID: monoflake.ID(1).String(), Mode: "url", URL: "https://example.com"}},
+		{"missing mode", ElicitParams{TaskID: monoflake.ID(1).String(), Message: "q?"}},
+		{"form without schema", ElicitParams{TaskID: monoflake.ID(1).String(), Message: "q?", Mode: "form"}},
+		{"form with invalid schema", ElicitParams{TaskID: monoflake.ID(1).String(), Message: "q?", Mode: "form", RequestedSchema: map[string]any{"type": "array"}}},
+		{"url without url", ElicitParams{TaskID: monoflake.ID(1).String(), Message: "q?", Mode: "url"}},
+		{"invalid taskId format", ElicitParams{TaskID: "0", Message: "q?", Mode: "url", URL: "https://example.com"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, _, err := ps.handleElicit(context.Background(), nil, tt.params)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !res.IsError {
+				t.Fatal("expected IsError=true")
+			}
+		})
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_FormAccept(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(123))
+
+	var gotMetadata, gotUpdatedMetadata any
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			gotMetadata = metadata
+			return 999, nil
+		},
+		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			gotUpdatedMetadata = metadata
+			return nil
+		},
+	}
+
+	params := ElicitParams{
+		TaskID:  monoflake.ID(1).String(),
+		Message: "What's your name?",
+		Mode:    "form",
+		RequestedSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"name": map[string]any{"type": "string"}},
+		},
+		TimeoutSeconds: 60,
+	}
+
+	requestID := monoflake.ID(123).String()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		if err := ps.RespondToElicitation(requestID, "accept", map[string]any{"name": "Alice"}); err != nil {
+			t.Errorf("RespondToElicitation failed: %v", err)
+		}
+	}()
+
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, `"action":"accept"`) || !contains(text, `"Alice"`) {
+		t.Errorf("unexpected content: %s", text)
+	}
+
+	meta, ok := gotMetadata.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map metadata, got %T", gotMetadata)
+	}
+	if meta["type"] != "elicitation_request" || meta["mode"] != "form" || meta["status"] != "pending" {
+		t.Errorf("unexpected metadata: %+v", meta)
+	}
+
+	// The resolved message's metadata must carry the submitted answer too, not
+	// just the resolved status — otherwise the answer is lost once resolved.
+	updatedMeta, ok := gotUpdatedMetadata.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map metadata update, got %T", gotUpdatedMetadata)
+	}
+	if updatedMeta["status"] != "accept" {
+		t.Errorf("expected status=accept in metadata update, got %+v", updatedMeta)
+	}
+	content, ok := updatedMeta["content"].(map[string]any)
+	if !ok || content["name"] != "Alice" {
+		t.Errorf("expected content={name: Alice} in metadata update, got %+v", updatedMeta)
+	}
+
+	// The channel should have been cleaned up after the handler returned.
+	ps.elicitationsMu.Lock()
+	_, stillPending := ps.elicitations[requestID]
+	ps.elicitationsMu.Unlock()
+	if stillPending {
+		t.Error("expected elicitation entry to be removed after completion")
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_URLDecline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(456))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 111, nil
+		},
+		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			return nil
+		},
+	}
+
+	requestID := monoflake.ID(456).String()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = ps.RespondToElicitation(requestID, "decline", nil)
+	}()
+
+	params := ElicitParams{
+		TaskID:         monoflake.ID(1).String(),
+		Message:        "Please open this link",
+		Mode:           "url",
+		URL:            "https://example.com/authorize",
+		TimeoutSeconds: 60,
+	}
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, `"action":"decline"`) {
+		t.Errorf("unexpected content: %s", text)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_ReplyError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(789))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 0, fmt.Errorf("delivery failed")
+		},
+	}
+
+	params := ElicitParams{
+		TaskID:  monoflake.ID(1).String(),
+		Message: "q?",
+		Mode:    "url",
+		URL:     "https://example.com",
+	}
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected IsError=true")
+	}
+	if !contains(res.Content[0].(*mcp.TextContent).Text, "failed to send elicitation request") {
+		t.Errorf("unexpected content: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_Timeout(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(321))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 222, nil
+		},
+		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			return nil
+		},
+	}
+
+	params := ElicitParams{
+		TaskID:         monoflake.ID(1).String(),
+		Message:        "q?",
+		Mode:           "url",
+		URL:            "https://example.com",
+		TimeoutSeconds: 1,
+	}
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Timeout resolves as a normal "cancel" action, not a protocol error —
+	// matching ACP's model where cancel is a legitimate response, not a failure.
+	if res.IsError {
+		t.Fatalf("expected no error on timeout, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	if !contains(res.Content[0].(*mcp.TextContent).Text, `"action":"cancel"`) {
+		t.Errorf("unexpected content: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_ContextCancelled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(654))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 333, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	params := ElicitParams{
+		TaskID:         monoflake.ID(1).String(),
+		Message:        "q?",
+		Mode:           "url",
+		URL:            "https://example.com",
+		TimeoutSeconds: 60,
+	}
+	res, _, err := ps.handleElicit(ctx, nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected IsError=true on context cancellation")
+	}
+	if !contains(res.Content[0].(*mcp.TextContent).Text, "cancelled") {
+		t.Errorf("unexpected content: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}
+
+func TestWorkspaceServer_RespondToElicitation_NotFound(t *testing.T) {
+	ps := &WorkspaceServer{elicitations: map[string]chan elicitationResponse{}}
+	err := ps.RespondToElicitation("does-not-exist", "accept", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown request ID")
+	}
+	if !contains(err.Error(), "expired") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWorkspaceServer_RespondToElicitation_AlreadyAnswered(t *testing.T) {
+	ch := make(chan elicitationResponse, 1)
+	ch <- elicitationResponse{Action: "accept"}
+	ps := &WorkspaceServer{elicitations: map[string]chan elicitationResponse{"req-1": ch}}
+
+	// The buffer is already full; a second send must not block or error.
+	if err := ps.RespondToElicitation("req-1", "decline", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_ZeroMessageID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(987))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 0, nil // e.g. reply persisted without a usable message ID
+		},
+	}
+
+	requestID := monoflake.ID(987).String()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = ps.RespondToElicitation(requestID, "accept", map[string]any{"ok": true})
+	}()
+
+	params := ElicitParams{
+		TaskID:         monoflake.ID(1).String(),
+		Message:        "q?",
+		Mode:           "url",
+		URL:            "https://example.com",
+		TimeoutSeconds: 60,
+	}
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_TimeoutClampedToMax(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(111))
+
+	ps := &WorkspaceServer{
+		pubsub: mockPS,
+		idgen:  mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 555, nil
+		},
+		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			return nil
+		},
+	}
+
+	requestID := monoflake.ID(111).String()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = ps.RespondToElicitation(requestID, "accept", nil)
+	}()
+
+	// Requesting far more than the 1-hour cap must not make the handler
+	// actually wait that long — it should still resolve as soon as the
+	// human answers.
+	params := ElicitParams{
+		TaskID:         monoflake.ID(1).String(),
+		Message:        "q?",
+		Mode:           "url",
+		URL:            "https://example.com",
+		TimeoutSeconds: 999999,
+	}
+	res, _, err := ps.handleElicit(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}

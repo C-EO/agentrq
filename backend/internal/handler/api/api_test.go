@@ -374,3 +374,83 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 		t.Fatalf("expected status 403, got %d", resp.StatusCode)
 	}
 }
+
+func TestRespondToElicitation_RequiresWorkspaceAccess(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{}
+
+	h := &handler{
+		crud: crudCtrl,
+		// Intentionally leave MCPManager nil: unauthorized requests must fail
+		// before any elicitation response can be dispatched to a workspace server.
+	}
+
+	workspaceID := monoflake.ID(1).String()
+	taskID := monoflake.ID(2).String()
+	userID := monoflake.ID(100).String()
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", func(c *fiber.Ctx) error {
+		c.Locals("user_id", userID)
+		return h.respondToElicitation()(c)
+	})
+
+	crudCtrl.checkWorkspaceAccessFunc = func(ctx context.Context, id int64, gotUserID string) (bool, error) {
+		if id != 1 {
+			t.Fatalf("expected workspace ID 1, got %d", id)
+		}
+		if gotUserID != userID {
+			t.Fatalf("expected user ID %s, got %s", userID, gotUserID)
+		}
+		return false, nil
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+workspaceID+"/tasks/"+taskID+"/elicitation",
+		bytes.NewBufferString(`{"requestId":"req-1","action":"accept"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestRespondToElicitation_InvalidPayload(t *testing.T) {
+	app := fiber.New()
+	h := &handler{}
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/elicitation", h.respondToElicitation())
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"malformed JSON", `not json`},
+		{"missing requestId", `{"action":"accept"}`},
+		{"invalid action", `{"requestId":"req-1","action":"maybe"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/elicitation",
+				bytes.NewBufferString(tt.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d", resp.StatusCode)
+			}
+		})
+	}
+}

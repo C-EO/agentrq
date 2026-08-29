@@ -20,20 +20,21 @@ import (
 )
 
 const (
-	_routePathTasks      = "/workspaces/:id/tasks"
-	_routePathTask       = "/workspaces/:id/tasks/:taskID"
-	_routePathRespond    = "/workspaces/:id/tasks/:taskID/respond"
-	_routePathReply      = "/workspaces/:id/tasks/:taskID/reply"
-	_routePathStatus     = "/workspaces/:id/tasks/:taskID/status"
-	_routePathOrder      = "/workspaces/:id/tasks/:taskID/order"
-	_routePathScheduled  = "/workspaces/:id/tasks/:taskID/scheduled"
-	_routePathAssignee   = "/workspaces/:id/tasks/:taskID/assignee"
-	_routePathWorkspace  = "/workspaces/:id/tasks/:taskID/workspace"
-	_routePathAllowAll   = "/workspaces/:id/tasks/:taskID/allow_all"
-	_routePathPermission = "/workspaces/:id/tasks/:taskID/permission"
-	_routePathEvents     = "/workspaces/:id/events"
-	_routePathAttachment = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
-	_routePathCounts     = "/workspaces/:id/tasks/counts"
+	_routePathTasks       = "/workspaces/:id/tasks"
+	_routePathTask        = "/workspaces/:id/tasks/:taskID"
+	_routePathRespond     = "/workspaces/:id/tasks/:taskID/respond"
+	_routePathReply       = "/workspaces/:id/tasks/:taskID/reply"
+	_routePathStatus      = "/workspaces/:id/tasks/:taskID/status"
+	_routePathOrder       = "/workspaces/:id/tasks/:taskID/order"
+	_routePathScheduled   = "/workspaces/:id/tasks/:taskID/scheduled"
+	_routePathAssignee    = "/workspaces/:id/tasks/:taskID/assignee"
+	_routePathWorkspace   = "/workspaces/:id/tasks/:taskID/workspace"
+	_routePathAllowAll    = "/workspaces/:id/tasks/:taskID/allow_all"
+	_routePathPermission  = "/workspaces/:id/tasks/:taskID/permission"
+	_routePathElicitation = "/workspaces/:id/tasks/:taskID/elicitation"
+	_routePathEvents      = "/workspaces/:id/events"
+	_routePathAttachment  = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
+	_routePathCounts      = "/workspaces/:id/tasks/counts"
 )
 
 func (h *handler) registerTaskRoutes() error {
@@ -52,6 +53,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Patch(_routePathAllowAll, h.updateTaskAllowAllCommands())
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
+	h.router.Post(_routePathElicitation, h.respondToElicitation())
 	h.router.Delete(_routePathTask, h.deleteTask())
 	h.router.Get(_routePathEvents, h.sseEvents())
 	h.router.Get(_routePathAttachment, h.getAttachment())
@@ -592,6 +594,38 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
+		}
+
+		return c.SendStatus(http.StatusOK)
+	}
+}
+
+func (h *handler) respondToElicitation() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var rq view.RespondToElicitationRequest
+		if err := c.BodyParser(&rq); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
+		}
+		if rq.RequestID == "" || (rq.Action != "accept" && rq.Action != "decline" && rq.Action != "cancel") {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "requestId and a valid action ('accept', 'decline', or 'cancel') are required"})
+		}
+
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		userID := c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if ok, err := h.crud.CheckWorkspaceAccess(ctx, workspaceID, userID); err != nil || !ok {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		srv := h.mcpManager.Get(workspaceID, userID)
+		if srv == nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
+		}
+
+		if err := srv.RespondToElicitation(rq.RequestID, rq.Action, rq.Content); err != nil {
+			return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This request has expired (the agent stopped waiting, or the server restarted). The agent must ask again."})
 		}
 
 		return c.SendStatus(http.StatusOK)

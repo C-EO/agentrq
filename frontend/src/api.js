@@ -221,6 +221,16 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   if (!res.ok) throw new Error('Failed to send verdict');
   return res;
 }
+
+export async function respondToElicitation(workspaceId, taskId, requestId, action, content) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/elicitation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, action, content })
+  });
+  if (!res.ok) throw new Error('Failed to send response');
+  return res;
+}
 export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
     method: 'PUT',
