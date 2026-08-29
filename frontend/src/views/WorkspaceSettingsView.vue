@@ -66,6 +66,14 @@
                     </select>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
                   </div>
+
+                  <div class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50">
+                    <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message Send Delay</label>
+                    <select v-model.number="form.inputSendDelaySeconds" class="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs">
+                      <option v-for="opt in INPUT_SEND_DELAY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                    </select>
+                    <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Hold sent messages for a countdown before delivery, with a chance to cancel.</p>
+                  </div>
                 </div>
 
                 <!-- Setup -->
@@ -601,6 +609,15 @@ const linkingSlack = ref(false);
 const slackError = ref('');
 const showManualForm = ref(false);
 const voiceLanguage = ref('auto');
+const INPUT_SEND_DELAY_OPTIONS = [
+  { value: 0, label: 'Off (send immediately)' },
+  { value: 3, label: '3 seconds' },
+  { value: 5, label: '5 seconds' },
+  { value: 10, label: '10 seconds' },
+  { value: 15, label: '15 seconds' },
+  { value: 30, label: '30 seconds' },
+  { value: 60, label: '60 seconds' }
+];
 
 const { checkWorkspaceSubscription, subscribeWorkspace, unsubscribeWorkspace } = usePushNotifications();
 const isPushSubscribed = ref(false);
@@ -837,7 +854,8 @@ const form = ref({
   },
   autoAllowedTools: [],
   allowAllCommands: false,
-  selfLearningLoopNote: ''
+  selfLearningLoopNote: '',
+  inputSendDelaySeconds: 0
 });
 
 watch(() => form.value.name, (newVal) => {
@@ -867,7 +885,8 @@ async function load() {
       },
       autoAllowedTools: workspace.value.autoAllowedTools || [],
       allowAllCommands: workspace.value.allowAllCommands || false,
-      selfLearningLoopNote: workspace.value.selfLearningLoopNote || ''
+      selfLearningLoopNote: workspace.value.selfLearningLoopNote || '',
+      inputSendDelaySeconds: workspace.value.inputSendDelaySeconds || 0
     };
     slackConfig.value = workspace.value.slack || null;
     if (slackConfig.value) {

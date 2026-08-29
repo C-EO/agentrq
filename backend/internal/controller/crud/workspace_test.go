@@ -135,7 +135,7 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 
 	resp, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
 		UserID:    testUserIDStr,
-		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}, AllowAllCommands: true, SelfLearningLoopNote: "Be mindful."},
+		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}, AllowAllCommands: true, SelfLearningLoopNote: "Be mindful.", InputSendDelaySeconds: 10},
 	})
 
 	if err != nil {
@@ -149,6 +149,22 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 	}
 	if resp.Workspace.SelfLearningLoopNote != "Be mindful." {
 		t.Errorf("expected SelfLearningLoopNote to be updated")
+	}
+	if resp.Workspace.InputSendDelaySeconds != 10 {
+		t.Errorf("expected InputSendDelaySeconds to be 10, got %d", resp.Workspace.InputSendDelaySeconds)
+	}
+}
+
+func TestUpdateWorkspace_InvalidInputSendDelaySeconds_Fails(t *testing.T) {
+	e := newTestController(t)
+
+	_, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
+		UserID:    testUserIDStr,
+		Workspace: entity.Workspace{ID: 1, Name: "updated", InputSendDelaySeconds: 7},
+	})
+
+	if err == nil {
+		t.Fatalf("expected an error for invalid InputSendDelaySeconds")
 	}
 }
 

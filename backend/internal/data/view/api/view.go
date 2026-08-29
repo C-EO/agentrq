@@ -9,21 +9,22 @@ type (
 	// Workspace views
 
 	Workspace struct {
-		ID                   string                `json:"id"`
-		CreatedAt            time.Time             `json:"createdAt"`
-		UpdatedAt            time.Time             `json:"updatedAt"`
-		Name                 string                `json:"name"`
-		Description          string                `json:"description"`
-		ArchivedAt           *time.Time            `json:"archivedAt,omitempty"`
-		Icon                 string                `json:"icon,omitempty"`
-		NotificationSettings *NotificationSettings `json:"notificationSettings,omitempty"`
-		AgentConnected       bool                  `json:"agentConnected"`
-		MCPURL               string                `json:"mcpUrl"`
-		MCPToken             string                `json:"mcpToken,omitempty"`
-		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
-		AllowAllCommands     bool                  `json:"allowAllCommands"`
-		SelfLearningLoopNote string                `json:"selfLearningLoopNote,omitempty"`
-		Slack                *SlackConfig          `json:"slack,omitempty"`
+		ID                    string                `json:"id"`
+		CreatedAt             time.Time             `json:"createdAt"`
+		UpdatedAt             time.Time             `json:"updatedAt"`
+		Name                  string                `json:"name"`
+		Description           string                `json:"description"`
+		ArchivedAt            *time.Time            `json:"archivedAt,omitempty"`
+		Icon                  string                `json:"icon,omitempty"`
+		NotificationSettings  *NotificationSettings `json:"notificationSettings,omitempty"`
+		AgentConnected        bool                  `json:"agentConnected"`
+		MCPURL                string                `json:"mcpUrl"`
+		MCPToken              string                `json:"mcpToken,omitempty"`
+		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
+		AllowAllCommands      bool                  `json:"allowAllCommands"`
+		SelfLearningLoopNote  string                `json:"selfLearningLoopNote,omitempty"`
+		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
+		Slack                 *SlackConfig          `json:"slack,omitempty"`
 	}
 
 	SlackConfig struct {

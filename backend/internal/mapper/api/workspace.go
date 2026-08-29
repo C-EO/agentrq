@@ -19,12 +19,13 @@ func FromHTTPRequestToCreateWorkspaceRequestEntity(c *fiber.Ctx) *entity.CreateW
 	}
 	return &entity.CreateWorkspaceRequest{
 		Workspace: entity.Workspace{
-			Name:                 payload.Workspace.Name,
-			Description:          payload.Workspace.Description,
-			Icon:                 payload.Workspace.Icon,
-			NotificationSettings: fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
-			AllowAllCommands:     payload.Workspace.AllowAllCommands,
-			SelfLearningLoopNote: payload.Workspace.SelfLearningLoopNote,
+			Name:                  payload.Workspace.Name,
+			Description:           payload.Workspace.Description,
+			Icon:                  payload.Workspace.Icon,
+			NotificationSettings:  fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
+			AllowAllCommands:      payload.Workspace.AllowAllCommands,
+			SelfLearningLoopNote:  payload.Workspace.SelfLearningLoopNote,
+			InputSendDelaySeconds: payload.Workspace.InputSendDelaySeconds,
 		},
 	}
 }
@@ -108,14 +109,15 @@ func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateW
 	}
 	return &entity.UpdateWorkspaceRequest{
 		Workspace: entity.Workspace{
-			ID:                   id,
-			Name:                 payload.Workspace.Name,
-			Description:          payload.Workspace.Description,
-			Icon:                 payload.Workspace.Icon,
-			NotificationSettings: fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
-			AutoAllowedTools:     payload.Workspace.AutoAllowedTools,
-			AllowAllCommands:     payload.Workspace.AllowAllCommands,
-			SelfLearningLoopNote: payload.Workspace.SelfLearningLoopNote,
+			ID:                    id,
+			Name:                  payload.Workspace.Name,
+			Description:           payload.Workspace.Description,
+			Icon:                  payload.Workspace.Icon,
+			NotificationSettings:  fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
+			AutoAllowedTools:      payload.Workspace.AutoAllowedTools,
+			AllowAllCommands:      payload.Workspace.AllowAllCommands,
+			SelfLearningLoopNote:  payload.Workspace.SelfLearningLoopNote,
+			InputSendDelaySeconds: payload.Workspace.InputSendDelaySeconds,
 		},
 	}
 }
@@ -138,19 +140,20 @@ func FromUpdateWorkspaceResponseEntityToMCPResponse(rs *entity.Workspace, mcpURL
 
 func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace {
 	v := view.Workspace{
-		ID:                   monoflake.ID(p.ID).String(),
-		CreatedAt:            p.CreatedAt,
-		UpdatedAt:            p.UpdatedAt,
-		Name:                 p.Name,
-		Description:          p.Description,
-		Icon:                 p.Icon,
-		ArchivedAt:           p.ArchivedAt,
-		NotificationSettings: fromEntityNotificationSettingsToView(p.NotificationSettings),
-		AgentConnected:       p.AgentConnected,
-		MCPURL:               mcpURL,
-		AutoAllowedTools:     p.AutoAllowedTools,
-		AllowAllCommands:     p.AllowAllCommands,
-		SelfLearningLoopNote: p.SelfLearningLoopNote,
+		ID:                    monoflake.ID(p.ID).String(),
+		CreatedAt:             p.CreatedAt,
+		UpdatedAt:             p.UpdatedAt,
+		Name:                  p.Name,
+		Description:           p.Description,
+		Icon:                  p.Icon,
+		ArchivedAt:            p.ArchivedAt,
+		NotificationSettings:  fromEntityNotificationSettingsToView(p.NotificationSettings),
+		AgentConnected:        p.AgentConnected,
+		MCPURL:                mcpURL,
+		AutoAllowedTools:      p.AutoAllowedTools,
+		AllowAllCommands:      p.AllowAllCommands,
+		SelfLearningLoopNote:  p.SelfLearningLoopNote,
+		InputSendDelaySeconds: p.InputSendDelaySeconds,
 	}
 	if p.Slack != nil {
 		v.Slack = &view.SlackConfig{

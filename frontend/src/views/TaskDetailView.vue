@@ -568,6 +568,14 @@
           </div>
         </div>
 
+        <!-- Pending delayed send: countdown + cancel/send now -->
+        <div v-if="pendingSend" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-105 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
+          <span class="w-2.5 h-2.5 rounded-full bg-gray-900 dark:bg-white animate-pulse shrink-0"></span>
+          <p class="text-[10px] text-gray-700 dark:text-zinc-300 font-bold flex-1 min-w-0 truncate">Sending in {{ pendingSend.secondsLeft }}s&hellip;</p>
+          <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+          <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
+        </div>
+
         <!-- Status Warning Messages -->
         <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex items-center gap-3 mt-2 px-3 py-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-sm">
              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
@@ -660,6 +668,7 @@ const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
+const pendingSend = ref(null); // { text, atts, secondsLeft, intervalId } while a delayed send counts down
 
 const {
   isRecording: sttRecording,
@@ -991,15 +1000,7 @@ const toggleYOLO = async () => {
   }
 };
 
-async function submitReply() {
-  if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
-  const text = replyText.value;
-  const atts = [...replyAttachments.value];
-  replyText.value = '';
-  replyAttachments.value = [];
-  nextTick(() => {
-    adjustTextareaHeight();
-  });
+async function deliverReply(text, atts) {
   try {
     const res = await respondToTask(workspaceId.value, taskId.value, 'text', text, atts);
     task.value = res.task;
@@ -1011,6 +1012,55 @@ async function submitReply() {
       adjustTextareaHeight();
     });
   }
+}
+
+async function submitReply() {
+  if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
+  const text = replyText.value;
+  const atts = [...replyAttachments.value];
+  replyText.value = '';
+  replyAttachments.value = [];
+  nextTick(() => {
+    adjustTextareaHeight();
+  });
+
+  const delaySeconds = workspace.value?.inputSendDelaySeconds || 0;
+  if (delaySeconds <= 0) {
+    await deliverReply(text, atts);
+    return;
+  }
+
+  const pending = { text, atts, secondsLeft: delaySeconds };
+  pending.intervalId = setInterval(() => {
+    pending.secondsLeft -= 1;
+    if (pending.secondsLeft <= 0) {
+      clearInterval(pending.intervalId);
+      pendingSend.value = null;
+      deliverReply(pending.text, pending.atts);
+    }
+  }, 1000);
+  pendingSend.value = pending;
+}
+
+function sendPendingNow() {
+  const pending = pendingSend.value;
+  if (!pending) return;
+  clearInterval(pending.intervalId);
+  pendingSend.value = null;
+  deliverReply(pending.text, pending.atts);
+}
+
+function cancelPendingSend() {
+  const pending = pendingSend.value;
+  if (!pending) return;
+  clearInterval(pending.intervalId);
+  pendingSend.value = null;
+  replyText.value = pending.text;
+  replyAttachments.value = pending.atts;
+  nextTick(() => {
+    adjustTextareaHeight();
+    textareaRef.value?.focus();
+  });
 }
 
 const textareaRef = ref(null);
@@ -1103,6 +1153,9 @@ onMounted(() => {
   load();
 });
 onUnmounted(disconnect);
+onUnmounted(() => {
+  if (pendingSend.value) clearInterval(pendingSend.value.intervalId);
+});
 function getSlackUser(m) {
   return m.metadata?.slack_user || 'Slack';
 }

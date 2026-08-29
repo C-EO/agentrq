@@ -9,18 +9,19 @@ import (
 type (
 	// Workspace hosts an agentrq workspace
 	Workspace struct {
-		ID                   int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt            time.Time
-		UpdatedAt            time.Time
-		UserID               int64  `gorm:"index:idx_workspaces_user_id"`
-		Name                 string `gorm:"type:varchar(128)"`
-		Description          string `gorm:"type:text"`
-		ArchivedAt           *time.Time
-		Icon                 string         `gorm:"type:text"`
-		NotificationSettings datatypes.JSON `gorm:"type:text"`
-		AutoAllowedTools     datatypes.JSON `gorm:"type:text"`
-		AllowAllCommands     bool           `gorm:"default:false"`
-		SelfLearningLoopNote string         `gorm:"type:text"`
+		ID                    int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt             time.Time
+		UpdatedAt             time.Time
+		UserID                int64  `gorm:"index:idx_workspaces_user_id"`
+		Name                  string `gorm:"type:varchar(128)"`
+		Description           string `gorm:"type:text"`
+		ArchivedAt            *time.Time
+		Icon                  string         `gorm:"type:text"`
+		NotificationSettings  datatypes.JSON `gorm:"type:text"`
+		AutoAllowedTools      datatypes.JSON `gorm:"type:text"`
+		AllowAllCommands      bool           `gorm:"default:false"`
+		SelfLearningLoopNote  string         `gorm:"type:text"`
+		InputSendDelaySeconds int            `gorm:"default:0"`
 	}
 
 	// Task hosts a task created by a human or an agent within a workspace

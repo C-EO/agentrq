@@ -20,20 +20,21 @@ type (
 
 	// Workspace entity
 	Workspace struct {
-		ID                   int64
-		CreatedAt            time.Time
-		UpdatedAt            time.Time
-		UserID               int64
-		Name                 string
-		Description          string
-		ArchivedAt           *time.Time
-		Icon                 string
-		NotificationSettings *NotificationSettings
-		AgentConnected       bool
-		AutoAllowedTools     []string
-		AllowAllCommands     bool
-		SelfLearningLoopNote string
-		Slack                *SlackConfig
+		ID                    int64
+		CreatedAt             time.Time
+		UpdatedAt             time.Time
+		UserID                int64
+		Name                  string
+		Description           string
+		ArchivedAt            *time.Time
+		Icon                  string
+		NotificationSettings  *NotificationSettings
+		AgentConnected        bool
+		AutoAllowedTools      []string
+		AllowAllCommands      bool
+		SelfLearningLoopNote  string
+		InputSendDelaySeconds int
+		Slack                 *SlackConfig
 	}
 
 	// SlackConfig holds the Slack channel linked to a workspace.

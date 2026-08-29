@@ -20,14 +20,15 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 
 	now := time.Now()
 	m := model.Workspace{
-		ID:          c.idgen.NextID(),
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		UserID:      userID,
-		Name:                 req.Workspace.Name,
-		Description:          req.Workspace.Description,
-		AllowAllCommands:     req.Workspace.AllowAllCommands,
-		SelfLearningLoopNote: req.Workspace.SelfLearningLoopNote,
+		ID:                    c.idgen.NextID(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		UserID:                userID,
+		Name:                  req.Workspace.Name,
+		Description:           req.Workspace.Description,
+		AllowAllCommands:      req.Workspace.AllowAllCommands,
+		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
+		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
 	}
 
 	if req.Workspace.NotificationSettings != nil {
@@ -154,8 +155,15 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 	return err
 }
 
+// validInputSendDelaySeconds are the only values the composer's send-delay
+// selector may offer; anything else is rejected rather than silently clamped.
+var validInputSendDelaySeconds = map[int]bool{0: true, 3: true, 5: true, 10: true, 15: true, 30: true, 60: true}
+
 func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.UpdateWorkspaceResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if !validInputSendDelaySeconds[req.Workspace.InputSendDelaySeconds] {
+		return nil, fmt.Errorf("invalid inputSendDelaySeconds: %d", req.Workspace.InputSendDelaySeconds)
+	}
 	m, err := c.repository.GetWorkspace(ctx, req.Workspace.ID, uid)
 	if err != nil {
 		return nil, err
@@ -168,6 +176,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	m.Description = req.Workspace.Description
 	m.AllowAllCommands = req.Workspace.AllowAllCommands
 	m.SelfLearningLoopNote = req.Workspace.SelfLearningLoopNote
+	m.InputSendDelaySeconds = req.Workspace.InputSendDelaySeconds
 	if req.Workspace.NotificationSettings != nil {
 		b, _ := json.Marshal(req.Workspace.NotificationSettings)
 		m.NotificationSettings = datatypes.JSON(b)
@@ -285,17 +294,18 @@ func (c *controller) SystemGetWorkspace(ctx context.Context, id int64) (entity.W
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 	res := entity.Workspace{
-		ID:               m.ID,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
-		UserID:           m.UserID,
-		Name:             m.Name,
-		Description:      m.Description,
-		Icon:             m.Icon,
-		ArchivedAt:       m.ArchivedAt,
-		AutoAllowedTools:     make([]string, 0),
-		AllowAllCommands:     m.AllowAllCommands,
-		SelfLearningLoopNote: m.SelfLearningLoopNote,
+		ID:                    m.ID,
+		CreatedAt:             m.CreatedAt,
+		UpdatedAt:             m.UpdatedAt,
+		UserID:                m.UserID,
+		Name:                  m.Name,
+		Description:           m.Description,
+		Icon:                  m.Icon,
+		ArchivedAt:            m.ArchivedAt,
+		AutoAllowedTools:      make([]string, 0),
+		AllowAllCommands:      m.AllowAllCommands,
+		SelfLearningLoopNote:  m.SelfLearningLoopNote,
+		InputSendDelaySeconds: m.InputSendDelaySeconds,
 	}
 	if len(m.AutoAllowedTools) > 0 {
 		_ = json.Unmarshal(m.AutoAllowedTools, &res.AutoAllowedTools)
