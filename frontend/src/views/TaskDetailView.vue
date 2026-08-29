@@ -168,8 +168,8 @@
           <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center shrink-0 mt-0.5">
             <svg class="w-4 h-4 text-gray-700 dark:text-zinc-100" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
           </div>
-          <div class="flex flex-col items-start min-w-0">
-             <div class="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+          <div class="flex flex-col items-start min-w-0 max-w-full">
+             <div class="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0 max-w-full">
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">Agent · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
@@ -193,46 +193,47 @@
                      <svg class="w-3.5 h-3.5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                      <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Authorization Required</span>
                    </div>
-                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ m.metadata.requestId }}</span>
+                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ permMeta(m).requestId }}</span>
                  </div>
-                 <div class="p-3 flex flex-col gap-3">
-                   <div>
-                     <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500">Action</span>
-                     <p class="text-xs font-semibold text-gray-800 dark:text-zinc-200 mt-0.5 break-all">{{ m.metadata.toolName }}</p>
-                   </div>
-                   <p v-if="m.metadata.description" class="text-xs text-gray-600 dark:text-zinc-400 font-medium italic border-l-2 border-gray-300 dark:border-zinc-600 pl-2">"{{ m.metadata.description }}"</p>
-                   <pre v-if="m.metadata.inputPreview" class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ m.metadata.inputPreview }}</pre>
+                 <div class="p-3 flex flex-col gap-3 min-w-0">
+                   <template v-if="m.metadata.status === 'pending'">
+                     <div class="min-w-0">
+                       <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500">Action</span>
+                       <pre class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar mt-0.5">{{ permMeta(m).toolName }}</pre>
+                     </div>
+                     <pre v-if="permMeta(m).inputPreview" class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ permMeta(m).inputPreview }}</pre>
 
-                   <!-- Pending verdict buttons -->
-                   <div v-if="m.metadata.status === 'pending'" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
-                      <button @click="handleVerdict(m.metadata.request_id, 'allow')"
-                              :disabled="!!workspace.archivedAt"
-                              class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
-                        Allow Once
-                      </button>
-                      <button @click="handleVerdict(m.metadata.request_id, 'allow_always')"
-                              :disabled="!!workspace.archivedAt"
-                              class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
-                        Always Allow
-                      </button>
-                      <button @click="handleVerdict(m.metadata.request_id, 'deny')"
-                              :disabled="!!workspace.archivedAt"
-                              class="px-3 py-1.5 rounded-sm bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-700 dark:text-red-500 text-[10px] font-semibold transition-all disabled:opacity-50 border border-red-100 dark:border-red-500/20">
-                        Deny
-                      </button>
-                   </div>
+                     <!-- Pending verdict buttons -->
+                     <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                        <button @click="handleVerdict(permMeta(m).requestId, 'allow')"
+                                :disabled="!!workspace.archivedAt"
+                                class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                          Allow Once
+                        </button>
+                        <button @click="handleVerdict(permMeta(m).requestId, 'allow_always')"
+                                :disabled="!!workspace.archivedAt"
+                                class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                          Always Allow
+                        </button>
+                        <button @click="handleVerdict(permMeta(m).requestId, 'deny')"
+                                :disabled="!!workspace.archivedAt"
+                                class="px-3 py-1.5 rounded-sm bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-700 dark:text-red-500 text-[10px] font-semibold transition-all disabled:opacity-50 border border-red-100 dark:border-red-500/20">
+                          Deny
+                        </button>
+                     </div>
+                   </template>
 
                    <!-- Resolved verdict (collapsible) -->
                    <div v-else
                         @click="m._detailsExpanded = !m._detailsExpanded"
-                        class="border rounded-sm cursor-pointer transition-all select-none overflow-hidden"
+                        class="border rounded-sm cursor-pointer transition-all select-none overflow-hidden min-w-0"
                         :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/5'">
-                     <div class="flex items-center gap-2.5 px-3 py-2">
+                     <div class="flex items-center gap-2.5 px-3 py-2 min-w-0">
                        <svg v-if="m.metadata.status === 'allow' || m.metadata.status === 'allow_always'" class="w-3.5 h-3.5 text-gray-700 dark:text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
                        <svg v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                       <span class="text-[10px] font-semibold flex-1 truncate break-all"
+                       <span class="text-[10px] font-semibold flex-1 min-w-0 truncate"
                              :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-700 dark:text-zinc-100' : 'text-red-700 dark:text-red-500'">
-                         {{ m.metadata.toolName }}
+                         {{ permMeta(m).toolName }}
                        </span>
                        <span class="text-[9px] font-semibold shrink-0"
                              :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-500 dark:text-zinc-400' : 'text-red-600 dark:text-red-500'">
@@ -240,10 +241,10 @@
                        </span>
                        <svg class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                      </div>
-                     <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed"
+                     <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed min-w-0"
                           :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700' : 'border-red-200 dark:border-red-500/20'">
-                       <p v-if="m.metadata.description" class="text-[11px] text-gray-600 dark:text-zinc-400 italic mb-2">"{{ m.metadata.description }}"</p>
-                       <pre v-if="m.metadata.inputPreview" class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all mb-2">{{ m.metadata.inputPreview }}</pre>
+                       <pre class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all mb-2">{{ permMeta(m).toolName }}</pre>
+                       <pre v-if="permMeta(m).inputPreview" class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all mb-2">{{ permMeta(m).inputPreview }}</pre>
                      </div>
                    </div>
                  </div>
@@ -269,8 +270,8 @@
                <path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9-13.2-13.2-13.2H80z"/>
              </svg>
           </div>
-          <div class="flex flex-col items-end min-w-0">
-             <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+          <div class="flex flex-col items-end min-w-0 max-w-full">
+             <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0 max-w-full">
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
@@ -304,8 +305,8 @@
           <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center shrink-0 mt-0.5 overflow-hidden">
              <svg class="w-4 h-4 text-gray-600 dark:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
           </div>
-          <div class="flex flex-col items-end min-w-0">
-             <div class="bg-gray-200 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-300 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+          <div class="flex flex-col items-end min-w-0 max-w-full">
+             <div class="bg-gray-200 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-300 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0 max-w-full">
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
@@ -529,6 +530,22 @@ const scrollContainer = ref(null);
 const isDragging = ref(false);
 let dragCounter = 0;
 
+// Normalizes permission_request metadata: the API now sends camelCase keys,
+// but messages persisted before that change still have snake_case keys.
+function permMeta(m) {
+  const md = m.metadata || {};
+  const toolName = md.toolName ?? md.tool_name;
+  const rawPreview = md.inputPreview ?? md.input_preview;
+  // Some harnesses relay the same command as both toolName and inputPreview
+  // (no distinct structured payload) — don't render it twice in that case.
+  const inputPreview = rawPreview && rawPreview !== toolName ? rawPreview : null;
+  return {
+    requestId: md.requestId ?? md.request_id,
+    toolName,
+    inputPreview,
+  };
+}
+
 const rawMessages = ref(new Set());
 function toggleMessageRender(id) {
   const s = new Set(rawMessages.value);
@@ -675,9 +692,14 @@ function scrollToBottom() {
   }
 }
 
+// Not deep: a new/updated message always produces a new array from the
+// computed above, so a shallow watch already catches it. Deep watching would
+// also fire on in-place UI-only mutations on existing messages (e.g. toggling
+// a resolved permission card's expanded state), yanking the scroll position
+// to the bottom just from expanding a card.
 watch(sortedMessages, () => {
   scrollToBottom();
-}, { deep: true });
+});
 
 async function load() {
   try {

@@ -151,19 +151,22 @@ const items = computed(() => {
   const fromMessages = (props.messages || []).map(m => {
     const isPermissionRequest = m.metadata?.type === 'permission_request';
     if (isPermissionRequest) {
-      const toolName = m.metadata?.toolName || 'Permission Request';
+      // The API sends camelCase keys; messages persisted before that change
+      // still have snake_case keys, so fall back to those.
+      const toolName = m.metadata?.toolName || m.metadata?.tool_name || 'Permission Request';
+      const inputPreview = m.metadata?.inputPreview || m.metadata?.input_preview;
       return {
         id: `m-${m.id}`,
         lane: 'tool',
         laneLabel: 'TOOL',
         createdAt: m.createdAt,
         label: toolName,
-        preview: truncate(`${toolName} ${m.metadata?.inputPreview || m.metadata?.description || ''}`, 140),
+        preview: truncate(`${toolName} ${inputPreview || m.metadata?.description || ''}`, 140),
         raw: {
           ...m,
           toolName,
           description: m.metadata?.description,
-          inputPreview: m.metadata?.inputPreview,
+          inputPreview,
           status: permissionStatus(m.metadata?.status),
         },
       };
