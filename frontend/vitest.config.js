@@ -50,6 +50,10 @@ export default defineConfig({
         'src/composables/useTaskFinder.js',
         'src/composables/useLocalCache.js',
         'src/composables/useTaskIndex.js',
+        'src/composables/useCachedTasks.js',
+        'src/composables/useCacheStorage.js',
+        'src/composables/useCachedReads.js',
+        'src/composables/useAttachmentCache.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

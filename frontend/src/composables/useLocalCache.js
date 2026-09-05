@@ -336,6 +336,53 @@ export async function listCachedTasks(db, workspaceId, KeyRange = globalThis.IDB
 }
 
 /**
+ * The primary keys of every task carrying a term in `range`.
+ *
+ * Keys rather than records, because a query with two words asks this twice and
+ * only the intersection is worth reading. Fetching whole records for each word
+ * and discarding most of them is the version of this that does not scale.
+ */
+export async function taskKeysForTerm(db, range) {
+  if (!db) return [];
+
+  return attempt(async () => {
+    const tx = db.transaction(STORE_TASKS, 'readonly');
+    return requestResult(tx.objectStore(STORE_TASKS).index('by_term').getAllKeys(range));
+  }, []);
+}
+
+/** The task records for a set of primary keys, in the order given. */
+export async function tasksByKeys(db, keys) {
+  const list = Array.isArray(keys) ? keys : [];
+  if (!db || list.length === 0) return [];
+
+  return attempt(async () => {
+    const tx = db.transaction(STORE_TASKS, 'readonly');
+    const store = tx.objectStore(STORE_TASKS);
+    const rows = await Promise.all(list.map((key) => requestResult(store.get(key))));
+    return rows.filter(Boolean);
+  }, []);
+}
+
+/**
+ * Every cached task, across every workspace, newest first.
+ *
+ * One scan rather than a read per workspace, because the caller that needs this
+ * is the global list on first paint — and at that moment it does not yet know
+ * which workspaces exist. Asking the server for that list first would put a
+ * round trip in front of the very thing the cache exists to avoid.
+ */
+export async function listAllCachedTasks(db) {
+  if (!db) return [];
+
+  return attempt(async () => {
+    const tx = db.transaction(STORE_TASKS, 'readonly');
+    const rows = await requestResult(tx.objectStore(STORE_TASKS).getAll());
+    return rows.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+  }, []);
+}
+
+/**
  * Forget everything cached for one workspace, leaving the others untouched.
  *
  * This is what the settings screen's Clear button runs, and what opting out of

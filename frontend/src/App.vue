@@ -394,6 +394,8 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import Toast from './components/Toast.vue'
+import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
+import { forgetEverything } from './composables/useCacheStorage'
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
 import {
@@ -545,6 +547,14 @@ watch(events, (newEvents) => {
     workspaceStore.updateWorkspaceMetadata(event.payload)
   }
   
+  // Keep the local copy current. Merged against what the cache already holds
+  // rather than written straight through: a payload built without its relations
+  // is indistinguishable from one whose relations are genuinely empty, and this
+  // stream carries tasks nobody has open to merge against. See useCachedTasks.
+  if (event.type === 'task.created' || event.type === 'task.updated') {
+    cacheTaskEvent(sharedCache(), event.payload)
+  }
+
   if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
     notifySuccess(`Agent started a new task: ${event.payload.title}`)
   } else if (event.type === 'task.updated') {
@@ -584,6 +594,10 @@ const hideTooltip = () => {
 
 async function logout() {
   await unsubscribePush()
+  // Unconditional, and before the request: a browser several people use must
+  // not leave one person's task titles readable by the next, and that has to
+  // hold even if the sign-out call itself fails.
+  await forgetEverything({ userId: user.value?.id })
   await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' })
   router.push('/login')
 }
@@ -596,6 +610,10 @@ const loadUser = async () => {
   if (isLoginPage.value) return;
   try {
     user.value = await fetchUser()
+    // The database is named for the signed-in user, so it cannot be opened
+    // before we know who that is. Failing to open one is not an error worth
+    // showing: the app reads from the network either way.
+    if (user.value?.id) connectCache(user.value.id)
   } catch (err) {
     console.error('Failed to fetch user:', err)
   }
