@@ -3,11 +3,14 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   DEDUPE_WINDOW_MS,
   NOTIFIABLE_TYPES,
+  SELF_ACTION_WINDOW_MS,
   createNotificationGate,
+  createSelfActionGate,
   badgeFor,
   createUnreadCounter,
   mapEventToNotification,
   shouldNotify,
+  taskIdFromSelfActionRequest,
   truncate,
 } from '../src/main/notifications.js'
 
@@ -132,6 +135,119 @@ describe('mapEventToNotification', () => {
   it('copes with a status that is missing', () => {
     expect(mapEventToNotification(event('status.updated', { status: undefined }), names).title)
       .toBe('Task : Ship the desktop app')
+  })
+})
+
+describe('taskIdFromSelfActionRequest', () => {
+  it('reads the task id out of a reply request', () => {
+    expect(taskIdFromSelfActionRequest('POST', '/api/v1/workspaces/ws1/tasks/t1/reply')).toBe('t1')
+  })
+
+  it('reads the task id out of a respond request', () => {
+    expect(taskIdFromSelfActionRequest('POST', '/api/v1/workspaces/ws1/tasks/t1/respond')).toBe('t1')
+  })
+
+  it('is case-insensitive on the method, matching how Electron reports it', () => {
+    expect(taskIdFromSelfActionRequest('post', '/api/v1/workspaces/ws1/tasks/t1/reply')).toBe('t1')
+  })
+
+  it('ignores a GET on the same path', () => {
+    // Fetching a task's detail is not sending anything.
+    expect(taskIdFromSelfActionRequest('GET', '/api/v1/workspaces/ws1/tasks/t1/reply')).toBeNull()
+  })
+
+  it('ignores requests that are not a reply or respond', () => {
+    expect(taskIdFromSelfActionRequest('POST', '/api/v1/workspaces/ws1/tasks/t1/status')).toBeNull()
+    expect(taskIdFromSelfActionRequest('POST', '/api/v1/workspaces/ws1/tasks')).toBeNull()
+    expect(taskIdFromSelfActionRequest('PATCH', '/api/v1/workspaces/ws1/tasks/t1/reply')).toBeNull()
+  })
+
+  it('does not match a reply nested under something else', () => {
+    expect(taskIdFromSelfActionRequest('POST', '/api/v1/workspaces/ws1/tasks/t1/reply/extra')).toBeNull()
+  })
+})
+
+describe('createSelfActionGate', () => {
+  it('reports no recent self-action for a task never marked', () => {
+    expect(createSelfActionGate().isRecentSelfAction('t1', 'reply.received')).toBe(false)
+  })
+
+  it('reports a recent self-action right after it is marked', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
+  })
+
+  it('recognises task.updated as the other type a reply/respond can echo as', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t1', 'task.updated')).toBe(true)
+  })
+
+  it('does not mute a type a reply/respond could never produce', () => {
+    // task.created and status.updated are never the result of sending a
+    // reply, so a real one of either must still notify even for a task this
+    // desktop instance just replied to.
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t1', 'task.created')).toBe(false)
+    expect(gate.isRecentSelfAction('t1', 'status.updated')).toBe(false)
+  })
+
+  it('does not mark a task when given no id', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf(null)
+    gate.markSelf(undefined)
+    expect(gate.isRecentSelfAction(null, 'reply.received')).toBe(false)
+  })
+
+  it('does not confuse one task for another', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t2', 'reply.received')).toBe(false)
+  })
+
+  it('expires the mute once the window passes', () => {
+    let clock = 0
+    const gate = createSelfActionGate({ windowMs: 1000, now: () => clock })
+
+    gate.markSelf('t1')
+    clock = 999
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
+    clock = 1000
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
+  })
+
+  it('lets a genuine later reply on the same task notify again', () => {
+    // The mute must not persist forever just because the task was replied to
+    // once; a real agent reply after the window is news again.
+    let clock = 0
+    const gate = createSelfActionGate({ windowMs: 1000, now: () => clock })
+
+    gate.markSelf('t1')
+    clock = 2000
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
+  })
+
+  it('forgets a stale mark even when only markSelf is ever called for it again', () => {
+    // markSelf fires on every reply/respond regardless of what the stream
+    // echoes back, so isRecentSelfAction may never run for a given task (a
+    // muted workspace, say). Pruning has to happen from markSelf too, or the
+    // map would grow for the life of the process.
+    let clock = 0
+    const gate = createSelfActionGate({ windowMs: 1000, now: () => clock })
+
+    gate.markSelf('stale-task')
+    clock = 5000
+    gate.markSelf('other-task')
+
+    clock = 5001
+    expect(gate.isRecentSelfAction('stale-task', 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction('other-task', 'reply.received')).toBe(true)
+  })
+
+  it('has a sane default window', () => {
+    expect(SELF_ACTION_WINDOW_MS).toBe(10000)
   })
 })
 
