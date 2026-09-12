@@ -229,6 +229,36 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Workflows</span>
           </router-link>
+
+          <!-- Desktop only: extensions run in the app, so the browser has
+               nothing to show. Absent rather than disabled, and branched on the
+               platform store rather than by sniffing for the bridge. -->
+          <router-link v-if="platformStore.isDesktop" to="/extensions"
+              @mouseenter="showTooltip($event, 'Extensions')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/extensions') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 01-.657.643 48.39 48.39 0 01-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 01-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 00-1.003-.349c-1.036 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 01-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 00.657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 01-.349-1.003c0-1.035 1.007-1.875 2.25-1.875s2.25.84 2.25 1.875c0 .369-.128.713-.349 1.003-.215.283-.4.604-.4.959v0c0 .333.277.599.61.58a48.1 48.1 0 005.427-.63 48.05 48.05 0 00.582-4.717.532.532 0 00-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.96.401v0a.656.656 0 00.658-.663 48.422 48.422 0 00-.37-5.36c-1.886.342-3.81.542-5.766.59a.658.658 0 01-.663-.658v0z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Extensions</span>
+          </router-link>
+
+          <!-- What extensions contributed, under the screen that manages them.
+               Indented rather than mixed in with our own items, so it stays
+               visible which rows came from where. -->
+          <router-link v-for="page in extensionPages" :key="page.to" :to="page.to"
+              @mouseenter="showTooltip($event, `${page.label} — ${page.owner}`)" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-2' : 'pl-7 pr-2',
+                $route.path === page.to ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <span class="w-1.5 h-1.5 rounded-full bg-current shrink-0 opacity-50"></span>
+            <span v-if="!isCollapsed || isMobileMenuOpen" class="truncate">{{ page.label }}</span>
+          </router-link>
         </div>
 
         <!-- Sidebar Footer -->
@@ -379,6 +409,11 @@
     <CommandPalette :show="overlay === 'palette'" :shortcut-label="findTaskLabel" @close="closeOverlay()" />
     <WorkspaceSwitcher :show="overlay === 'switcher'" :current-workspace-id="currentWorkspaceId ?? ''" @close="closeOverlay()" />
     <ShortcutsHelp :show="overlay === 'help'" :mac="isMacKeyboard" @close="closeOverlay()" />
+
+    <!-- What a shortcut drew. It is here rather than in a view because `x` then
+         a key works wherever you are, so what it opens has to as well. -->
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel"
+                        @action="onExtensionPanelAction" @close="extensionSurfaces.dismiss" />
   </div>
 </template>
 
@@ -422,6 +457,9 @@ import {
   useShortcuts,
   usesCommandKey,
 } from './composables/useKeyboardShortcuts'
+import { useExtensionPages } from './composables/useExtensionPages'
+import { useExtensionShortcuts } from './composables/useExtensionShortcuts'
+import ExtensionViewPanel from './components/ExtensionViewPanel.vue'
 
 const appVersion = __APP_VERSION__
 const { needRefresh, updateServiceWorker } = useRegisterSW()
@@ -614,6 +652,104 @@ function recordShortcutUse() {
   recordUiAction(TELEMETRY_UI_SHORTCUT_USE, route)
 }
 
+/**
+ * What extensions contribute, and the keys they claimed.
+ *
+ * Loaded once and refreshed when the Extensions screen says something changed —
+ * a sidebar is redrawn on every navigation, and a bridge call per render would
+ * be a call per keystroke in the address bar.
+ */
+const { pages: extensionPages, load: loadExtensionPages, surfaces: extensionSurfaces } = useExtensionPages()
+const extensionPanel = extensionSurfaces.panel
+
+const extensionKeys = ref([])
+
+/** Undoes the main process subscription, so a remount does not stack two. */
+let stopExtensionWatch = null
+
+/**
+ * `x` then a letter, which is the whole extension keyboard scheme.
+ *
+ * Registered here rather than beside our own shortcuts because it is a
+ * *sequence*: `useShortcuts` dispatches single keys, and the prefix has to hold
+ * state between two of them. `handle` answers whether it consumed the key, so
+ * the application's own bare letters keep working when it did not.
+ */
+/**
+ * The workspace a shortcut fired in.
+ *
+ * `x` then a key works wherever you are, and wherever you are is usually a
+ * workspace. An extension drawing something about it has no other way to learn
+ * which one — the broker refuses a call that names none — so the context that
+ * goes out carries it rather than being empty.
+ */
+const extensionContext = () => ({ workspaceId: currentWorkspaceId.value ?? '' })
+
+/** Whether the key just handled actually ran something, rather than arming. */
+let extensionKeyDispatched = false
+
+const extensionShortcuts = useExtensionShortcuts({
+  entries: () => extensionKeys.value,
+  onInvoke: (binding) => {
+    extensionKeyDispatched = true
+    recordShortcutUse()
+    extensionSurfaces.invoke({ owner: binding.owner, id: binding.id, surface: 'shortcut' }, extensionContext())
+  },
+})
+
+/**
+ * The second key of a sequence belongs to the extension and to nothing else.
+ *
+ * `x` then `n` is a sequence an extension may legitimately claim — a second key
+ * being a namespace of its own is the whole point of the prefix — but `n` is
+ * also *our* "new task", and both listeners are offered the same keydown.
+ * Without suppressing it the sequence would open the extension's panel and
+ * navigate away from it in the same breath.
+ *
+ * Suppressed only for the key that actually dispatched. Arming on `x`, or
+ * abandoning with Escape, has to leave the rest of the application alone —
+ * Escape still has an overlay to close.
+ *
+ * Capture, because `useShortcuts` registered its window listener first and a
+ * bubble-phase handler would no longer be able to stop it.
+ */
+function onExtensionKey(event) {
+  extensionKeyDispatched = false
+  if (!extensionShortcuts.handle(event) || !extensionKeyDispatched) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
+
+/**
+ * A button inside the panel a shortcut drew, handed back to whatever drew it.
+ *
+ * The panel carries the owner and id of the entry that produced it, so the
+ * action goes to the same one. It is never interpreted here — it is a string
+ * the extension chose, passed back verbatim as `normaliseNode` documents.
+ */
+function onExtensionPanelAction(action) {
+  const panel = extensionPanel.value
+  if (!panel) return
+  extensionSurfaces.invoke(
+    { owner: panel.owner, id: panel.id, surface: 'shortcut' },
+    { ...extensionContext(), action },
+  )
+}
+
+// A shortcut that was refused — a narrowed grant, a `run` that threw — draws no
+// panel, and a key that does nothing is indistinguishable from one nobody bound.
+// The workspace header says the same thing about its own buttons.
+watch(extensionSurfaces.error, (reason) => {
+  if (reason) notifyError(reason)
+})
+
+/** Read what is installed now: the sidebar's pages, and the keys they hold. */
+async function refreshExtensions() {
+  if (!extensionSurfaces.available) return
+  await loadExtensionPages()
+  extensionKeys.value = await extensionSurfaces.entriesFor('shortcut', {})
+}
+
 // Escape closes an overlay wherever focus happens to be. The palette handles it
 // on its own input too — this is for the help sheet, which has nothing focused.
 
@@ -714,14 +850,32 @@ watch(isConnected, (now, before) => {
   if (now && before === false) workspaceStore.fetchWorkspaces()
 })
 
+// The Extensions screen is the only place an install or an uninstall happens,
+// so leaving it is exactly when what they contribute can have changed.
+watch(
+  () => route.path.startsWith('/extensions'),
+  (onScreen, wasOnScreen) => {
+    if (wasOnScreen && !onScreen) refreshExtensions()
+  }
+)
+
 onMounted(() => {
   themeStore.init()
   loadUser()
   loadProfiles()
   workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
+  refreshExtensions()
+  // The host disables an extension after three failures, with no navigation
+  // involved — so its row and its key would otherwise stay on screen until the
+  // user next left the Extensions screen, which may be never in a session.
+  stopExtensionWatch = window.agentrq?.extensions?.onChanged?.((detail) => {
+    refreshExtensions()
+    if (detail?.name) notifyError(`${detail.name} was disabled: ${detail.reason ?? 'it kept failing.'}`)
+  })
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('keydown', closeOverlaysOnEscape)
+  window.addEventListener('keydown', onExtensionKey, true)
 })
 
 const showTooltip = (event, text) => {
@@ -803,6 +957,8 @@ const handleClickOutside = (e) => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
+  window.removeEventListener('keydown', onExtensionKey, true)
+  stopExtensionWatch?.()
   if (sweepTimer) clearInterval(sweepTimer)
 })
 

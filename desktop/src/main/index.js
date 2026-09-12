@@ -6,6 +6,7 @@ import {
   Tray,
   clipboard,
   dialog,
+  safeStorage,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -20,7 +21,7 @@ import { readFile, writeFile, access } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
 import { createAttachmentStore } from './attachment-store.js'
@@ -46,6 +47,19 @@ import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
+import { createDiscovery } from './extensions/discovery.js'
+import { decorate } from './extensions/catalogue.js'
+import { createInstaller } from './extensions/install.js'
+import { createFetchSource, makeTempDir, readManifest } from './extensions/fetch-source.js'
+import { createHost } from './extensions/host.js'
+import { createBroker, permitsWorkspace } from './extensions/broker.js'
+import { createSchedules } from './extensions/schedules.js'
+import { createConfigStore } from './extensions/config.js'
+import { createRuntime } from './extensions/runtime.js'
+import { claimedShortcuts } from './extensions/shortcuts.js'
+import { serverTools } from './extensions/servers.js'
+import { createMcpClient } from './extensions/mcp-client.js'
+import { createSupervisorAuth } from './extensions/supervisor-auth.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -130,6 +144,8 @@ let currentTheme = 'system'
 /** Set when a deep link arrives before the window is ready to receive it. */
 let pendingRoute = null
 let updater = null
+let discovery = null
+let extensions = null
 /**
  * The signed-in profile in use, and the Electron session that carries its
  * cookies. Everything that talks to the server goes through this session rather
@@ -323,6 +339,64 @@ function routeLink(url, parentWin) {
     default:
       break
   }
+}
+
+/**
+ * Shows the supervisor authorisation page, and resolves with where it landed.
+ *
+ * Watched for a navigation to the redirect URI rather than pointed at anything
+ * that renders: the code is in the URL, there is nothing to display, and a
+ * window left open on a page nobody needs is how people close the wrong one.
+ *
+ * Resolves with `null` if it was closed instead — which is a person declining,
+ * and the commonest answer to a permission dialog.
+ *
+ * The window runs on the active profile's partition and gets no preload: it
+ * shows a page that authenticates somebody, so it has no business holding a
+ * bridge to files or the shell.
+ */
+function openAuthorizationWindow(url, redirectUri) {
+  return new Promise((resolve) => {
+    const parent = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    const win = new BrowserWindow({
+      parent,
+      width: 520,
+      height: 720,
+      title: 'Authorise AgentRQ',
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: currentPartition(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+      if (!win.isDestroyed()) win.close()
+    }
+
+    // `agentrq://` is a scheme this app registers, so the navigation is
+    // cancelled rather than followed — there is nothing at the other end and
+    // following it would hand the code to the deep-link handler.
+    const onNavigate = (event, next) => {
+      if (!String(next).startsWith(redirectUri)) return
+      event.preventDefault()
+      finish(next)
+    }
+
+    win.webContents.on('will-navigate', onNavigate)
+    win.webContents.on('will-redirect', onNavigate)
+    // Whatever happens, closing the window ends the flow — including somebody
+    // giving up on it, which is a decision rather than a failure.
+    win.on('closed', () => finish(null))
+
+    win.loadURL(url)
+  })
 }
 
 async function startOAuth(win, pathname, search) {
@@ -820,6 +894,87 @@ function registerIpc(getWindow) {
 
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
+  ipcMain.handle('agentrq:extensions:state', async () => {
+    const index = (await discovery?.list()) ?? { entries: [] }
+    // Compatibility is decided here, where the running version and the tool
+    // lists are — the renderer never has to learn what a semver range is.
+    // `serverTools` and not the version alone: judging against an empty tool
+    // list marks every extension that wants MCP as unavailable, for tools the
+    // server has had all along.
+    return {
+      index: decorate(index, serverTools(app.getVersion())),
+      installed: (await extensions?.state()) ?? [],
+    }
+  })
+
+  /**
+   * Pick a folder, and say what is in it — without installing anything.
+   *
+   * The dialog is here because only the main process has one, and the answer
+   * carries the manifest and the permissions so the screen that follows can be
+   * a real question rather than a confirmation after the fact.
+   */
+  ipcMain.handle('agentrq:extensions:choose-folder', async () => {
+    if (!extensions) return { ok: false, reason: 'Extensions are unavailable.' }
+
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Choose an extension folder',
+      properties: ['openDirectory'],
+      message: 'Pick the folder containing agentrq-extension.json',
+    })
+    // Cancelling is not a failure and must not surface as one.
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true }
+
+    return extensions.inspect(picked.filePaths[0])
+  })
+
+  ipcMain.handle('agentrq:extensions:install-local', async (_event, { path, grant, config } = {}) => {
+    if (!extensions) return { ok: false, reason: 'Extensions are unavailable.' }
+    if (!path) return { ok: false, reason: 'No folder was chosen.' }
+    return extensions.installLocal(path, { grant, config })
+  })
+
+  ipcMain.handle('agentrq:extensions:uninstall', async (_event, name) =>
+    (await extensions?.remove(name)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:set-enabled', async (_event, { name, enabled } = {}) =>
+    (await extensions?.setEnabled(name, enabled)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:supervisor', () => ({
+    authorized: extensions?.supervisor.authorized() ?? false,
+  }))
+
+  ipcMain.handle('agentrq:extensions:authorize', async () =>
+    (await extensions?.supervisor.authorize()) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:deauthorize', async () =>
+    (await extensions?.supervisor.forget()) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:entries', (_event, { surface, context } = {}) =>
+    extensions?.entries(surface ?? '', context ?? {}) ?? [],
+  )
+
+  ipcMain.handle('agentrq:extensions:invoke', async (_event, { target, context } = {}) =>
+    (await extensions?.invoke(target ?? {}, context ?? {})) ?? {
+      ok: false,
+      reason: 'Extensions are unavailable.',
+    },
+  )
+
+  ipcMain.handle('agentrq:extensions:configure', async (_event, { name, values } = {}) =>
+    (await extensions?.configure(name, values ?? {})) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:refresh', async () => {
+    const result = (await discovery?.refresh()) ?? { ok: false, reason: 'Extensions are unavailable.' }
+    return { ...result, index: decorate(result.index ?? { entries: [] }, serverTools(app.getVersion())) }
+  })
+
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
   ipcMain.handle(
     'agentrq:update:install-via-script',
@@ -862,6 +1017,367 @@ function registerIpc(getWindow) {
   })
 }
 
+/**
+ * The extension catalogue.
+ *
+ * Every request goes out from here rather than from the renderer, which is on
+ * the privileged `app://` scheme and only ever sees same-origin traffic — a call
+ * to api.github.com from there is the cross-origin request that architecture
+ * exists to prevent, and the CSP would refuse it in any case.
+ */
+function installExtensions() {
+  const cachePath = join(app.getPath('userData'), 'extensions-catalogue.json')
+
+  discovery = createDiscovery({
+    fetchJson: async (url, token) => {
+      const response = await fetch(url, { headers: githubHeaders(token) })
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
+      return response.json()
+    },
+    fetchText: async (url, token) => {
+      const response = await fetch(url, { headers: githubHeaders(token) })
+      // A repository with the topic and no manifest is an ordinary state, not a
+      // failure: it is listed as broken with that as its reason.
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
+      return response.text()
+    },
+    readFile: () => readFile(cachePath, 'utf8'),
+    writeFile: (contents) => writeFile(cachePath, contents, 'utf8'),
+  })
+
+  extensions = buildExtensionRuntime()
+}
+
+/**
+ * A JSON file under userData, read once and written whole.
+ *
+ * Three of these — installations, settings, schedule records — and none of them
+ * is hot enough to deserve anything cleverer. A missing file reads as nothing,
+ * which is the same starting point as a fresh install.
+ */
+function jsonStore(filename) {
+  const path = join(app.getPath('userData'), filename)
+  return {
+    read: async () => JSON.parse(await readFile(path, 'utf8')),
+    write: (value) => writeFile(path, JSON.stringify(value, null, 2), 'utf8'),
+  }
+}
+
+/**
+ * Everything an installed extension runs on, assembled.
+ *
+ * Wiring only. Every decision — what order things happen in, what a refusal
+ * means, when a grant applies — is in `extensions/runtime.js`, where it can be
+ * tested; this file imports Electron at module scope and is excluded from
+ * coverage, so anything that ends up here is code nobody can check.
+ */
+function buildExtensionRuntime() {
+  // Read back rather than held: the check runs against whatever is installed at
+  // the moment somebody installs something else, not a list captured at startup.
+  let installedNow = []
+
+  const installer = createInstaller({
+    fetchSource: createFetchSource({ spawn }),
+    readManifest,
+    move: (from, to) => fsPromises.rename(from, to),
+    remove: (target) => fsPromises.rm(target, { recursive: true, force: true }),
+    makeTempDir,
+    dirFor: (name) => join(app.getPath('userData'), 'extensions', name),
+    store: jsonStore('extensions-installed.json'),
+    claimedKeys: () => claimedShortcuts(installedNow),
+  })
+
+  const configStore = createConfigStore({
+    store: jsonStore('extensions-config.json'),
+    vault: {
+      // The real question, asked of the OS rather than assumed: a Linux box with
+      // no keyring answers no, and a secret is then refused rather than written
+      // to a JSON file the user believes is protected.
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (text) => safeStorage.encryptString(text).toString('base64'),
+      decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
+    },
+  })
+
+  /**
+   * One MCP client per workspace, plus one for the supervisor.
+   *
+   * Per workspace because each has its own endpoint, its own token and its own
+   * session — and because a session is worth keeping: the handshake is two round
+   * trips, and an extension that reads the same workspace on every page view
+   * would otherwise pay them every time.
+   *
+   * The workspace token comes from the REST API, which the app is already
+   * authenticated to. It is fetched per session rather than cached, so a
+   * regenerated token does not leave extensions failing until a restart.
+   */
+  const workspaceClients = new Map()
+
+  /**
+   * A bearer token for one workspace's MCP endpoint.
+   *
+   * From `/token`, which mints one, rather than from the workspace object — the
+   * workspace a `GET` returns carries `mcpUrl` but no token, on purpose. It was
+   * read from the object first and every call failed with "did not give up an
+   * MCP token", which is the sort of thing only a real server tells you.
+   *
+   * Minted per session rather than cached, so a token that is rotated or
+   * expires does not leave extensions failing until the app restarts.
+   */
+  async function workspaceToken(workspaceId) {
+    const response = await profileFetch(`${serverUrl}/api/v1/workspaces/${workspaceId}/token`)
+    if (!response.ok) {
+      // 404 here is the ordinary answer for a workspace this account does not
+      // own, so the status is worth passing on rather than paraphrasing.
+      throw new Error(`AgentRQ could not get a token for that workspace (${response.status}).`)
+    }
+    const token = (await response.json())?.token ?? ''
+    if (!token) throw new Error('That workspace did not give up an MCP token for this account.')
+    return token
+  }
+
+  function clientForWorkspace(workspaceId) {
+    if (!workspaceClients.has(workspaceId)) {
+      workspaceClients.set(
+        workspaceId,
+        createMcpClient({
+          endpoint: () => (serverUrl ? `${serverUrl}/mcp/${workspaceId}` : ''),
+          headers: async () => ({ authorization: `Bearer ${await workspaceToken(workspaceId)}` }),
+          // Electron's session-aware fetch: the profile's cookie jar goes with
+          // it, which is what the REST call above needs.
+          fetchImpl: profileFetch,
+        }),
+      )
+    }
+    return workspaceClients.get(workspaceId)
+  }
+
+  /**
+   * The supervisor, and the authorisation it needs.
+   *
+   * Its endpoint wants a token whose audience is `coremcp`, which only the
+   * OAuth2 flow mints — the session cookie this app holds identifies the user
+   * *during* that flow and is refused by `tools/call` itself. So the app runs
+   * the flow, using the dynamic client registration the backend already
+   * supports, and the person is asked.
+   *
+   * Asked, not assumed. Acquiring a credential that reaches every workspace on
+   * the account because somebody installed something would be taking a decision
+   * that was not this app's to take — so nothing here happens until an
+   * extension that was granted the account actually needs it, and then the
+   * question is put on screen.
+   */
+  const supervisorAuth = createSupervisorAuth({
+    serverUrl: () => serverUrl,
+    fetchImpl: profileFetch,
+    openWindow: (url, redirectUri) => openAuthorizationWindow(url, redirectUri),
+  })
+
+  /**
+   * The supervisor token, kept the way a credential is kept.
+   *
+   * Through `safeStorage`, not a plain JSON file: it reaches every workspace on
+   * the account, which is the widest thing this app ever holds. Where there is
+   * no secure storage it is simply not persisted — the person authorises again
+   * next launch, which is a worse experience and the right trade.
+   */
+  const authStore = jsonStore('extensions-supervisor-auth.json')
+
+  async function saveSupervisorAuth() {
+    const held = supervisorAuth.saved()
+    if (!held.token || !safeStorage.isEncryptionAvailable()) return
+    try {
+      await authStore.write({ sealed: safeStorage.encryptString(JSON.stringify(held)).toString('base64') })
+    } catch (error) {
+      console.warn('could not store the supervisor authorisation:', error?.message ?? error)
+    }
+  }
+
+  async function restoreSupervisorAuth() {
+    if (!safeStorage.isEncryptionAvailable()) return
+    try {
+      const { sealed } = (await authStore.read()) ?? {}
+      if (sealed) supervisorAuth.restore(JSON.parse(safeStorage.decryptString(Buffer.from(sealed, 'base64'))))
+    } catch {
+      // A file that will not decrypt is one from another machine or another
+      // user. Nothing to do but ask again.
+    }
+  }
+
+  const supervisorClient = createMcpClient({
+    endpoint: () => (serverUrl ? `${serverUrl}/mcp` : ''),
+    headers: async () => ({ authorization: `Bearer ${supervisorAuth.token()}` }),
+    fetchImpl: profileFetch,
+  })
+
+  const callSupervisor = async ({ tool, args }) => {
+    if (!supervisorAuth.authorized()) {
+      // Named rather than apologised for: the person can do something about
+      // this, and the sentence says what.
+      throw new Error(
+        'AgentRQ is not authorised to use account-wide tools yet. Open Extensions and choose Authorise.',
+      )
+    }
+
+    let answer = await supervisorClient.callTool(tool, args)
+
+    // An expired access token is ordinary — they are short-lived on purpose —
+    // and asking somebody to authorise again every time one lapses is how
+    // people learn to click through the screen that matters.
+    if (!answer.ok && /credentials|401|403/i.test(answer.reason ?? '')) {
+      const refreshed = await supervisorAuth.refresh()
+      if (refreshed.ok) {
+        supervisorClient.reset()
+        answer = await supervisorClient.callTool(tool, args)
+      }
+    }
+
+    // Thrown rather than returned, because the broker turns a throw into a
+    // refusal carrying this message — and the server's own words are what an
+    // extension author needs.
+    if (!answer.ok) throw new Error(answer.reason)
+    return answer.result
+  }
+
+  const broker = createBroker({
+    callWorkspace: async ({ workspaceId, tool, args }) => {
+      const answer = await clientForWorkspace(workspaceId).callTool(tool, args)
+      if (!answer.ok) throw new Error(answer.reason)
+      return answer.result
+    },
+    callSupervisor,
+  })
+
+  const host = createHost({
+    // `file://` because an absolute Windows path is not a valid import specifier.
+    load: (installation) => import(pathToFileURL(join(installation.dir, 'index.js')).href),
+    readConfig: (name) => configStore.resolve(name),
+    clientFor: (name) => broker.clientFor(name),
+    onDisabled: async (name, reason) => {
+      await installer.setEnabled(name, false)
+      // Told, not just recorded. Nothing about this involves a navigation — an
+      // extension is disabled after three failures, whenever they happen — so
+      // the sidebar row and the key it holds would otherwise stay until the
+      // user next left the Extensions screen, which may be never in a session.
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+      win?.webContents.send('agentrq:extensions:changed', { name, reason })
+    },
+  })
+
+  const schedules = createSchedules({
+    // As the host, with the app's own credential. See the reasoning at the top
+    // of schedules.js: going through the broker would make every extension that
+    // wants a nightly task ask for the power to delete any task on the account.
+    call: (tool, args) => callSupervisor({ tool, args }),
+    allows: (name, workspaceId) => permitsWorkspace(broker.grantFor(name), workspaceId),
+    store: jsonStore('extensions-schedules.json'),
+  })
+
+  /**
+   * Where grants are kept between runs.
+   *
+   * A grant is the user's answer at the install screen, and it is held nowhere
+   * else — nothing on the server records that an extension may reach a
+   * workspace. Held only in memory it would survive exactly as long as the
+   * process: after a restart every extension would be refused with "has not
+   * been granted any access", for a permission the user did give, and the
+   * schedule reconciler could no longer take down what it had created.
+   */
+  const grantStore = jsonStore('extensions-grants.json')
+
+  const runtime = createRuntime({
+    installer,
+    host,
+    broker,
+    schedules,
+    configStore,
+    readManifest,
+    // The tool lists as well as the version. Passing only the version left
+    // `checkCompatibility` judging every extension against an empty surface, so
+    // anything wanting MCP at all was refused with "the workspace server does
+    // not offer …" — for tools the server has had all along.
+    servers: () => serverTools(app.getVersion()),
+  })
+
+  return {
+    ...runtime,
+
+    /** Whether account-wide tools can be used, and how to make them usable. */
+    supervisor: {
+      authorized: () => supervisorAuth.authorized(),
+      async authorize() {
+        const result = await supervisorAuth.authorize()
+        if (result.ok) await saveSupervisorAuth()
+        return result
+      },
+      async forget() {
+        supervisorAuth.forget()
+        try {
+          await authStore.write({})
+        } catch {
+          // Forgetting it in memory is what stops it being used; the file is
+          // unreadable without the key either way.
+        }
+        return { ok: true }
+      },
+    },
+
+    /** Keeps the shortcut check looking at what is actually installed. */
+    async state() {
+      installedNow = await installer.list()
+      return runtime.state()
+    },
+
+    async startAll() {
+      installedNow = await installer.list()
+      await restoreSupervisorAuth()
+      // Read back before anything loads: `start` applies the grant *before*
+      // calling `apply`, so a grant restored afterwards would refuse exactly
+      // the calls an extension makes while loading.
+      try {
+        const saved = await grantStore.read()
+        for (const [name, grant] of Object.entries(saved ?? {})) runtime.rememberGrant(name, grant)
+      } catch {
+        // No file yet, or one that will not parse. Either way nothing has been
+        // granted, which is the state a fresh install is already in.
+      }
+      return runtime.startAll()
+    },
+
+    async installLocal(path, options) {
+      const result = await runtime.installLocal(path, options)
+      await persistGrants()
+      return result
+    },
+
+    async remove(name) {
+      const result = await runtime.remove(name)
+      await persistGrants()
+      return result
+    },
+  }
+
+  /** Written after anything that changes one; a failure costs the next launch, not this one. */
+  async function persistGrants() {
+    try {
+      await grantStore.write(runtime.grants())
+    } catch {
+      // The extension is installed and granted for this run either way. Throwing
+      // here would turn a completed install into a reported failure.
+    }
+  }
+}
+
+function githubHeaders(token) {
+  return {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'AgentRQ',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 function installUpdater() {
   updater = createUpdater({
     autoUpdater: electronUpdater.autoUpdater,
@@ -880,6 +1396,8 @@ function installUpdater() {
   })
   updater.start()
 }
+
+
 
 function installTray() {
   // An empty image is a deliberate placeholder: a tray icon is an art asset,
@@ -963,6 +1481,14 @@ if (!app.requestSingleInstanceLock()) {
     installTray()
     installGlobalShortcut()
     installUpdater()
+    installExtensions()
+    // Loaded after the window exists, and awaited by nobody: an extension that
+    // is slow to import must not hold up the app starting, and one that throws
+    // is reported against itself rather than taken as a failure to launch.
+    // `.catch` because nobody awaits this: an unhandled rejection here is a
+    // process-level warning with no owner, and on a strict runtime it is a
+    // crash at launch caused by an extension.
+    extensions?.startAll().catch((error) => console.warn('[extensions] did not start:', error?.message ?? error))
 
     const launchLink = deepLinkFromArgv(process.argv)
     if (launchLink) openDeepLink(launchLink)
@@ -979,6 +1505,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     eventStream?.stop()
     updater?.stop()
+    // Unloads them; deliberately does not take their standing work down. The
+    // whole point of a schedule is that it outlives the app being open.
+    extensions?.stopAll()
     globalShortcut.unregisterAll()
     // A quit that does not close the window first — Cmd+Q, or the tray's Quit —
     // would otherwise lose whatever the debounced save had not yet written.

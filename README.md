@@ -164,6 +164,28 @@ certificates are in place — the install command above is the way around both.
 Connecting to a server and troubleshooting are covered in the
 [Desktop Guide](docs/DESKTOP.md).
 
+## Extending the desktop app
+
+Extensions add pages, actions, keyboard shortcuts and scheduled work. They are
+ordinary Node modules, discovered from GitHub repositories carrying the
+`agentrq-extension` topic, and installed from the desktop app.
+
+**Extensions are desktop-only, and deliberately so.** An extension is code
+somebody else wrote, running with the privileges of the process it is in. On a
+self-hosted server that would mean a stranger's code next to your database and
+your other users; on the desktop it runs on the machine of the person who chose
+to install it. The server never loads extension code.
+
+What AgentRQ does enforce is everything it owns: which surfaces an extension can
+contribute to, and which MCP tools it may call against which workspaces — the
+extension never holds a credential, it asks, and the app attaches the token on
+the way out. That is a real boundary around your AgentRQ data. It is not a
+sandbox around your machine, and the install screen says so on every install.
+
+Three worked examples live in [`examples/extensions/`](examples/extensions/),
+from one that asks for no permissions at all to one that runs a daily digest
+across every workspace. See the [Extensions Guide](docs/EXTENSIONS.md).
+
 ## Driving AgentRQ from a browser agent
 
 If your browser supports [WebMCP](https://github.com/webmachinelearning/webmcp),
@@ -416,11 +438,29 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 - `updateTaskAssignee`: Change the assignee of a task.
 - `updateTaskAllowAll`: Toggle `allow_all_commands` permission for a task.
 - `updateScheduledTask`: Modify a scheduled/cron task.
+- `deleteTask`: Delete a task with its messages and attachments — the way to retire a schedule rather than leave it running.
 
 **Communication & Files**
 - `replyToTask`: Post a message to a task's chat thread.
 - `respondToTask`: Submit an allow/deny verdict for a permission request.
 - `getAttachment`: Retrieve data as base64 and metadata for a specific attachment.
+
+**Workspace Memory**
+- `listMemories`: List a workspace's memories — name, size and when each changed.
+- `getMemory`: Read one memory in full. `MEMORY.md` is the index the others hang off.
+
+**Events & Triggers**
+An event is a named signal a workspace publishes; a trigger creates a task somewhere when it fires. Publishing stays agent-side (`publishEvent` on the per-workspace server) — the supervisor builds the wiring, the workers fire it.
+- `listEvents`, `createEvent`, `getEvent`, `updateEvent`, `deleteEvent`: define the signals.
+- `createEventTrigger`, `listEventTriggers`, `getEventTrigger`, `updateEventTrigger`, `deleteEventTrigger`: decide what each one causes.
+- `listEventTasks`: see the tasks an event has spawned.
+
+**Workflows**
+The graph those pieces add up to: a start event, and the steps that react to it and to each other.
+- `listWorkflows`, `createWorkflow`, `getWorkflow`, `updateWorkflow`, `deleteWorkflow`: the graph itself.
+- `createWorkflowStep`, `listWorkflowSteps`, `deleteWorkflowStep`: its nodes, one at a time.
+- `getWorkflowText`, `replaceWorkflowFromText`: the whole graph as the indented document the UI's text mode edits — the declarative way to write one.
+- `listWorkflowTasks`: see the tasks a workflow has spawned.
 
 ### Connecting to Supervisor (Claude Code)
 Since the Supervisor uses OAuth2, you can connect it using the following configuration in your `~/.mcp.json`:

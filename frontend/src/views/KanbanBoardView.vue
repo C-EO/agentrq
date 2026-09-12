@@ -110,12 +110,15 @@
       @confirm="onMoveConfirm"
     />
 
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value"
+                       @action="onExtensionAction" @close="extensions.dismiss" />
+
     <!-- Task Context Menu -->
     <ContextMenu
       :show="contextMenu.show"
       :x="contextMenu.x"
       :y="contextMenu.y"
-      :items="[{ key: 'move', label: 'Move Task' }]"
+      :items="contextMenuItems"
       @close="closeContextMenu"
       @select="onContextMenuSelect"
     />
@@ -129,6 +132,9 @@ import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssi
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
+import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
+import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
@@ -414,12 +420,62 @@ function openTask(t) {
 
 // ---- Context menu / move task ----
 const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
+
+// The same list TaskFeed reads. See useTaskContextMenu for why it is shared.
+// Fetched when the menu opens rather than held: one bridge call on a gesture
+// somebody just made, and an extension enabled a moment ago is on the next
+// right-click instead of after a reload.
+const extensionItems = ref([]);
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task, extensionItems.value));
+
+const extensions = useExtensionSurfaces();
+
+// Said out loud. `invoke` records a refusal and draws no panel, so without this
+// a menu item that failed — a grant the user narrowed, an extension that threw
+// — is indistinguishable from a click that did nothing at all.
+watch(
+  () => extensions.error.value,
+  (reason) => {
+    if (reason) notifyError(reason);
+  },
+);
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');
 
-function openContextMenu(event, task) {
+/** Which right-click the rows on screen belong to. */
+let contextMenuRequest = 0;
+
+async function openContextMenu(event, task) {
   contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+  // Cleared first. The rows still held were decided for the *previous* task, so
+  // leaving them up means a row whose `when(task)` said no about this one is on
+  // screen and clickable until the bridge answers.
+  extensionItems.value = [];
+
+  const request = (contextMenuRequest += 1);
+  // The built-in items are already on screen; the extension rows arrive when
+  // the main process has run each one's `when(task)`. A bridge that is slow or
+  // broken costs nothing here, because `entriesFor` answers with an empty list
+  // rather than throwing — right-click must keep working regardless.
+  const entries = await extensions.entriesFor('task-menu', task);
+  // A second right-click while this was in flight owns the menu now, and a slow
+  // answer for the task before it must not land on top of the new one.
+  if (request === contextMenuRequest) extensionItems.value = entries;
+}
+
+/**
+ * A button inside an extension's panel, handed back to whoever drew it.
+ *
+ * The action is never interpreted here — the entry that produced the view is
+ * asked again with the action alongside the task, which is what makes a button
+ * in the vocabulary mean anything at all.
+ */
+function onExtensionAction(action) {
+  const panel = extensions.panel.value;
+  const task = contextMenu.value.task;
+  if (!panel || !task) return;
+  extensions.invoke({ owner: panel.owner, id: panel.id, surface: 'task-menu' }, { ...task, action });
 }
 
 function closeContextMenu() {
@@ -429,6 +485,15 @@ function closeContextMenu() {
 function onContextMenuSelect(key) {
   const task = contextMenu.value.task;
   if (!task) return;
+
+  // Namespaced on the way in, so a built-in and an extension entry can never be
+  // confused however an author names theirs.
+  const parsed = parseSelection(key);
+  if (parsed.kind === 'extension') {
+    extensions.invoke({ owner: parsed.owner, id: parsed.id, surface: 'task-menu' }, task);
+    return;
+  }
+
   if (key === 'move') {
     taskToMoveId.value = task.id;
     taskToMoveTitle.value = task.title;

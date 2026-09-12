@@ -133,6 +133,102 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
   },
 
+  extensions: {
+    /**
+     * What is already known — the cached catalogue, and what is installed.
+     *
+     * Never searches. GitHub answers ten searches a minute unauthenticated, and
+     * spending that on somebody opening a screen would leave nothing for the
+     * person who actually asked.
+     *
+     * @returns {Promise<{index: object, installed: string[]}>}
+     */
+    state: () => ipcRenderer.invoke('agentrq:extensions:state'),
+
+    /** Go and look again. A deliberate act, from a button. */
+    refresh: () => ipcRenderer.invoke('agentrq:extensions:refresh'),
+
+    /**
+     * Pick a folder and read what is in it. Installs nothing.
+     *
+     * Two steps, because a grant is a question: this answers what the extension
+     * is and what it would be allowed to reach, and the screen that follows asks
+     * before anything is written. A single call would have to install first and
+     * ask afterwards, which is not a permission.
+     *
+     * @returns {Promise<{ok: boolean, cancelled?: boolean, reason?: string, path?: string, manifest?: object, compatible?: boolean, reasons?: string[], shortcutProblems?: string[]}>}
+     */
+    chooseFolder: () => ipcRenderer.invoke('agentrq:extensions:choose-folder'),
+
+    /** Install what `chooseFolder` found, with what the user agreed to. */
+    installLocal: (path, { grant = null, config = null } = {}) =>
+      ipcRenderer.invoke('agentrq:extensions:install-local', { path, grant, config }),
+
+    /** Remove it, its settings, its grant and anything it scheduled. */
+    uninstall: (name) => ipcRenderer.invoke('agentrq:extensions:uninstall', name),
+
+    /** Stop it without removing it — including whatever it had scheduled. */
+    setEnabled: (name, enabled) => ipcRenderer.invoke('agentrq:extensions:set-enabled', { name, enabled }),
+
+    /** Save its settings and reload it, so it sees them. */
+    configure: (name, values) => ipcRenderer.invoke('agentrq:extensions:configure', { name, values }),
+
+    /**
+     * Whether account-wide tools can be used.
+     *
+     * The supervisor needs an OAuth authorisation the app does not hold until
+     * somebody gives it — so this is a question the Extensions screen asks, and
+     * `authorize` is the button that answers it.
+     */
+    supervisor: () => ipcRenderer.invoke('agentrq:extensions:supervisor'),
+
+    /** Ask the user to authorise account-wide access. Opens a window. */
+    authorize: () => ipcRenderer.invoke('agentrq:extensions:authorize'),
+
+    /** Give it back. The next account-wide call asks again. */
+    deauthorize: () => ipcRenderer.invoke('agentrq:extensions:deauthorize'),
+
+    /**
+     * Told when what extensions contribute has changed underneath the app.
+     *
+     * The host disables an extension after three failures, and nothing about
+     * that involves a navigation — so a sidebar row and the key it holds would
+     * otherwise stay until the user happened to leave the Extensions screen.
+     *
+     * @returns {() => void} stop listening
+     */
+    onChanged: (callback) => {
+      const listener = (_event, detail) => callback(detail)
+      ipcRenderer.on('agentrq:extensions:changed', listener)
+      return () => ipcRenderer.off('agentrq:extensions:changed', listener)
+    },
+
+    /**
+     * What extensions contribute to one surface, for this context.
+     *
+     * The context goes *out* rather than the entries coming *in*: an entry's
+     * `when(task)` is a function in the main process, and a function cannot
+     * cross the bridge. Sending the task is what lets a menu row decide whether
+     * it belongs on this particular task instead of every one of them.
+     *
+     * **`context` must already be a plain object.** `contextBridge` converts
+     * arguments as they enter this world and refuses a Proxy outright, so a Vue
+     * reactive task rejects here before any code in this file runs — which is
+     * why the flattening lives in the caller and cannot be moved down.
+     *
+     * @param {'page'|'workspace-action'|'task-menu'} surface
+     * @returns {Promise<Array<{owner: string, id: string, label: string, order: number}>>}
+     */
+    entries: (surface, context = {}) => ipcRenderer.invoke('agentrq:extensions:entries', { surface, context }),
+
+    /**
+     * Run one, and get back what it wants drawn.
+     *
+     * @returns {Promise<{ok: boolean, view?: object|null, reason?: string}>}
+     */
+    invoke: (target, context = {}) => ipcRenderer.invoke('agentrq:extensions:invoke', { target, context }),
+  },
+
   updates: {
     /** @returns {Promise<{status: string, detail: string, version: string, enabled: boolean}>} */
     get: () => ipcRenderer.invoke('agentrq:update:get'),
