@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <div class="flex flex-col gap-8">
     <!-- Filters -->

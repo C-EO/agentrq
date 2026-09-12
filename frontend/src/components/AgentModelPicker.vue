@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <!-- Nothing at all unless a choice exists and would do something. An agent
        that reports no models, or one too old to act on being told to switch,

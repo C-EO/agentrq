@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { pipeline, env } from '@huggingface/transformers';
 
 // Skip local check, we'll fetch from HF Hub using WASM

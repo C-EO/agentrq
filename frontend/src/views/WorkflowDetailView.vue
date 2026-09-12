@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';

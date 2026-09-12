@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { describe, expect, it } from 'vitest'
 
 import { profileDisplay } from '../src/composables/useProfileDisplay'

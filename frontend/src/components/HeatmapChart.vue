@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <div class="w-full h-full flex flex-col gap-1.5">
     <div v-if="columns.length === 0" class="flex-1 flex items-center justify-center">

@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <iframe ref="frame"
           :sandbox="FRAME_SANDBOX"

@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 /**
  * What to say about the agent attached to a workspace, beyond that it is there.
  *

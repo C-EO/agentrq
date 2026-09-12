@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 package image
 
 import (
@@ -58,7 +61,7 @@ func TestImageService(t *testing.T) {
 			t.Error("expected error for invalid base64, got nil")
 		}
 	})
-	
+
 	t.Run("DecodeError", func(t *testing.T) {
 		input := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("not an image"))
 		_, err := s.ResizeBase64(input, 50, 50)

@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';

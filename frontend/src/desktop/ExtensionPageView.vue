@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <div class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
     <div class="max-w-3xl mx-auto pt-8">

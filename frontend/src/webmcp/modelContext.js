@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 /**
  * The seam between AgentRQ and the browser's WebMCP implementation.
  *

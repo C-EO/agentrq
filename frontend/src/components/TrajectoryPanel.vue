@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
 

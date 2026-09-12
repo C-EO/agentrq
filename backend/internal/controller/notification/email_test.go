@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 package notification
 
 import (
@@ -29,12 +32,12 @@ func TestEmailNotifications(t *testing.T) {
 		Name:   "Test Workspace",
 		UserID: 100,
 		NotificationSettings: &entity.NotificationSettings{
-			TaskCreated:          true,
-			TaskStatusUpdated:    true,
+			TaskCreated:         true,
+			TaskStatusUpdated:   true,
 			TaskReceivedMessage: true,
-			WorkspaceArchived:    true,
-			WorkspaceUnarchived:   true,
-			Channels:             []string{"email"},
+			WorkspaceArchived:   true,
+			WorkspaceUnarchived: true,
+			Channels:            []string{"email"},
 		},
 	}
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 // Package eventbus provides a simple per-workspace SSE event broadcaster.
 // Human clients subscribe to workspace events; the MCP layer publishes them.
 package eventbus
@@ -15,7 +18,7 @@ type Event struct {
 
 type Bus struct {
 	mu            sync.RWMutex
-	workspaceSubs map[int64][]chan []byte // workspaceID → channels
+	workspaceSubs map[int64][]chan []byte  // workspaceID → channels
 	userSubs      map[string][]chan []byte // userID → channels
 }
 
@@ -44,7 +47,7 @@ func (b *Bus) Subscribe(workspaceID int64, userID string) chan []byte {
 func (b *Bus) Unsubscribe(workspaceID int64, userID string, ch chan []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	
+
 	if workspaceID == 0 {
 		subs := b.userSubs[userID]
 		for i, s := range subs {
@@ -77,7 +80,7 @@ func (b *Bus) Publish(workspaceID int64, userID string, evt Event) {
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	
+
 	// Send to specific workspace subscribers
 	if workspaceID != 0 {
 		for _, ch := range b.workspaceSubs[workspaceID] {

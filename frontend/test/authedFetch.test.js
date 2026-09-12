@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { createAuthedFetch } from '../src/composables/useAuthedFetch'

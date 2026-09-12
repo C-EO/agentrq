@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 /**
  * Links inside rendered message content: following one to a local file, and
  * copying any of them.

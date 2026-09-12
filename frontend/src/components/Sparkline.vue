@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+
 <template>
   <!-- Mini SVG Line Chart -->
   <div v-if="hasData" class="h-full w-full relative group/spark">

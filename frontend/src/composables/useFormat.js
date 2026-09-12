@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 export function useFormat() {
   const toKebabCase = (str) => {
     if (!str) return '';

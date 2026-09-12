@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { describe, it, expect, vi } from 'vitest'
 
 import { THEMES, applyTheme, backgroundColorFor, themeSourceFor } from '../src/main/theme.js'

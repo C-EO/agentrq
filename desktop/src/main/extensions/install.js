@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { dirname } from 'node:path'
 
 import { parseManifest } from './manifest.js'

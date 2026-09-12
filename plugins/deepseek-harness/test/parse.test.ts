@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { describe, expect, it } from 'vitest'
 import { parseChannelNotification, parseTaskReply } from '../src/client.js'
 import { renderGuidanceSection, renderPushFraming, renderTaskFraming, toolName } from '../src/prompt.js'

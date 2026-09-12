@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 /**
  * End-to-end check of the two things a link in a message body can be clicked
  * for: copying where it points, and — for a local file — opening it.

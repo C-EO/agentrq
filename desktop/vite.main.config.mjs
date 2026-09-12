@@ -1,3 +1,6 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
 import { defineConfig } from 'vite'
 import { builtinModules } from 'node:module'
 import { fileURLToPath, URL } from 'node:url'
