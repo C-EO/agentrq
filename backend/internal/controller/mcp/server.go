@@ -16,7 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 	"unsafe"
 
 	zlog "github.com/rs/zerolog/log"
@@ -1781,7 +1780,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request")
 				go func() {
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-					_ = ps.sendVerdict(context.Background(), 0, Verdict{RequestID: p.RequestID, Behavior: "allow"}, verdictAutomatic)
+					_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
 				}()
 				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
@@ -1797,7 +1796,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("auto-allowing permission request (task level)")
 					go func() {
 						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-						_ = ps.sendVerdict(context.Background(), taskID, Verdict{RequestID: p.RequestID, Behavior: "allow"}, verdictAutomatic)
+						_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
 					}()
 					ps.markAutoDecided(p.RequestID)
 					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
@@ -2007,62 +2006,6 @@ var extensionNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // could not be an extension.
 var ErrBadDecider = errors.New("decidedBy must be an extension name")
 
-// Verdict is one answer to one permission request.
-//
-// A struct rather than four more parameters: the call site reads as what it is
-// — a request id, an answer, who decided, and why — and adding the fifth thing
-// somebody eventually wants does not mean rewriting every caller to keep the
-// argument order straight.
-type Verdict struct {
-	RequestID string
-	// "allow", "deny", or "allow_always" — which also writes a standing rule.
-	Behavior string
-	// The installed extension that decided this, empty when the user did.
-	DecidedBy string
-	// Why, in the decider's own words. Optional, and passed to the agent.
-	Reason string
-}
-
-// maxReasonLen is as much of a reason as is worth carrying.
-//
-// Long enough for a sentence explaining a refusal, short enough that it cannot
-// be used to push a paragraph into an agent's context or a task's feed.
-const maxReasonLen = 500
-
-// sanitiseReason bounds a reason and strips what has no business in one.
-//
-// **Truncated rather than refused**, which is the opposite of how this codebase
-// treats an oversized memory or stored setting — and deliberately so. There, the
-// value *is* the thing being saved, and cutting it in half silently is worse
-// than saying no. Here the reason is an explanation attached to a decision, and
-// refusing the whole verdict because the explanation ran long would throw away
-// the answer to keep the footnote.
-//
-// Control characters go because this ends up in a task's feed and in a
-// notification to the agent, and a reason containing a newline run or an escape
-// sequence is a reason that draws somewhere it was not meant to.
-func sanitiseReason(reason string) string {
-	// Every control character becomes a space rather than being dropped: removing
-	// one joins the words either side of it, and "and\x07three" reading as
-	// "andthree" is a worse reason than one with a stray space in it.
-	cleaned := strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return ' '
-		}
-		return r
-	}, reason)
-
-	// Then collapsed, so a paragraph of newlines does not arrive as a paragraph
-	// of spaces.
-	cleaned = strings.Join(strings.Fields(cleaned), " ")
-	if len(cleaned) > maxReasonLen {
-		// Cut on a rune boundary: a reason chopped mid-character is a reason
-		// that will not render, and this text is shown to a person.
-		cleaned = strings.ToValidUTF8(cleaned[:maxReasonLen], "")
-	}
-	return cleaned
-}
-
 // ErrExtensionCannotRemember is returned when a verdict from an extension asks
 // for a standing rule.
 //
@@ -2086,7 +2029,7 @@ var ErrExtensionCannotRemember = errors.New("an extension may answer a request, 
 // manual decision. The paths that answer on nobody's behalf call sendVerdict
 // directly and say so.
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int64, requestID string, behavior string) error {
-	return ps.sendVerdict(ctx, taskID, Verdict{RequestID: requestID, Behavior: behavior}, verdictFromHuman)
+	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromHuman, "")
 }
 
 // SendPermissionVerdictFrom hands over a verdict an installed extension reached
@@ -2100,46 +2043,20 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 //
 // An empty name is the human path, not a nameless extension: a caller with
 // nothing to declare is the browser, and it says so by saying nothing.
-func (ps *WorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, taskID int64, v Verdict) error {
-	v.Reason = sanitiseReason(v.Reason)
-
-	if v.DecidedBy == "" {
-		// The human path, which may still carry a reason: nothing about
-		// explaining a refusal is particular to extensions, and a client that
-		// sends one gets it delivered.
-		return ps.sendVerdict(ctx, taskID, v, verdictFromHuman)
+func (ps *WorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error {
+	if decidedBy == "" {
+		return ps.SendPermissionVerdict(ctx, taskID, requestID, behavior)
 	}
-	if !extensionNameRe.MatchString(v.DecidedBy) || len(v.DecidedBy) > 64 {
+	if !extensionNameRe.MatchString(decidedBy) || len(decidedBy) > 64 {
 		return ErrBadDecider
 	}
-	if v.Behavior == "allow_always" {
+	if behavior == "allow_always" {
 		return ErrExtensionCannotRemember
 	}
-	return ps.sendVerdict(ctx, taskID, v, verdictFromExtension)
+	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromExtension, decidedBy)
 }
 
-// verdictParams is what the agent's session is told.
-//
-// Its own function because the rule is worth reading on its own and worth
-// testing without a live session: the reason is present only when there is one,
-// so a harness that does not know the field sees a notification shaped exactly
-// as it was before this existed.
-func verdictParams(requestID, behavior, reason string) map[string]any {
-	params := map[string]any{
-		"request_id": requestID,
-		"behavior":   behavior, // "allow" | "deny"
-	}
-	// An agent told *why* it was refused can come back with something narrower.
-	// One told "denied" asks the same thing again, or abandons a task it could
-	// have finished.
-	if reason != "" {
-		params["reason"] = reason
-	}
-	return params
-}
-
-func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, v Verdict, origin verdictOrigin) error {
-	requestID, behavior, decidedBy := v.RequestID, v.Behavior, v.DecidedBy
+func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, requestID string, behavior string, origin verdictOrigin, decidedBy string) error {
 	ps.permissionRequestsMu.RLock()
 	sessID, ok := ps.permissionRequests[requestID]
 	ps.permissionRequestsMu.RUnlock()
@@ -2267,7 +2184,10 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, v Verd
 	}
 
 	// Notify Claude Code session
-	params := verdictParams(requestID, effectiveBehavior, v.Reason)
+	params := map[string]any{
+		"request_id": requestID,
+		"behavior":   effectiveBehavior, // "allow" | "deny"
+	}
 
 	if !ps.notifySession(ctx, sessID, "notifications/claude/channel/permission", params) {
 		// The agent's connection went away between asking and being answered —
@@ -2295,12 +2215,6 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, v Verd
 			update := map[string]any{"status": behavior}
 			if decidedBy != "" {
 				update["decidedBy"] = decidedBy
-			}
-			// The same sentence the agent was given. A card saying "Denied" and
-			// nothing else leaves the user working out why something they did
-			// not do was done — which is the question a reason exists to answer.
-			if v.Reason != "" {
-				update["reason"] = v.Reason
 			}
 			_ = ps.updateMessageMetadata(ctx, taskID, msgID, update)
 		}
@@ -2439,7 +2353,7 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 		zlog.Info().Str("request_id", p.RequestID).Str("behavior", behavior).
 			Msg("delivering the verdict the agent missed while it was away")
 		// verdictReplayed: this decision was counted when it was first made.
-		_ = ps.sendVerdict(ctx, taskID, Verdict{RequestID: p.RequestID, Behavior: behavior}, verdictReplayed)
+		_ = ps.sendVerdict(ctx, taskID, p.RequestID, behavior, verdictReplayed, "")
 	}
 
 	return true
@@ -2538,7 +2452,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				_ = ps.sendVerdict(context.Background(), 0, Verdict{RequestID: p.RequestID, Behavior: "allow"}, verdictAutomatic)
+				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
 			}()
 			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
 			ps.markAutoDecided(p.RequestID)
@@ -2557,7 +2471,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
 				go func() {
 					time.Sleep(100 * time.Millisecond)
-					_ = ps.sendVerdict(context.Background(), taskID, Verdict{RequestID: p.RequestID, Behavior: "allow"}, verdictAutomatic)
+					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
 				}()
 				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})

@@ -298,14 +298,6 @@ type (
 		// here rather than inferred — nothing else in the request distinguishes
 		// a person clicking Allow from an extension deciding for them.
 		DecidedBy string `json:"decidedBy,omitempty"`
-		// Reason is why, in the decider's own words, and is passed on to the
-		// agent that asked. Optional on every path.
-		//
-		// Bounded and stripped of control characters on the way through rather
-		// than refused: unlike a name it is prose, and throwing away a verdict
-		// because its explanation ran long would discard the answer to keep the
-		// footnote.
-		Reason string `json:"reason,omitempty"`
 	}
 
 	// SetAgentModelRequest asks the workspace's connected agent to switch
