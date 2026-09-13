@@ -416,29 +416,6 @@ describe('createToolCallReview', () => {
     )
   })
 
-  /**
-   * The reason travels with the verdict rather than stopping at the log.
-   *
-   * It is what the agent is told and what the card in the task shows — an agent
-   * told *why* can come back with something narrower, and a card saying
-   * "Denied" and nothing else leaves somebody working out why a command they
-   * wanted never ran.
-   */
-  it('carries the reviewer\'s reason out with the verdict', async () => {
-    const { dispatcher, sendVerdict } = build({
-      reviewers: [
-        { owner: 'guardrail', id: 'shell', review: () => ({ behavior: 'deny', reason: 'this cannot be undone' }) },
-      ],
-    })
-
-    await dispatcher.handle(streamEvent())
-
-    expect(sendVerdict).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ reason: 'this cannot be undone' }),
-    )
-  })
-
   it('sends nothing when the request is left to the user', async () => {
     const { dispatcher, sendVerdict } = build({
       reviewers: [{ owner: 'guardrail', id: 'shell', review: () => undefined }],

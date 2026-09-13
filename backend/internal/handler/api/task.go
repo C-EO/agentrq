@@ -733,13 +733,7 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			}
 		}
 
-		verdict := mcpctrl.Verdict{
-			RequestID: rq.RequestID,
-			Behavior:  rq.Behavior,
-			DecidedBy: rq.DecidedBy,
-			Reason:    rq.Reason,
-		}
-		if err := srv.SendPermissionVerdictFrom(c.Context(), taskID, verdict); err != nil {
+		if err := srv.SendPermissionVerdictFrom(c.Context(), taskID, rq.RequestID, rq.Behavior, rq.DecidedBy); err != nil {
 			if strings.Contains(err.Error(), "(expired)") {
 				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This action request has expired (server was likely restarted). The agent must re-request this action."})
 			}

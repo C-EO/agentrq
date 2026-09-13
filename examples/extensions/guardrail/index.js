@@ -287,11 +287,11 @@ export function apply(ctx) {
       if (!because) return undefined
 
       ctx.logger.info(`refusing ${request.toolName}: ${because}`)
-      // The reason travels with the verdict: to the agent, which can come back
-      // with something narrower, and to the card in the task, which would
-      // otherwise say "Denied" and leave somebody working out why a command
-      // they wanted never ran. So it is written to be acted on rather than
-      // apologised for.
+      // The reason is why *this* refusal happened, and today it reaches the log
+      // and the desktop's own record of the decision — the verdict the agent is
+      // sent carries the behaviour and nothing else. Written as a sentence
+      // anyway, and worth writing that way: it is the line somebody reads when
+      // they are working out why a command they wanted never ran.
       return { behavior: 'deny', reason: because }
     },
   })
