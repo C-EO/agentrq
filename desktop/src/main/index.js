@@ -1404,6 +1404,11 @@ function buildExtensionRuntime() {
             requestId: request.requestId,
             behavior: verdict.behavior,
             decidedBy: verdict.by,
+            // Sent on to the agent, which is the whole point of a reviewer
+            // writing one. An agent told *why* it was refused can come back
+            // with something narrower; one told "denied" asks the same thing
+            // again, or abandons a task it could have finished.
+            reason: verdict.reason,
           }),
         },
       )

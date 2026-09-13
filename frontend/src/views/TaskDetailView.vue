@@ -308,6 +308,13 @@
                        </span>
                        <svg class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                      </div>
+                     <!-- On the row rather than inside the collapsed details:
+                          the details are shut, and the reason is the part that
+                          explains a verdict somebody did not give themselves. -->
+                     <p v-if="permMeta(m).reason" class="px-3 pb-2 -mt-1 text-[10px] leading-relaxed"
+                        :class="m.metadata.status === 'deny' ? 'text-red-600 dark:text-red-500' : 'text-gray-500 dark:text-zinc-400'">
+                       {{ permMeta(m).reason }}
+                     </p>
                      <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed min-w-0"
                           :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700' : 'border-red-200 dark:border-red-500/20'">
                        <div class="relative mb-2">
@@ -921,6 +928,11 @@ function permMeta(m) {
     // then the card has to say so — a decision you are invited to remember
     // making, and did not, is the one outcome this must never produce.
     decidedBy: md.decidedBy ?? '',
+    // Why it was answered that way, when whoever answered said. The agent is
+    // sent the same sentence — this is the half a person reads, and without it
+    // a card saying "Denied" leaves them working out why something they did not
+    // do was done.
+    reason: md.reason ?? '',
   };
 }
 
