@@ -480,6 +480,10 @@ Refusing costs a tool call. Approving costs whatever the tool call does.
 - **Silence is never an allow.** Abstaining, throwing, taking longer than five
   seconds, or not being consented to all leave the request where it was: in
   front of the user. Every bug in your reviewer fails that way.
+- **Say why.** The `reason` you return is sent to the agent and shown on the
+  card in the task. Write it to be acted on: an agent told *"this deletes a
+  directory tree"* can come back with a narrower command, and one told
+  *"denied"* asks the same thing again.
 - **Approving needs a consent that refusing does not.** A reviewer installed at
   `deny` that answers `allow` is treated as having abstained, and told so in the
   log.
