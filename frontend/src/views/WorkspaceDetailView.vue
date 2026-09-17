@@ -175,9 +175,24 @@
            <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed font-medium">
             {{ tasks.length === 0 ? 'This workspace is currently offline. Connect Claude, Gemini, or Codex via MCP to start automating tasks.' : 'This workspace is currently offline. Reconnect Claude, Gemini, or Codex via MCP to start automating tasks.' }}
            </p>
-           <button @click="router.push({ path: `/workspaces/${workspaceId}/settings`, query: { tab: 'setup' } })" class="mt-8 px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all">
-             Open Setup Guide
-           </button>
+           <!-- With a machine online, starting an agent is a button rather
+                than a guide to go and read. The setup guide stays either way:
+                it is still the answer for connecting an agent from somewhere
+                this control panel cannot reach. -->
+           <div class="mt-8 w-full max-w-[420px] flex flex-col items-center gap-3">
+             <StartAgentPanel
+               :workspace="workspace"
+               variant="hero"
+               @availability="canStartAgent = $event"
+             />
+             <button
+               @click="router.push({ path: `/workspaces/${workspaceId}/settings`, query: { tab: 'setup' } })"
+               :class="canStartAgent
+                 ? 'text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 transition-all'
+                 : 'w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all'">
+               Open Setup Guide
+             </button>
+           </div>
         </template>
 
         <template v-else-if="tasks.length === 0">
@@ -231,6 +246,7 @@ import AgentConcurrencyControl from '../components/AgentConcurrencyControl.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
 import LoadingState from '../components/LoadingState.vue';
+import StartAgentPanel from '../components/StartAgentPanel.vue';
 
 const { toKebabCase } = useFormat();
 
@@ -295,6 +311,10 @@ const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy ===
 // Derived, not stored. A ref set at load time is exactly what made this header
 // dot lie until the page was reloaded.
 const isAgentConnected = computed(() => workspace.value?.agentConnected === true);
+
+// Reported by the panel, which is the thing that knows whether any machine is
+// online. It decides which of the two actions in the offline state is primary.
+const canStartAgent = ref(false);
 
 /**
  * What extensions offer for this workspace.
