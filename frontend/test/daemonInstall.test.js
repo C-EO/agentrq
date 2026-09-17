@@ -11,6 +11,8 @@ import {
   PLATFORMS,
   RELEASES_URL,
   DAEMON_DOCS_URL,
+  INSTALLER_URL,
+  usesInstaller,
 } from '../src/composables/useDaemonInstall.js'
 
 describe('detectPlatform', () => {
@@ -48,28 +50,39 @@ describe('platformLabel', () => {
 })
 
 describe('installSteps', () => {
-  it('unpacks and installs, per platform', () => {
-    expect(installSteps('linux').join(' ')).toContain('linux')
-    expect(installSteps('macos').join(' ')).toContain('darwin')
+  // Linux and macOS install with the hosted script; Windows has no `sh` and
+  // keeps the manual route.
+  it('installs with the script where there is a shell to run it', () => {
+    for (const platform of ['linux', 'macos']) {
+      expect(installSteps(platform), platform).toEqual([`curl -fsSL ${INSTALLER_URL} | sh`])
+    }
     expect(installSteps('windows').join(' ')).toContain('windows')
   })
 
-  // Not a curl-pipe-to-shell one-liner: it asks somebody to run code they have
-  // not seen, on the machine they are about to grant command access to.
-  it('never pipes a download into a shell', () => {
+  // The whole reason this is one line rather than four is that the script
+  // verifies what it downloaded and the manual steps never did. Fetching it
+  // over plain http would hand that away to anyone on the path.
+  it('fetches the installer over https, from the official host', () => {
+    expect(INSTALLER_URL).toMatch(/^https:\/\/agentrq\.com\//)
+    expect(installSteps('linux').join('\n')).toContain(INSTALLER_URL)
+  })
+
+  // The daemon refuses to run as root, so an install that reached for sudo
+  // would be teaching somebody to work around the check that keeps an agent to
+  // what they can do themselves. The script asks for it only to copy a file
+  // into /usr/local/bin on macOS, and that is its business, not this panel's.
+  it('never tells anybody to install it as root', () => {
     for (const platform of PLATFORMS) {
-      const text = installSteps(platform).join('\n')
-      expect(text, platform).not.toMatch(/curl[^|]*\|\s*(sh|bash)/)
-      expect(text, platform).not.toMatch(/iwr[^|]*\|\s*iex/i)
+      expect(installSteps(platform).join('\n'), platform).not.toContain('sudo')
     }
   })
 
-  // The daemon refuses to run as root, so an install that reached for sudo on
-  // Linux would be teaching somebody to work around the check that keeps an
-  // agent to what they can do themselves.
-  it('installs to a user path on Linux', () => {
-    expect(installSteps('linux').join(' ')).toContain('~/.local/bin')
-    expect(installSteps('linux').join(' ')).not.toContain('sudo')
+  // Windows still has no user directory on PATH, so its steps must still do
+  // what they claim.
+  it('never pipes a download into a shell on Windows, which has no sh', () => {
+    const text = installSteps('windows').join('\n')
+    expect(text).not.toMatch(/iwr[^|]*\|\s*iex/i)
+    expect(text).not.toMatch(/curl[^|]*\|\s*(sh|bash)/)
   })
 
   // Windows has no user directory that is already on PATH, so the step that
@@ -119,25 +132,53 @@ describe('runSteps', () => {
 describe('installGuide', () => {
   // The order is the point. Printing the enrol command first is exactly the
   // bug this replaces: a command for a binary that is not there yet.
-  it('puts the download before the enrolment', () => {
+  it('puts the install before the enrolment', () => {
     const guide = installGuide('linux', 'agentrqd enroll --server https://x --code ABCD')
     const titles = guide.steps.map((s) => s.title)
-    expect(titles).toEqual(['Download it', 'Put it on your PATH', 'Enrol this machine', 'Run it'])
+    expect(titles).toEqual(['Install it', 'Enrol this machine', 'Run it'])
+  })
+
+  // Windows cannot run the script, so it keeps the download it has to do by
+  // hand -- and therefore one more step than the other two.
+  it('keeps the manual download on Windows', () => {
+    const titles = installGuide('windows', 'cmd').steps.map((s) => s.title)
+    expect(titles).toEqual([
+      'Download it',
+      'Put it on your PATH',
+      'Enrol this machine',
+      'Run it',
+    ])
+    expect(installGuide('windows', 'cmd').steps[0].link).toBe(RELEASES_URL)
+  })
+
+  // The one-liner hides what it runs, so the step that prints it links to the
+  // guide that shows how to read it first.
+  it('links the install step to the guide', () => {
+    expect(installGuide('linux', '').steps[0].link).toBe(DAEMON_DOCS_URL)
   })
 
   it('carries the enrol command it was given', () => {
     const cmd = 'agentrqd enroll --server https://agentrq.example --code ABCD-EFGH'
     const guide = installGuide('macos', cmd)
-    expect(guide.steps[2].lines).toEqual([cmd])
+    const enrol = guide.steps.find((step) => step.title === 'Enrol this machine')
+    expect(enrol.lines).toEqual([cmd])
     expect(guide.label).toBe('macOS')
     expect(guide.platform).toBe('macos')
+  })
+
+  it('knows which platforms the installer serves', () => {
+    expect(usesInstaller('linux')).toBe(true)
+    expect(usesInstaller('macos')).toBe(true)
+    expect(usesInstaller('windows')).toBe(false)
   })
 
   // Before a code is minted there is nothing to enrol with, and an empty line
   // renders as an empty code block rather than as nothing.
   it('leaves the enrol step empty when there is no code yet', () => {
-    expect(installGuide('linux', '').steps[2].lines).toEqual([])
-    expect(installGuide('linux', undefined).steps[2].lines).toEqual([])
+    const enrolStep = (cmd) =>
+      installGuide('linux', cmd).steps.find((step) => step.title === 'Enrol this machine')
+    expect(enrolStep('').lines).toEqual([])
+    expect(enrolStep(undefined).lines).toEqual([])
   })
 
   it('links the download at the step that needs it', () => {
