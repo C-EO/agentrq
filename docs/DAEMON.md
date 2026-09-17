@@ -38,8 +38,44 @@ isolation.
 
 ## Installing it
 
-`agentrqd` is one static binary. Download it, put it on your `PATH`, enrol it,
-run it. There is no installer and nothing to configure first.
+`agentrqd` is one static binary. Put it on your `PATH`, enrol it, run it.
+
+### The script
+
+On Linux and macOS, fetch the installer, read it, and run it:
+
+```sh
+curl -fsSL https://agentrq.com/install-agentrqd.sh -o install-agentrqd.sh
+less install-agentrqd.sh
+sh install-agentrqd.sh
+```
+
+It works out which archive this machine needs, **verifies it against the
+SHA-256 checksums published with the release**, and installs to
+`~/.local/bin` on Linux or `/usr/local/bin` on macOS. Running it again
+updates in place. It installs and nothing more: it does not enrol the
+machine, start anything, or install a service.
+
+If you would rather not keep the file, the one-liner is:
+
+```sh
+curl -fsSL https://agentrq.com/install-agentrqd.sh | sh
+```
+
+Read it first if you can. It is the machine you are about to grant an AgentRQ
+account command access to, and "I looked at the script" is a cheap habit at
+exactly the moment it is worth having. The two-step form above is the same
+install.
+
+The checksum is not optional and there is no flag to skip it — a download the
+script cannot vouch for is never unpacked, let alone installed. That is the
+part worth having: installing by hand, below, verifies nothing at all unless
+you do it yourself.
+
+`sh install-agentrqd.sh --help` lists the flags: `--version` to pin a release,
+`--dir` to install somewhere else, `--force` to reinstall.
+
+### Or by hand
 
 Releases are on the
 [releases page](https://github.com/agentrq/agentrq/releases/latest) —
@@ -73,10 +109,15 @@ an agent it starts would inherit those powers. If an install guide anywhere
 tells you to work around that refusal, it is removing the only thing keeping an
 agent to what you can already do yourself.
 
-There is no `curl … | sh` one-liner on purpose. It is the shortest thing to
-print, and it asks you to run code you have not seen on the machine you are
-about to grant an AgentRQ account command access to — which is the wrong moment
-to be hiding what is happening.
+Nothing here verifies what you downloaded. If you install by hand, check it
+against `checksums.txt` on the release page yourself:
+
+```sh
+sha256sum -c checksums.txt --ignore-missing
+```
+
+That is the one thing the script does that a manual install usually skips,
+and the reason it is worth preferring.
 
 ### Enrol it
 

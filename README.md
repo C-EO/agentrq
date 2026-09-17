@@ -223,10 +223,23 @@ it, `Esc` included. The machines page shows what each box has left: memory, CPU
 and free space per filesystem, so you can tell whether it can take another
 agent.
 
-Install it from the
+On Linux and macOS, install it with the script — read it first, it is the
+machine you are about to grant command access to:
+
+```bash
+curl -fsSL https://agentrq.com/install-agentrqd.sh -o install-agentrqd.sh
+less install-agentrqd.sh
+sh install-agentrqd.sh
+```
+
+It picks the right build, **verifies it against the checksums published with
+the release**, and puts it on your `PATH`; running it again updates in place.
+It installs only — enrolling stays a separate, deliberate step. Windows and
+manual installs are on the
 [releases page](https://github.com/agentrq/agentrq/releases/latest)
-— one static binary for Linux, macOS and Windows — then
-**Machines → Add machine** gives you a code to enrol it with.
+— one static binary for Linux, macOS and Windows.
+
+Then **Machines → Add machine** gives you a code to enrol it with.
 
 Enrolling a machine is a real grant, and the [Daemon
 Guide](docs/DAEMON.md) says so plainly: it lets anyone who can authenticate as
