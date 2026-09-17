@@ -112,6 +112,26 @@ Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat
 </td>
 <td width="50%"><img src="https://agentrq.com/assets/feature-keyboard-shortcuts.gif" alt="AgentRQ task finder and keyboard shortcuts sheet" width="320" /></td>
 </tr>
+<tr>
+<td width="50%"><img src="https://agentrq.com/assets/feature-machines-detail.png" alt="AgentRQ machine page: start an agent, running sessions, and live resources" width="320" /></td>
+<td width="50%" valign="middle">
+
+### Machines
+
+Install `agentrqd` on a computer you own, enrol it once with a single-use code typed on the machine itself, and it becomes somewhere agents can run — in your repositories, with your toolchain. Pick a workspace and what to run, and it starts in that workspace's folder on that machine. Each machine's page shows what it has left: CPU, memory, uptime, load and free space per filesystem.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Live Terminals
+
+Open a running session from any browser and you are at the prompt. Keystrokes go straight through as the bytes your keys produced — <kbd>Esc</kbd> and <kbd>Ctrl-C</kbd> included — resizing reflows the program on the far end, and the session keeps running whether or not anybody is watching. Drop the network and the screen is still there when you come back.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-machines-poster.png" alt="AgentRQ live terminal attached to a claude-code session on an enrolled machine" width="320" /></td>
+</tr>
 </table>
 
 See the full list at [agentrq.com/features](https://agentrq.com/features).
