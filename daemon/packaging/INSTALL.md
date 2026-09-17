@@ -12,7 +12,7 @@ that is not something to find out afterwards.
 **Linux and macOS**
 
 Pick the archive for your platform from the
-[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true),
+[releases page](https://github.com/agentrq/agentrq/releases/latest),
 then:
 
 ```sh

@@ -3,7 +3,7 @@ name: Daemon release
 on:
   push:
     tags:
-      - 'agentrqd-v*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -51,7 +51,7 @@ jobs:
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=${GITHUB_REF_NAME#agentrqd-v}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
       # The bare binaries, named the way agentrqd-release reads the platform
@@ -89,7 +89,7 @@ jobs:
           set -eu
           go run ./cmd/agentrqd-release manifest \
             --version "${VERSION}" \
-            --base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/agentrqd-v${VERSION}" \
+            --base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}" \
             update > update/agentrqd.json
 
       # Proving the release is installable, not just that it built. A manifest
@@ -103,9 +103,9 @@ jobs:
           AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
         run: go run ./cmd/agentrqd-release verify --version "${VERSION}" update
 
-      # Package archives with GoReleaser using a semver tag (vX.Y.Z) and skip
-      # git tag validation and publishing so GoReleaser packages the archives
-      # without failing on tag mismatch or non-semver tag parsing.
+      # Package archives with GoReleaser using standard semver tag (vX.Y.Z) and
+      # skip git tag validation and publishing so GoReleaser packages the archives
+      # cleanly without failing on repository tag checks or duplicating release creation.
       - name: Package the archives
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -117,8 +117,9 @@ jobs:
           GORELEASER_CURRENT_TAG: v${{ steps.version.outputs.version }}
           AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
 
-      # Publish the release under the agentrqd-v* tag using the GitHub CLI,
-      # attaching both the packaged archives and the signed bare binaries.
+      # Publish or attach the release assets under the standard v* tag using
+      # the GitHub CLI, uploading packaged archives, checksums, bare binaries,
+      # and the signed update manifest alongside desktop app artifacts.
       - name: Publish GitHub release
         working-directory: daemon
         env:
@@ -126,17 +127,18 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -eu
-          TAG="agentrqd-v${VERSION}"
+          TAG="v${VERSION}"
           (cd update && sha256sum * >> ../dist/checksums.txt)
-          NOTES_FLAG="--generate-notes"
-          if [ -f dist/CHANGELOG.md ]; then
-            NOTES_FLAG="--notes-file dist/CHANGELOG.md"
-          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; uploading assets..."
             gh release upload "$TAG" --clobber dist/*.tar.gz dist/*.zip dist/checksums.txt update/*
           else
+            NOTES_FLAG="--generate-notes"
+            if [ -f dist/CHANGELOG.md ]; then
+              NOTES_FLAG="--notes-file dist/CHANGELOG.md"
+            fi
             gh release create "$TAG" \
+              --draft \
               --target "$GITHUB_SHA" \
               --title "$TAG" \
               $NOTES_FLAG \
