@@ -272,9 +272,16 @@ func TestTheAttachIsAuditedAndTheKeystrokesAreNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = ws.Close()
-	waitFor(t, func() bool { return relay.Viewers(sessionID) == 0 }, "the viewer never detached")
+	// Waited on by what is being asserted. The relay's own count drops when
+	// the viewer detaches, and the audit line is written after that — so
+	// waiting for the count and then reading the log is testing an effect that
+	// has not necessarily happened yet.
+	var out string
+	waitFor(t, func() bool {
+		out = logged.String()
+		return strings.Contains(out, "terminal detached")
+	}, "the detach was never audited")
 
-	out := logged.String()
 	for _, want := range []string{"terminal attached", "terminal detached", `"user_id":3`, `"session_id":7`, `"machine_id":11`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the audit record does not mention %s:\n%s", want, out)
@@ -314,5 +321,46 @@ func TestPresenceReachesTheBrowser(t *testing.T) {
 	}
 	if p.SessionID != sessionID || len(p.Viewers) != 1 || p.Viewers[0] != "Ada" {
 		t.Errorf("presence = %+v", p)
+	}
+}
+
+// A browser cannot name a session — it holds base62 ids and the header wants a
+// number — so it names none, and this side supplies it.
+//
+// This is the test that was missing. Input over a real socket was covered, but
+// always with a frame a Go client had built, and a Go client has the number to
+// hand. The browser does not, and the keystroke it actually sends looks like
+// this one.
+func TestAViewerNeedNotNameItsSession(t *testing.T) {
+	const sessionID = 7
+	srv, relay, daemon := viewerServer(t, sessionID)
+	ws := dialViewer(t, srv)
+	waitFor(t, func() bool { return relay.Viewers(sessionID) == 1 }, "the viewer never attached")
+
+	// Exactly what the browser puts on the wire: type, eight zero bytes where
+	// the session would be, then the keystroke.
+	raw := make([]byte, 9+1)
+	raw[0] = byte(wire.TypeInput)
+	raw[9] = 'y'
+	if err := ws.WriteMessage(websocket.BinaryMessage, raw); err != nil {
+		t.Fatal(err)
+	}
+
+	// Waited on by type, not by count: attaching makes the relay send the
+	// daemon a control frame first, so "any frame has arrived" is satisfied
+	// before the keystroke has gone anywhere near it.
+	waitFor(t, func() bool {
+		_, ok := daemon.firstOfType(wire.TypeInput)
+		return ok
+	}, "the keystroke never reached the daemon")
+
+	got, _ := daemon.firstOfType(wire.TypeInput)
+	if string(got.Payload) != "y" {
+		t.Errorf("the daemon got %q", got.Payload)
+	}
+	// Supplied here, from the socket the viewer attached to, which is what
+	// stops a browser typing into another session by changing a number.
+	if got.SessionID != sessionID {
+		t.Errorf("session = %d, want %d", got.SessionID, sessionID)
 	}
 }
