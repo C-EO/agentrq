@@ -298,20 +298,35 @@ page, and no amount of styling from the page can reach them.
 ### Installation is answered in three places, and they must agree
 
 The enrol command is useless on its own — it names a binary that is not there
-yet — so the "Add machine" panel walks download → PATH → enrol → run, and the
-steps come from `frontend/src/composables/useDaemonInstall.js` where they are
-tested rather than from the template.
+yet — so the "Add machine" panel walks install → enrol → run, and the steps
+come from `frontend/src/composables/useDaemonInstall.js` where they are tested
+rather than from the template.
 
 The same steps appear in `docs/DAEMON.md` (for somebody who has not downloaded
 anything) and `daemon/packaging/INSTALL.md` (for somebody who has the archive
 and not the page). Change one, change all three.
 
-Two rules the tests enforce: **never a `curl … | sh` one-liner** — it asks
-somebody to run unseen code on the machine they are about to grant command
-access to — and **never `sudo` for running the daemon**, only for copying a
-file into `/usr/local/bin`. The daemon refuses to run as root, and an install
-guide that works around that has removed the only thing keeping an agent to
-what its user can already do.
+Linux and macOS install with `curl -fsSL https://agentrq.com/install-agentrqd.sh | sh`.
+The script lives in the **agentrq-landing** repository, not this one, so
+changing what it does is a change over there. Windows has no `sh` and keeps the
+manual download → PATH steps, which is why that platform has one step more than
+the other two.
+
+**This used to forbid the one-liner**, on the grounds that piping unseen code
+into a shell is worst on the very machine you are about to grant command
+access to. That argument is still worth knowing, and it lost to two things: the
+manual steps it protected verified nothing at all, and an install nobody
+finishes protects nobody. What makes the trade sound is that the script's
+SHA-256 check against the release's published `checksums.txt` is **mandatory
+and fail-closed, with no flag to skip it** — so if that ever becomes optional,
+this decision should be revisited rather than inherited. `docs/DAEMON.md`
+carries the fetch-read-run form for anyone who wants to look first.
+
+The rule that did *not* change: **never `sudo` for running the daemon**, only
+for copying a file into `/usr/local/bin`. The daemon refuses to run as root,
+and an install guide that works around that has removed the only thing keeping
+an agent to what its user can already do. The installer refuses to run as root
+for the same reason, and `daemonInstall.test.js` still enforces it here.
 
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.

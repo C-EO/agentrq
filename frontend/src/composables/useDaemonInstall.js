@@ -17,6 +17,9 @@
 /** Where the daemon's releases live. */
 export const RELEASES_URL = 'https://github.com/agentrq/agentrq/releases/latest'
 
+/** The hosted installer, for the platforms that can run a shell script. */
+export const INSTALLER_URL = 'https://agentrq.com/install-agentrqd.sh'
+
 /** The user-facing guide, which carries the trust model. */
 export const DAEMON_DOCS_URL = 'https://agentrq.com/docs/daemon'
 
@@ -43,29 +46,31 @@ export function platformLabel(platform) {
 }
 
 /**
- * The commands that put the binary on a machine's PATH.
+ * The command that puts the binary on a machine's PATH.
  *
- * Deliberately not a curl-pipe-to-shell one-liner. That is the shortest thing
- * to print and it asks somebody to run code they have not seen, on a machine
- * they are about to grant an AgentRQ account command access to — the exact
- * moment to be showing what is happening rather than hiding it.
+ * One line on Linux and macOS, matching the desktop app's installer. It works
+ * out the right build, checks it against the SHA-256 checksums published with
+ * the release — mandatorily, with no flag to skip — and installs to
+ * `~/.local/bin` or `/usr/local/bin`. It installs only: it does not enrol,
+ * start anything, or run as root.
  *
- * `~/.local/bin` on Linux and `/usr/local/bin` on macOS because those are
- * where each platform expects a user-installed binary, and neither needs the
- * daemon to run as root — which it refuses to do anyway.
+ * This panel used to refuse the pipe and print `tar` and `install` instead, on
+ * the grounds that piping unseen code into a shell is worst on the machine you
+ * are about to grant command access to. That argument is still worth knowing,
+ * and it lost to two things: the manual steps verified nothing at all, and an
+ * install nobody completes protects nobody. The script is the shortest path
+ * *and* the only one that checks what it downloaded. Somebody who wants to
+ * read it first is a step away — `docs/DAEMON.md`, linked from this step,
+ * shows the fetch-read-run form.
  *
- * Windows has no such directory that is already on PATH, so the step that
- * claims to put it on PATH has to actually do that. Unpacking into
- * %LOCALAPPDATA% and saying nothing more would leave somebody with a binary
- * they cannot run by name and a step that lied about what it did.
+ * Windows has no `sh`, so it keeps the manual route. It also has no user
+ * directory that is already on PATH, so the step that claims to put it on PATH
+ * has to actually do that — unpacking into %LOCALAPPDATA% and saying nothing
+ * more would leave somebody with a binary they cannot run by name and a step
+ * that lied about what it did.
  */
 export function installSteps(platform) {
   switch (platform) {
-    case 'macos':
-      return [
-        'tar xzf agentrqd_*_darwin_*.tar.gz',
-        'sudo install -m 0755 agentrqd /usr/local/bin/',
-      ]
     case 'windows':
       return [
         'Expand-Archive agentrqd_*_windows_*.zip -DestinationPath $env:LOCALAPPDATA\\agentrqd',
@@ -74,11 +79,13 @@ export function installSteps(platform) {
         '  "$env:Path;$env:LOCALAPPDATA\\agentrqd", "User")',
       ]
     default:
-      return [
-        'tar xzf agentrqd_*_linux_*.tar.gz',
-        'install -m 0755 agentrqd ~/.local/bin/',
-      ]
+      return [`curl -fsSL ${INSTALLER_URL} | sh`]
   }
+}
+
+/** Whether this platform installs with the script rather than by hand. */
+export function usesInstaller(platform) {
+  return platform !== 'windows'
 }
 
 /**
@@ -86,8 +93,12 @@ export function installSteps(platform) {
  *
  * `agentrqd serve` is the same everywhere, so it is the first line everywhere.
  * What differs is how you make it survive a logout, and that is worth saying
- * because the archive ships the unit files and nothing otherwise tells you
- * they are in there.
+ * because nothing otherwise tells you the unit files exist.
+ *
+ * Where they are depends on how it was installed: the script saves them beside
+ * the daemon's own config, and a manual install leaves them in the archive.
+ * Naming the archive on a platform that installs with the script would point
+ * somebody at a file they never downloaded.
  *
  * Both are user-level: a systemd **user** unit and a **LaunchAgent**, not a
  * system service and not a LaunchDaemon. The daemon refuses to run as root, so
@@ -99,16 +110,17 @@ export function runSteps(platform) {
     case 'macos':
       return [
         'agentrqd serve',
-        '# or, to keep it running: copy com.agentrq.agentrqd.plist from the',
-        '# archive into ~/Library/LaunchAgents and load it',
+        '# or, to keep it running: copy com.agentrq.agentrqd.plist from',
+        '# ~/Library/Application Support/agentrqd into ~/Library/LaunchAgents',
+        '# and load it',
       ]
     case 'windows':
       return ['agentrqd serve']
     default:
       return [
         'agentrqd serve',
-        '# or, to keep it running: copy agentrqd.service from the archive into',
-        '# ~/.config/systemd/user and enable it',
+        '# or, to keep it running: copy agentrqd.service from ~/.config/agentrqd',
+        '# into ~/.config/systemd/user and enable it',
       ]
   }
 }
@@ -122,12 +134,20 @@ export function runSteps(platform) {
  * for a binary that is not there yet, which is the bug this replaces.
  */
 export function installGuide(platform, enrolCommand) {
+  // The installer collapses "download" and "put it on your PATH" into one
+  // step, because it does both. Windows has no `sh`, so it keeps the two.
+  const install = usesInstaller(platform)
+    ? [{ title: 'Install it', lines: installSteps(platform), link: DAEMON_DOCS_URL }]
+    : [
+        { title: 'Download it', lines: [], link: RELEASES_URL },
+        { title: 'Put it on your PATH', lines: installSteps(platform) },
+      ]
+
   return {
     platform,
     label: platformLabel(platform),
     steps: [
-      { title: 'Download it', lines: [], link: RELEASES_URL },
-      { title: 'Put it on your PATH', lines: installSteps(platform) },
+      ...install,
       { title: 'Enrol this machine', lines: enrolCommand ? [enrolCommand] : [] },
       { title: 'Run it', lines: runSteps(platform) },
     ],

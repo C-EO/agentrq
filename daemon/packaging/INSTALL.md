@@ -9,15 +9,13 @@ that is not something to find out afterwards.
 
 ## 1. Install the binary
 
-You already have the archive, so the steps below are the shortest path. For
-the *next* machine — or for updating this one — there is a script that picks
-the right build and checks it against the published checksums, which these
-steps do not do:
+You already have the archive, so the steps below are the shortest path from
+here. For the *next* machine — or for updating this one — there is a script
+that picks the right build and checks it against the published checksums,
+which these steps do not do:
 
 ```sh
-curl -fsSL https://agentrq.com/install-agentrqd.sh -o install-agentrqd.sh
-less install-agentrqd.sh
-sh install-agentrqd.sh
+curl -fsSL https://agentrq.com/install-agentrqd.sh | sh
 ```
 
 **Linux and macOS**
