@@ -1,0 +1,316 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
+import { describe, it, expect, vi } from 'vitest'
+import { ref } from 'vue'
+import {
+  launchableMachines,
+  machineChoiceEligibility,
+  useWorkspaceAgentLaunch,
+} from '../src/composables/useWorkspaceAgentLaunch.js'
+import { INITIAL_COLS, INITIAL_ROWS, KINDS } from '../src/composables/useAgentLaunch.js'
+
+const OFFLINE_WORKSPACE = {
+  id: 'ws1',
+  name: 'Ops',
+  agentConnected: false,
+  workingDirectory: '/srv/app',
+}
+const READY_MACHINE = { id: 'm1', name: 'rpi', enabled: true, online: true }
+const SECOND_MACHINE = { id: 'm2', name: 'laptop', enabled: true, online: true }
+
+function harness(over = {}) {
+  const workspace = ref(
+    over.workspace === undefined ? { ...OFFLINE_WORKSPACE } : over.workspace
+  )
+  const deps = {
+    workspace,
+    fetchMachines: vi.fn().mockResolvedValue({
+      machines: over.machines ?? [{ ...READY_MACHINE }],
+    }),
+    launchAgent: vi.fn().mockResolvedValue({ session: { id: 's1', status: 'starting' } }),
+    ...over.deps,
+  }
+  return { deps, workspace, l: useWorkspaceAgentLaunch(deps) }
+}
+
+describe('launchableMachines', () => {
+  it('keeps machines that are both enabled and online', () => {
+    expect(launchableMachines([READY_MACHINE, SECOND_MACHINE])).toHaveLength(2)
+  })
+
+  it('drops a machine failing either flag, because they mean different things', () => {
+    const machines = [
+      READY_MACHINE,
+      { id: 'off', enabled: true, online: false },
+      { id: 'disabled', enabled: false, online: true },
+      { id: 'neither', enabled: false, online: false },
+    ]
+    expect(launchableMachines(machines).map((m) => m.id)).toEqual(['m1'])
+  })
+
+  it('copes with nothing at all', () => {
+    expect(launchableMachines()).toEqual([])
+    expect(launchableMachines([null])).toEqual([])
+  })
+})
+
+describe('machineChoiceEligibility', () => {
+  it('accepts a chosen machine that can run', () => {
+    expect(machineChoiceEligibility('m1', [READY_MACHINE]).ok).toBe(true)
+  })
+
+  it('points at the machines page when there is nowhere to run', () => {
+    // The fix matters more than the refusal: somebody with no machine needs to
+    // go and make one, not read that they cannot launch.
+    const e = machineChoiceEligibility('', [{ id: 'off', enabled: true, online: false }])
+    expect(e.ok).toBe(false)
+    expect(e.reason).toMatch(/No machine is online/)
+    expect(e.fix).toEqual({ label: 'Set up a machine', to: '/machines' })
+  })
+
+  it('asks for a choice when several could run', () => {
+    const e = machineChoiceEligibility('', [READY_MACHINE, SECOND_MACHINE])
+    expect(e.ok).toBe(false)
+    expect(e.reason).toMatch(/Pick a machine/)
+  })
+
+  it('says so when the chosen machine has since gone offline', () => {
+    // The list is live; the machine picked a moment ago can drop out.
+    const e = machineChoiceEligibility('m1', [SECOND_MACHINE])
+    expect(e.ok).toBe(false)
+    expect(e.reason).toMatch(/no longer online/)
+  })
+})
+
+describe('useWorkspaceAgentLaunch: loading machines', () => {
+  it('loads the machines and preselects the only one that can run', async () => {
+    const { l } = harness()
+    await l.load()
+    expect(l.machines.value).toHaveLength(1)
+    expect(l.machineId.value).toBe('m1')
+    expect(l.loaded.value).toBe(true)
+    expect(l.loading.value).toBe(false)
+  })
+
+  it('leaves the choice alone when several machines could run', async () => {
+    // Guessing would start an agent on the wrong computer.
+    const { l } = harness({ machines: [READY_MACHINE, SECOND_MACHINE] })
+    await l.load()
+    expect(l.machineId.value).toBe('')
+    expect(l.available.value).toHaveLength(2)
+  })
+
+  it('does not preselect an offline machine', async () => {
+    const { l } = harness({ machines: [{ id: 'off', enabled: true, online: false }] })
+    await l.load()
+    expect(l.machineId.value).toBe('')
+    expect(l.available.value).toEqual([])
+  })
+
+  it('keeps a choice already made', async () => {
+    const { l } = harness()
+    l.machineId.value = 'm9'
+    await l.load()
+    expect(l.machineId.value).toBe('m9')
+  })
+
+  it('copes with a response carrying no machines', async () => {
+    const { l } = harness({ deps: { fetchMachines: vi.fn().mockResolvedValue({}) } })
+    await l.load()
+    expect(l.machines.value).toEqual([])
+    expect(l.loaded.value).toBe(true)
+  })
+
+  it('reports a failure to load and stays unloaded', async () => {
+    const { l } = harness({
+      deps: { fetchMachines: vi.fn().mockRejectedValue(new Error('network gone')) },
+    })
+    await l.load()
+    expect(l.error.value).toBe('network gone')
+    expect(l.loaded.value).toBe(false)
+    expect(l.loading.value).toBe(false)
+  })
+
+  it('falls back to a message when the failure carries none', async () => {
+    const { l } = harness({ deps: { fetchMachines: vi.fn().mockRejectedValue({}) } })
+    await l.load()
+    expect(l.error.value).toBe('Failed to load machines')
+  })
+})
+
+describe('useWorkspaceAgentLaunch: whether to offer it at all', () => {
+  it('offers once machines are known and one can run', async () => {
+    const { l } = harness()
+    expect(l.offered.value).toBe(false)
+    await l.load()
+    expect(l.offered.value).toBe(true)
+  })
+
+  it('stays quiet while the machines are still arriving', () => {
+    // Otherwise the button flickers in as the list lands.
+    const { l } = harness()
+    expect(l.loaded.value).toBe(false)
+    expect(l.offered.value).toBe(false)
+  })
+
+  it('stays quiet when there is nowhere to run', async () => {
+    // An offer that resolves to "you have no machines" is worse than the setup
+    // guide that was already there: it looks like a way forward and is not.
+    const { l } = harness({ machines: [{ id: 'off', enabled: false, online: false }] })
+    await l.load()
+    expect(l.offered.value).toBe(false)
+  })
+
+  it('stays quiet when the workspace already has an agent', async () => {
+    const { l } = harness({ workspace: { ...OFFLINE_WORKSPACE, agentConnected: true } })
+    await l.load()
+    expect(l.offered.value).toBe(false)
+  })
+
+  it('stays quiet until there is a workspace to launch for', async () => {
+    // The detail page renders before its workspace arrives; offering to start
+    // an agent for nothing is an offer that cannot be honoured.
+    const { l } = harness({ workspace: null })
+    await l.load()
+    expect(l.offered.value).toBe(false)
+  })
+})
+
+describe('useWorkspaceAgentLaunch: blockers', () => {
+  it('has none when everything is ready', async () => {
+    const { l } = harness()
+    await l.load()
+    expect(l.blockers.value).toEqual([])
+    expect(l.canLaunch.value).toBe(true)
+  })
+
+  it('leads with the machine, because nothing runs on one that is off', async () => {
+    const { l } = harness({
+      machines: [],
+      workspace: { ...OFFLINE_WORKSPACE, workingDirectory: '' },
+    })
+    await l.load()
+    expect(l.blockers.value[0].reason).toMatch(/No machine is online/)
+  })
+
+  it('surfaces the workspace having no working directory, with the fix', async () => {
+    // Likely to be common: a workspace that has never run an agent is exactly
+    // the one that is offline.
+    const { l } = harness({ workspace: { ...OFFLINE_WORKSPACE, workingDirectory: '' } })
+    await l.load()
+    const blocker = l.blockers.value.find((b) => /working directory/.test(b.reason))
+    expect(blocker.fix).toEqual({
+      label: 'Set one in workspace settings',
+      to: '/workspaces/ws1/settings',
+    })
+    expect(l.canLaunch.value).toBe(false)
+  })
+
+  it('refuses a gateway with its parameters missing or unsafe', async () => {
+    const { l } = harness()
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { model: '', agent: 'antigravity-acp' }
+    expect(l.canLaunch.value).toBe(false)
+
+    l.params.value = { model: '--rm -rf', agent: 'antigravity-acp' }
+    expect(l.blockers.value[0].reason).toMatch(/characters the daemon will not accept/)
+
+    l.params.value = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
+    expect(l.canLaunch.value).toBe(true)
+  })
+
+  it('cannot launch while a launch is in flight', async () => {
+    let release
+    const launchAgent = vi.fn(
+      () => new Promise((resolve) => {
+        release = () => resolve({ session: { id: 's1' } })
+      })
+    )
+    const { l } = harness({ deps: { launchAgent } })
+    await l.load()
+
+    const pending = l.launch()
+    expect(l.launching.value).toBe(true)
+    expect(l.canLaunch.value).toBe(false)
+    release()
+    await pending
+    expect(l.launching.value).toBe(false)
+  })
+})
+
+describe('useWorkspaceAgentLaunch: launching', () => {
+  it('asks the chosen machine to run the default kind', async () => {
+    const { l, deps } = harness()
+    await l.load()
+    const session = await l.launch()
+
+    expect(deps.launchAgent).toHaveBeenCalledWith('ws1', {
+      machineId: 'm1',
+      kind: KINDS[0].id,
+      cols: INITIAL_COLS,
+      rows: INITIAL_ROWS,
+    })
+    expect(session).toEqual({ id: 's1', status: 'starting' })
+  })
+
+  it('sends the gateway parameters, trimmed', async () => {
+    const { l, deps } = harness()
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { model: '  gemini-3.8-flash-high  ', agent: ' antigravity-acp ' }
+    await l.launch()
+
+    expect(deps.launchAgent).toHaveBeenCalledWith('ws1', {
+      machineId: 'm1',
+      kind: 'acp-gateway',
+      cols: INITIAL_COLS,
+      rows: INITIAL_ROWS,
+      model: 'gemini-3.8-flash-high',
+      agent: 'antigravity-acp',
+    })
+  })
+
+  it('sends nothing when it already knows the launch would be refused', async () => {
+    // The button is disabled, but a keyboard or a stale page can still get here.
+    const { l, deps } = harness({ machines: [] })
+    await l.load()
+    expect(await l.launch()).toBeNull()
+    expect(deps.launchAgent).not.toHaveBeenCalled()
+  })
+
+  it('reports a refusal from the server, which is the real authority', async () => {
+    // Two people can press at the same moment, and only the server sees both.
+    const { l } = harness({
+      deps: {
+        launchAgent: vi.fn().mockRejectedValue(new Error('workspace already has an agent')),
+      },
+    })
+    await l.load()
+    expect(await l.launch()).toBeNull()
+    expect(l.error.value).toBe('workspace already has an agent')
+    expect(l.launching.value).toBe(false)
+  })
+
+  it('falls back to a message when the refusal carries none', async () => {
+    const { l } = harness({ deps: { launchAgent: vi.fn().mockRejectedValue({}) } })
+    await l.load()
+    await l.launch()
+    expect(l.error.value).toBe('Failed to start the agent')
+  })
+
+  it('returns null when the server answers without a session', async () => {
+    const { l } = harness({ deps: { launchAgent: vi.fn().mockResolvedValue({}) } })
+    await l.load()
+    expect(await l.launch()).toBeNull()
+  })
+
+  it('exposes the selected machine so the page can name it', async () => {
+    const { l } = harness({ machines: [READY_MACHINE, SECOND_MACHINE] })
+    await l.load()
+    expect(l.selected.value).toBeNull()
+    l.machineId.value = 'm2'
+    expect(l.selected.value.name).toBe('laptop')
+  })
+})

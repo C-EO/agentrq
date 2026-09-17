@@ -1,0 +1,130 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
+/**
+ * What the start-an-agent panel actually puts on the page.
+ *
+ * The rules it follows are tested in `workspaceAgentLaunch.test.js`; this is
+ * the other half — that the right one of them reaches the screen. Mounted with
+ * plain `createApp` into the jsdom the suite already runs in, so it costs no
+ * new dependency.
+ *
+ * It earns its place: the first version of this panel told somebody with one
+ * machine that it would run "on the machine you pick" and then, two lines
+ * below, named the only machine there was. Both strings were individually
+ * fine and the pair was nonsense, which is not something a test of the
+ * composable could ever have seen.
+ */
+
+import { describe, it, expect, vi } from 'vitest'
+import { createApp, h } from 'vue'
+
+const push = vi.fn()
+vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
+
+let machines = []
+const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 'sess-9' } }))
+vi.mock('../src/api', () => ({
+  fetchMachines: () => Promise.resolve({ machines }),
+  launchAgent: (...args) => launchAgent(...args),
+}))
+
+const { default: StartAgentPanel } = await import('../src/components/StartAgentPanel.vue')
+
+const WORKSPACE = { id: 'ws1', name: 'Ops', agentConnected: false, workingDirectory: '/srv/app' }
+const ONLINE = { id: 'm1', name: 'workshop-pi', enabled: true, online: true }
+const SECOND = { id: 'm2', name: 'laptop', enabled: true, online: true }
+
+/** Let the mounted component's own load() resolve. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
+
+async function mount(props, list) {
+  machines = list
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const availability = []
+  const app = createApp({
+    render: () =>
+      h(StartAgentPanel, { ...props, onAvailability: (v) => availability.push(v) }),
+  })
+  // Blockers render their fix as a link; the real router is mocked away.
+  app.component('RouterLink', {
+    props: ['to'],
+    setup: (p, { slots }) => () => h('a', {}, slots.default?.()),
+  })
+  app.mount(el)
+  await settle()
+  const text = () => el.textContent.replace(/\s+/g, ' ').trim()
+  const open = async () => {
+    el.querySelector('button').click()
+    await settle()
+  }
+  return { el, text, open, availability }
+}
+
+describe('StartAgentPanel', () => {
+  it('renders nothing, and says so, when no machine is online', async () => {
+    // The setup guide is still the honest answer here, so the page must be
+    // able to keep it as its primary action.
+    const { el, availability } = await mount({ workspace: WORKSPACE }, [
+      { id: 'x', name: 'off', enabled: true, online: false },
+    ])
+    expect(el.textContent.trim()).toBe('')
+    expect(availability.at(-1)).toBe(false)
+  })
+
+  it('offers one folded action naming where it will run', async () => {
+    const { text, el, availability } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    expect(text()).toBe('Start an agent on workshop-pi')
+    expect(el.querySelectorAll('select')).toHaveLength(0)
+    expect(availability.at(-1)).toBe(true)
+  })
+
+  it('does not ask which machine when there is only one', async () => {
+    const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    await open()
+    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-kind'])
+    expect(text()).toMatch(/Runs in \/srv\/app on workshop-pi, your only machine that is online\./)
+  })
+
+  it('asks which machine when there are several, and says so before the button', async () => {
+    const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
+    await open()
+    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual([
+      'start-agent-machine',
+      'start-agent-kind',
+    ])
+    expect(text()).toMatch(/on the machine you pick/)
+    expect(text()).toMatch(/Pick a machine to run on/)
+    expect(el.querySelector('button[disabled]')).toBeTruthy()
+  })
+
+  it('opens straight into the form on the setup page, with nothing to cancel back to', async () => {
+    const { el, text } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    expect(el.querySelector('#start-agent-kind')).toBeTruthy()
+    expect(text()).not.toMatch(/Cancel/)
+  })
+
+  it('explains a workspace with no folder, and links to the fix', async () => {
+    // Likely to be common: a workspace that has never run an agent is exactly
+    // the one somebody is looking at when it is offline.
+    const { el, text } = await mount(
+      { workspace: { ...WORKSPACE, workingDirectory: '' }, variant: 'card' },
+      [ONLINE]
+    )
+    expect(text()).toMatch(/no working directory/)
+    expect(text()).toMatch(/Set one in workspace settings/)
+    expect(el.querySelector('button[disabled]')).toBeTruthy()
+  })
+
+  it('starts the agent and goes to its terminal', async () => {
+    // Where the daemon reports what happened next, and the only place a
+    // missing folder or a failed boot is visible.
+    const { el, variant } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ machineId: 'm1' }))
+    expect(push).toHaveBeenCalledWith('/sessions/sess-9')
+  })
+})

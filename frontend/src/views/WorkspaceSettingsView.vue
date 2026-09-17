@@ -185,6 +185,27 @@
 
                 <!-- Setup -->
                 <div v-if="activeTab === 'setup'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <!-- The shortcut, above the manual steps rather than after
+                       them: everything below is how to connect an agent by
+                       hand, and somebody with a machine already enrolled does
+                       not need to do any of it. It renders nothing when there
+                       is no machine online, so the numbered guide is still
+                       where the page starts for everybody else. -->
+                  <section v-if="canStartAgent" class="space-y-4 min-w-0 w-full">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">
+                      Run it on one of your machines
+                    </h3>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">
+                      Starts an agent for this workspace on a machine you have already enrolled — no
+                      configuration to copy. The steps below are for connecting an agent yourself.
+                    </p>
+                  </section>
+                  <StartAgentPanel
+                    :workspace="workspace"
+                    variant="card"
+                    @availability="canStartAgent = $event"
+                  />
+
                   <div class="flex gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4">
                     <button type="button" @click="activeConnectionTab = 'claude'" :class="activeConnectionTab === 'claude' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Claude</button>
                     <button type="button" @click="activeConnectionTab = 'acp'" :class="activeConnectionTab === 'acp' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">ACP</button>
@@ -877,6 +898,7 @@ import {
 } from '../composables/useDirectoryPicker';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
+import StartAgentPanel from '../components/StartAgentPanel.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { isCacheEnabled, sharedCache } from '../composables/useCachedTasks';
@@ -910,6 +932,11 @@ const { notifySuccess, notifyError, notifyInfo } = useToasts();
 const workspaceId = computed(() => route.params.id);
 
 const workspace = ref(null);
+
+// Reported by the panel below, which is what knows whether any machine is
+// online. It decides whether the shortcut's heading is drawn at all — a
+// heading above a component that renders nothing is a heading over a gap.
+const canStartAgent = ref(false);
 const loading = ref(true);
 const saving = ref(false);
 const workspaceStore = useWorkspaceStore();
