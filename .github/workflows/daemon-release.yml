@@ -103,13 +103,40 @@ jobs:
           AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
         run: go run ./cmd/agentrqd-release verify --version "${VERSION}" update
 
+      # Package archives with GoReleaser using a semver tag (vX.Y.Z) and skip
+      # publishing so GoReleaser OSS does not fail on non-semver tag parsing.
       - name: Package the archives
         uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean
+          args: release --clean --skip=publish
           workdir: daemon
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: agentrqd-v${{ steps.version.outputs.version }}
+          GORELEASER_CURRENT_TAG: v${{ steps.version.outputs.version }}
           AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
+
+      # Publish the release under the agentrqd-v* tag using the GitHub CLI,
+      # attaching both the packaged archives and the signed bare binaries.
+      - name: Publish GitHub release
+        working-directory: daemon
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          TAG="agentrqd-v${VERSION}"
+          NOTES_FLAG="--generate-notes"
+          if [ -f dist/CHANGELOG.md ]; then
+            NOTES_FLAG="--notes-file dist/CHANGELOG.md"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading assets..."
+            gh release upload "$TAG" --clobber dist/*.tar.gz dist/*.zip dist/checksums.txt update/*
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              $NOTES_FLAG \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt update/*
+          fi
