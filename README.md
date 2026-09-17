@@ -199,6 +199,22 @@ your permissions and nothing more, and they are withdrawn when you sign out.
 Nothing to install or configure; a browser without WebMCP simply sees no tools.
 See the [WebMCP Guide](docs/WEBMCP.md).
 
+## Driving AgentRQ from the command line
+
+Inside a workspace directory — one with the `.mcp.json` an agent works from —
+the same capabilities are a shell command away:
+
+```bash
+npx @agentrq/agentrq-ws@latest help
+```
+
+It reads that `.mcp.json`, so there is nothing to configure, and it covers every
+workspace tool: read and create tasks, reply, publish events, read and write the
+workspace memory, ask a human a question. Attachments are plain file paths in
+both directions — `--attach ./run.log` to send one, and a download writes the
+file and prints where it went. See
+[cli/agentrq-ws](cli/agentrq-ws/README.md).
+
 ### 🖥️ Your own machines
 
 Install `agentrqd` on a computer, enrol it once, and you can start an agent for

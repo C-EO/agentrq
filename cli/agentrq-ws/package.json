@@ -1,0 +1,41 @@
+{
+  "name": "@agentrq/agentrq-ws",
+  "version": "0.7.0",
+  "description": "AgentRQ workspace client \u2014 drive an AgentRQ workspace from the command line, using the workspace's own .mcp.json",
+  "keywords": [
+    "agentrq",
+    "workspace",
+    "mcp",
+    "cli",
+    "tasks"
+  ],
+  "homepage": "https://github.com/agentrq/agentrq/tree/main/cli/agentrq-ws",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentrq/agentrq.git",
+    "directory": "cli/agentrq-ws"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "agentrq-ws": "bin/agentrq-ws.js"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=test/** test/*.test.js",
+    "test:ci": "node --test --experimental-test-coverage --test-coverage-exclude=test/** --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=95 test/*.test.js"
+  }
+}

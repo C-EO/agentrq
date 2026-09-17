@@ -1,0 +1,153 @@
+name: AgentRQ Workspace CLI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cli/agentrq-ws/**'
+      - '.github/workflows/cli-agentrq-ws.yml'
+  pull_request:
+    paths:
+      - 'cli/agentrq-ws/**'
+      - '.github/workflows/cli-agentrq-ws.yml'
+  # Manual re-run, for a publish that failed after the merge landed. Run it
+  # against main: the publish job checks the ref, not the event.
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: cli/agentrq-ws
+
+jobs:
+  check:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in package.json's engines, and current. A CLI is
+        # run with whatever node somebody already has, so the oldest supported
+        # version is the one most likely to be the real one.
+        node-version: ['20.6', '22']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # The package has no dependencies, so there is nothing to install and no
+      # lockfile to cache. Left here as the place one would go if that changes.
+      - name: Test
+        run: npm test
+
+  coverage:
+    name: Coverage thresholds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Every line and every function of src/, enforced rather than asserted in
+      # a README. Branches sit slightly lower on purpose: a handful are
+      # defensive fallbacks that only a broken server would reach.
+      #
+      # The run excludes test/ from the measurement, which is not cosmetic:
+      # node 22 counts the test files themselves and node 26 does not, so
+      # without it the gate measures unreached branches of test helpers and the
+      # result depends on which node happens to run it.
+      - name: Test with coverage thresholds
+        run: npm run test:ci
+
+  publish:
+    name: Publish to npm
+    needs: [check, coverage]
+    # main, not "anything that is not a pull request". A manual run carries the
+    # ref it was launched from, so a looser test would let a dispatch from an
+    # unmerged branch publish that branch's version to npm — and npm has no
+    # undo: the version is taken from that moment on.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm trusted publishing: the runner mints an OIDC token that npm
+      # exchanges for a short-lived publish credential. No NPM_TOKEN secret,
+      # nothing to rotate, and no 2FA prompt.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Node 22 ships npm 10.x, which has no OIDC support; trusted publishing
+      # needs npm >= 11.5.1. Without this the publish falls back to looking for
+      # a token and fails.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      # npm rejects republishing an existing version, which would fail every
+      # push that touches the CLI without bumping it. This package rides the
+      # repository's version, so most pushes land on an already-published
+      # number: skip, and let a version bump be what releases.
+      - name: Resolve release status
+        id: release
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is already on npm; skipping publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is new; publishing."
+          fi
+
+      # A last check that what is about to be published actually runs, from the
+      # packed tarball rather than the working tree — `files` in package.json
+      # decides what ships, and leaving bin/ or src/ out of it would produce a
+      # package that installs and then does nothing.
+      - name: Verify the packed package runs
+        if: steps.release.outputs.published == 'false'
+        run: |
+          npm pack --silent
+          TARBALL="$(ls ./*.tgz)"
+          mkdir -p /tmp/verify && tar -xzf "$TARBALL" -C /tmp/verify
+          node /tmp/verify/package/bin/agentrq-ws.js help | grep -q 'AgentRQ workspace client'
+          rm -f "$TARBALL"
+
+      # Authenticated by the OIDC token above, not by a secret. npm attaches
+      # build provenance automatically on a trusted-publisher release.
+      - name: Publish
+        if: steps.release.outputs.published == 'false'
+        run: npm publish --access public
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.release.outputs.published }}" = "false" ]; then
+            echo "Published ${{ steps.release.outputs.name }}@${{ steps.release.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Skipped: ${{ steps.release.outputs.name }}@${{ steps.release.outputs.version }} is already on npm. Bump the version to release." >> "$GITHUB_STEP_SUMMARY"
+          fi
