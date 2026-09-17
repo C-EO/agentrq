@@ -148,11 +148,10 @@ describe('installGuide', () => {
 })
 
 describe('the links', () => {
-  // The releases page filtered to the daemon's own tags, not
-  // releases/latest/download: this repository also releases the desktop app,
-  // and "latest" would be whichever of the two shipped most recently.
-  it('points at the daemon releases rather than the newest release', () => {
-    expect(RELEASES_URL).toContain('agentrqd')
+  // Desktop and daemon are released together under unified tags, so the releases
+  // page lists both without needing tag filters.
+  it('points at the latest releases rather than a direct asset download', () => {
+    expect(RELEASES_URL).toContain('releases/latest')
     expect(RELEASES_URL).not.toContain('latest/download')
   })
 

@@ -15,7 +15,7 @@
  */
 
 /** Where the daemon's releases live. */
-export const RELEASES_URL = 'https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true'
+export const RELEASES_URL = 'https://github.com/agentrq/agentrq/releases/latest'
 
 /** The user-facing guide, which carries the trust model. */
 export const DAEMON_DOCS_URL = 'https://agentrq.com/docs/daemon'

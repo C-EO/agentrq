@@ -208,8 +208,8 @@ and free space per filesystem, so you can tell whether it can take another
 agent.
 
 Install it from the
-[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true)
-(`agentrqd-v…` tags) — one static binary for Linux, macOS and Windows — then
+[releases page](https://github.com/agentrq/agentrq/releases/latest)
+— one static binary for Linux, macOS and Windows — then
 **Machines → Add machine** gives you a code to enrol it with.
 
 Enrolling a machine is a real grant, and the [Daemon

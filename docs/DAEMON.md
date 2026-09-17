@@ -42,8 +42,8 @@ isolation.
 run it. There is no installer and nothing to configure first.
 
 Releases are on the
-[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true) —
-look for the `agentrqd-v…` tags, and pick the archive for the machine you are
+[releases page](https://github.com/agentrq/agentrq/releases/latest) —
+pick the archive for the machine you are
 installing on, not the one you are reading this on.
 
 **Linux**
