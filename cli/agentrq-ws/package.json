@@ -16,6 +16,9 @@
     "directory": "cli/agentrq-ws"
   },
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "agentrq-ws": "bin/agentrq-ws.js"
