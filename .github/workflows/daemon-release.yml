@@ -104,12 +104,13 @@ jobs:
         run: go run ./cmd/agentrqd-release verify --version "${VERSION}" update
 
       # Package archives with GoReleaser using a semver tag (vX.Y.Z) and skip
-      # publishing so GoReleaser OSS does not fail on non-semver tag parsing.
+      # git tag validation and publishing so GoReleaser packages the archives
+      # without failing on tag mismatch or non-semver tag parsing.
       - name: Package the archives
         uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean --skip=publish
+          args: release --clean --skip=validate,publish
           workdir: daemon
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -126,6 +127,7 @@ jobs:
         run: |
           set -eu
           TAG="agentrqd-v${VERSION}"
+          (cd update && sha256sum * >> ../dist/checksums.txt)
           NOTES_FLAG="--generate-notes"
           if [ -f dist/CHANGELOG.md ]; then
             NOTES_FLAG="--notes-file dist/CHANGELOG.md"
