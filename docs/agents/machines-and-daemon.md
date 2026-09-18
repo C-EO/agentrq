@@ -1,0 +1,243 @@
+# Machines and the daemon (`daemon/`, `/machines`)
+
+> Read before changing `daemon/`, the machines pages, terminal streaming, or the daemon release and self-update path. Full detail is in [`daemon/README.md`](../../daemon/README.md); user-facing docs are [`docs/DAEMON.md`](../DAEMON.md).
+
+A machine is somebody's computer running `agentrqd`, enrolled against an
+account. It holds a WebSocket to the backend, runs agents in real
+pseudo-terminals, and streams them to the browser.
+
+- **`daemon/` is a separate Go module**, wired in with a `replace` directive
+  rather than a `go.work` (which is deliberately absent — it is not checked in,
+  and builds must work without it). `daemon/wire` is the *only* definition of
+  the frame format and is imported by the backend; there is no second copy to
+  drift.
+- **Two sockets, both on the stdlib `mux` in `app.go`, never on Fiber.** Fiber
+  is mounted through an adaptor that synthesises a fasthttp context, and a
+  WebSocket upgrade has to hijack a real connection, which a synthesised
+  context does not have.
+- **`terminalSocketUrl` and `serverOrigin` are the only absolute URLs in the
+  frontend**, and they are a deliberate exception to the
+  no-absolute-API-URLs rule in [`AGENTS.md`](../../AGENTS.md) rather than an
+  oversight: Electron's custom-protocol handler forwards `/api` but does not
+  intercept WebSockets, so a relative URL would resolve to `app://` and never
+  open. Both ask the shell where the server is. Nothing else should.
+- **Terminal input is exempt from the WebMCP parity rule on purpose**, with the
+  reason written into the exemption in `frontend/test/webmcpTools.test.js`:
+  raw keystroke access to a remote shell is a materially different grant from
+  "anything the interface can do".
+- **The attach is audited; the keystrokes are not.** A test types a password
+  into a terminal and asserts it appears nowhere in the log.
+- Machine and session events ride the **user's global** stream
+  (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
+  to a workspace, and the person watching the machines page may have none open.
+
+## A reconnect is not a restart, and the sessions have to be told so
+
+The daemon reconnects rather than exiting, and two things have to survive that
+gap or reconnecting achieves nothing.
+
+- **The agent must not be bound to the connection's context.** The pty layer
+  kills the process whose context is done, and the context reaching
+  `Supervisor.Start` is the daemon's socket to the backend — cancelled on every
+  reconnect. Passing it straight through killed every agent on the machine
+  whenever the backend restarted or the network blinked. `Start` therefore
+  hands the process a `context.WithoutCancel` of it: what ends a session is
+  `Kill`, the process itself, or `StopAll` at shutdown, never a dropped socket.
+- **The pump belongs to the session, not to the socket.** It holds the screen,
+  which has to survive the gap or the next viewer gets a blank terminal it can
+  never get back, and it is blocked reading a pseudo-terminal nothing has
+  closed — so a second pump would not replace the first, it would race it for
+  every byte. On a lost connection the viewers are forgotten and the pumps
+  stay; on the new one `streams.rebind` moves them across and repaints
+  whatever somebody is still watching. The browser's own socket never dropped,
+  so nobody is going to ask to attach again on its behalf.
+
+Both were found by disabling a machine while an agent was running on it, which
+closes the daemon's socket from the server's side — the cheapest way to make a
+reconnect happen on demand.
+
+## The agents go when the daemon goes
+
+Stopping `agentrqd` stops every session it is running, explicitly, before the
+connections close.
+
+They would mostly go anyway — closing a pseudo-terminal hangs up on the process
+using it — but "mostly" is not a design, and the failure it hides is total: an
+agent that outlives its daemon is unreachable. Nothing lists it, nothing can
+stop it, and the next daemon does not adopt it, so the panel shows an idle
+machine while a process keeps working against the workspace with the
+credential still sitting in its folder.
+
+Two details in `cmdServe` are load-bearing and easy to undo:
+
+- **The connections get their own context, not the signal's.** Sessions are
+  killed and their exits reported while the sockets are still up; sharing the
+  signal's context closes them first and the backend never hears what happened
+  to the agents, which then linger in the panel as running.
+- **The wait is bounded.** A process that ignores the hang-up must not hold the
+  machine's shutdown open, so `StopAll` gives up after `shutdownGrace` and says
+  how many it stopped.
+
+## Self-update is the one place where getting it wrong is unrecoverable
+
+- **A build with no release key refuses to update itself**, and says so. The key
+  is a build-time `-ldflags` variable; empty is the default and the correct
+  behaviour for every build that is not an official release. A verification step
+  that silently passes when it has nothing to verify against is worse than none.
+- **The manifest is signed as a whole** — version and platform table included,
+  because those decide which file gets run — and every artefact's SHA-256 is
+  mandatory and checked while downloading. There is no path to an artefact that
+  skips the signature check.
+- **The new binary is executed before anything is replaced.** After the swap the
+  old process is gone and nothing can observe the new one failing; the previous
+  binary is retained for `agentrqd rollback` and is deliberately *not* tidied up
+  at startup.
+- **Restoration is intent, not state**: new processes, new terminals, no
+  scrollback. Restored sessions are marked as such so nobody wonders why their
+  terminal is empty. The note that survives the restart carries no credential.
+
+## A background without a foreground is a bug in one theme
+
+Dark mode is a `.dark` class, and the main content area sets no colour of its
+own — so text inherits the document default, which is black whatever the
+theme. Any element that sets a background and no text colour is therefore
+readable in exactly one of the two, and light mode is the one you are looking
+at while writing it. `style.css` pairs them properly for `.md-body pre`; do the
+same for anything new.
+
+`color-scheme` is the other half, and it is not a Tailwind class. A class says
+nothing to the parts of a page the *browser* draws — a `<select>`'s dropdown, a
+caret, the autofill background, the default scrollbar — so without
+`color-scheme: dark` on `.dark` those keep the light system palette on a dark
+page, and no amount of styling from the page can reach them.
+
+## Installation is answered in three places, and they must agree
+
+The enrol command is useless on its own — it names a binary that is not there
+yet — so the "Add machine" panel walks install → enrol → run, and the steps
+come from `frontend/src/composables/useDaemonInstall.js` where they are tested
+rather than from the template.
+
+The same steps appear in `docs/DAEMON.md` (for somebody who has not downloaded
+anything) and `daemon/packaging/INSTALL.md` (for somebody who has the archive
+and not the page). Change one, change all three.
+
+Linux and macOS install with `curl -fsSL https://agentrq.com/install-agentrqd.sh | sh`.
+The script lives in the **agentrq-landing** repository, not this one, so
+changing what it does is a change over there. Windows has no `sh` and keeps the
+manual download → PATH steps, which is why that platform has one step more than
+the other two.
+
+**This used to forbid the one-liner**, on the grounds that piping unseen code
+into a shell is worst on the very machine you are about to grant command
+access to. That argument is still worth knowing, and it lost to two things: the
+manual steps it protected verified nothing at all, and an install nobody
+finishes protects nobody. What makes the trade sound is that the script's
+SHA-256 check against the release's published `checksums.txt` is **mandatory
+and fail-closed, with no flag to skip it** — so if that ever becomes optional,
+this decision should be revisited rather than inherited. `docs/DAEMON.md`
+carries the fetch-read-run form for anyone who wants to look first.
+
+The rule that did *not* change: **never `sudo` for running the daemon**, only
+for copying a file into `/usr/local/bin`. The daemon refuses to run as root,
+and an install guide that works around that has removed the only thing keeping
+an agent to what its user can already do. The installer refuses to run as root
+for the same reason, and `daemonInstall.test.js` still enforces it here.
+
+The detected platform picks which tab opens and nothing else: you are usually
+setting up a machine other than the one you are browsing from.
+
+## A viewer names no session, and must not
+
+A browser holds base62 ids; the frame header wants a 64-bit number. It has no
+way to produce one and does not need to — the backend decides which session an
+attached socket may drive and overwrites whatever arrives, which is what stops
+a browser typing into another session by changing a number. So viewer frames
+carry a zero session and `wire.DecodeFromViewer` expects that.
+
+Asking the browser for the id instead is what broke the terminal: `BigInt` of a
+base62 string throws, inside a keystroke handler where nothing was watching, so
+output kept arriving and the keyboard did nothing. Every unit test passed a
+number; the application passes a string. Fixtures that do not match the shape
+the caller actually uses are how a bug like that survives a full green suite.
+
+## Both agent kinds read `.mcp.json`
+
+It is easy to assume only claude-code does — the gateway takes its model and
+agent on the command line, so it looks self-contained — and `make remote-agy`
+reinforces that, because it happens to run from the repository root, which has
+one. It does not: the gateway reads the workspace from the same file, and
+without it prints "Could not find .mcp.json" and dies a second after starting.
+
+So the backend mints an MCP token for both kinds and the daemon writes a config
+for both.
+
+## The terminal must never size itself
+
+The fit addon reads the host element's box and sets the terminal's rows to
+match. If that box is content-sized, fitting makes it taller, which makes the
+box taller, which fits again — the terminal grows until it has pushed the page
+off the bottom of the screen. That is what this page did.
+
+So the host is a flex child with `min-h-0` all the way up, which gives it a
+height that does not depend on its content, and the resize handler refuses to
+act on a measurement that has not changed. Either alone is enough on a good
+day; both is what makes it hard to reintroduce.
+
+xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
+a dark background, and leaving the palette to a default that has never seen
+this surface is where unreadable output comes from.
+
+## A session is named by its workspace, and the name is filled in one place
+
+A machine runs agents for several workspaces at once and most of them are the
+same kind, so a session identified only by its kind is a row nobody can read —
+three lines saying "claude-code" answer none of the questions somebody opened
+the page with. `SessionView` therefore carries `WorkspaceName` beside the id,
+and `nameWorkspaces` in the session controller fills it for every endpoint that
+returns one. Add another and call it, or the page silently loses the name with
+no error anywhere.
+
+It is one query for the whole set, not one per row, and it is deliberately
+best-effort: a lookup that fails leaves the sessions unnamed rather than
+turning "what is running here" into an error page. The interface falls back to
+the kind, which is what it showed before.
+
+## Sessions are operational state, not history
+
+A session row answers "what is running on this machine". When one finishes the
+row is deleted — by the state report, by the reconcile on a daemon's hello, and
+once at startup for rows written before that was true. The record of what
+happened is the audit log; the rows are not it, and keeping them turns the
+machine page into a list of everything that has ever run and the table into one
+that grows forever.
+
+The consequence to keep in mind: a failure is visible in the moment, over the
+event stream, and not afterwards. If that needs to change, add a retention
+window rather than keeping every row indefinitely.
+
+## `ws: true` is what makes the terminal work in dev
+
+`vite.config.js` proxies `/api` to the backend, and a proxy without `ws: true`
+does not proxy upgrades — so every ordinary API call works and the terminal
+socket is never proxied at all. The browser sits on "connecting" forever with
+no error, because nothing ever answers the handshake.
+
+## "Does this workspace already have an agent?" is two questions
+
+The launch gate checks both, and needs both. `IsAgentConnected` answers "is an
+agent talking to this workspace right now" — it says nothing about one that has
+been started and has not finished connecting, and that window is seconds long,
+easily enough to press the button twice and end up with two agents sharing one
+`.mcp.json` and racing for the same tasks. `ActiveSessionForWorkspace` answers
+that half from the database, and survives a backend restart into the bargain.
+It was written for this and went uncalled until the interface gained a button.
+
+The interface pre-empts what it can — `useAgentLaunch` works out every reason a
+launch would be refused *before* anything is sent, because a form that fired
+and reported whichever of the five refusals it hit would make somebody press
+the button to find out whether they could press the button. It is never the
+authority: two people can press at once, and only the server sees both.
+
+The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
+
