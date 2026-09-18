@@ -61,6 +61,14 @@ describe('routes', () => {
     }
   })
 
+  // Slower than everything else here by three orders of magnitude, and the
+  // timeout is deliberate rather than generous: this resolves every view in
+  // the application for real, and the work is Vite transforming each one's
+  // whole dependency tree. At the default 5s it sat ~30ms under the limit on
+  // an idle machine, so it did not fail because something broke — it failed
+  // whenever the rest of the suite was competing for the same CPU, which is
+  // most runs. A long-running test asking for the time it takes is honest;
+  // one that passes only on an unloaded machine teaches people to ignore red.
   it('resolves every route component', async () => {
     // Actually invoking each loader is the point: a mistyped path in a dynamic
     // import is invisible until someone navigates there, and the desktop build
@@ -74,11 +82,22 @@ describe('routes', () => {
     }
     collect(routes)
 
-    for (const [path, loader] of loaders) {
-      const module = await loader()
+    // Concurrently, because these are independent imports and awaiting them
+    // one at a time serialised every transform in the application. The path is
+    // carried alongside so a failure still names the route that broke, which
+    // is the whole value of the assertion.
+    const resolved = await Promise.all(
+      loaders.map(async ([path, loader]) => [path, await loader()])
+    )
+
+    // Every route in the table got a loader invoked, rather than most of them:
+    // a route that somehow carries no component would otherwise be skipped
+    // silently, and skipping is the one failure this test cannot report.
+    expect(resolved.length).toBe(flatten(routes).length)
+    for (const [path, module] of resolved) {
       expect(module.default, `${path} resolved to a module with no default export`).toBeTruthy()
     }
-  })
+  }, 30_000)
 })
 
 describe('createAuthGuard', () => {
