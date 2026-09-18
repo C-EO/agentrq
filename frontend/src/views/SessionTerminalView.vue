@@ -52,6 +52,18 @@ const machineHref = computed(() =>
   session.value?.machineId ? `/machines/${session.value.machineId}` : '/machines'
 )
 
+/**
+ * The way back to the work this agent is doing.
+ *
+ * Empty when the session names no workspace, which is the one case where there
+ * is nowhere to go — and an id is what decides it, not the name: naming is
+ * best-effort on the server, so a session can be headed by its kind and still
+ * belong to a workspace.
+ */
+const workspaceHref = computed(() =>
+  session.value?.workspaceId ? `/workspaces/${session.value.workspaceId}` : ''
+)
+
 onMounted(() => {
   view.load()
   onEvent(view.handleEvent)
@@ -75,12 +87,27 @@ async function stop() {
   <div class="flex flex-col h-full min-h-0 gap-3">
     <div class="shrink-0 flex items-center justify-between gap-4">
       <div class="min-w-0">
-        <button
-          @click="router.push(machineHref)"
-          class="text-[11px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
-        >
-          ← Machine
-        </button>
+        <!-- Both ways out, because a terminal is reached from either: from the
+             machine that is running it, and from the workspace it is working
+             in. Arriving from one and being offered only the other is how
+             somebody loses their place. -->
+        <div class="flex items-center gap-2 min-w-0">
+          <button
+            @click="router.push(machineHref)"
+            class="text-[11px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
+          >
+            ← Machine
+          </button>
+          <template v-if="workspaceHref">
+            <span class="text-gray-300 dark:text-zinc-700 text-[11px]">·</span>
+            <button
+              @click="router.push(workspaceHref)"
+              class="text-[11px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 truncate"
+            >
+              Workspace
+            </button>
+          </template>
+        </div>
         <h1
           class="text-lg md:text-xl font-black tracking-tight text-gray-900 dark:text-zinc-100 truncate"
         >
@@ -111,12 +138,24 @@ async function stop() {
         <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
           Its terminal is gone with it — what an agent had on screen is not kept.
         </p>
-        <button
-          @click="router.push(machineHref)"
-          class="mt-4 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
-        >
-          Back to the machine
-        </button>
+        <!-- The session is gone, so both offers are about where to go next —
+             and the workspace is usually the more useful of the two, since
+             whatever this agent was doing is still there. -->
+        <div class="mt-4 flex items-center justify-center gap-2">
+          <button
+            @click="router.push(machineHref)"
+            class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
+          >
+            Back to the machine
+          </button>
+          <button
+            v-if="workspaceHref"
+            @click="router.push(workspaceHref)"
+            class="px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95"
+          >
+            Open workspace
+          </button>
+        </div>
       </div>
     </div>
 

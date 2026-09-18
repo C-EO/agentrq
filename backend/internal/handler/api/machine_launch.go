@@ -19,7 +19,10 @@ import (
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
-const _routePathAgentLaunch = "/workspaces/:id/agent"
+const (
+	_routePathAgentLaunch  = "/workspaces/:id/agent"
+	_routePathAgentSession = "/workspaces/:id/session"
+)
 
 // mcpServerName is the entry written into .mcp.json and what `server:<name>`
 // refers to on the command line.
@@ -31,6 +34,43 @@ const mcpServerName = "agentrq-workspace"
 
 func (h *handler) registerAgentLaunchRoutes() {
 	h.router.Post(_routePathAgentLaunch, h.launchAgent())
+	h.router.Get(_routePathAgentSession, h.workspaceSession())
+}
+
+// workspaceSession returns the session running for a workspace, or null.
+//
+// The workspace page knows an agent is *connected* — that arrives over the
+// event stream and turns the header dot green — but a connection is not
+// something you can open. Reaching the terminal needs the session's id, and
+// sessions are otherwise listed per machine, so the page would have to ask
+// every machine in turn and pick the row naming this workspace.
+//
+// The question is the one the launch gate already asks, from the same method:
+// a row in `starting` or `running`, scoped to the signed-in user. Which is why
+// a workspace belonging to somebody else answers null here rather than being
+// refused — the query never sees it, so there is nothing to leak and nothing
+// to distinguish "not yours" from "nothing running".
+//
+// Nothing running is the ordinary answer and not an error: most workspaces
+// have no agent most of the time, and a 404 for the common case would have
+// every caller treating an error as a fact.
+func (h *handler) workspaceSession() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		session, err := h.crud.ActiveSessionForWorkspace(ctx, entity.ActiveSessionRequest{
+			UserID:      c.Locals("user_id").(string),
+			WorkspaceID: c.Params("id"),
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(entity.WorkspaceSessionResponse{Session: session})
+	}
 }
 
 // launchAgent starts an agent for a workspace on a chosen machine.

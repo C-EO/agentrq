@@ -322,8 +322,24 @@ async function stopSession(id) {
             <div v-for="s in sessions" :key="s.id" class="py-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <!-- The workspace is the heading, because it is what tells one
-                     row from the next: the kind is the same on most of them. -->
-                <p class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">
+                     row from the next: the kind is the same on most of them.
+                     And it is the way back to that workspace — this page says
+                     what is running, and "what is it working on" is one click
+                     away rather than a name to go and search for.
+
+                     A link only where the session names a workspace id. The
+                     name alone is not enough: naming is best-effort, so a row
+                     can be headed "claude-code" and still belong somewhere
+                     worth going. -->
+                <button
+                  v-if="s.workspaceId"
+                  @click="router.push(`/workspaces/${s.workspaceId}`)"
+                  class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate max-w-full hover:underline decoration-gray-300 dark:decoration-zinc-600 underline-offset-2"
+                  title="Open this workspace"
+                >
+                  {{ sessionLabel(s) }}
+                </button>
+                <p v-else class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">
                   {{ sessionLabel(s) }}
                 </p>
                 <p class="text-[11px] mt-0.5 tabular-nums" :class="TONES[sessionTone(s.status)]">

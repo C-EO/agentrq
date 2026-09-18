@@ -103,6 +103,18 @@
             <button @click="router.push(`/workspaces/${workspaceId}/analytics`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Analytics">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
             </button>
+            <!-- Watch the agent working here.
+                 Beside the other workspace-wide controls, and present with a
+                 task open or not, because it is the workspace's agent rather
+                 than any one task's. Drawn only when there is a live session
+                 to open and only for Claude Code, which is the kind this page
+                 offers no other way to reach. -->
+            <button v-if="terminalOffered"
+                    @click="router.push(terminalPath)"
+                    class="h-8 w-8 text-emerald-600 dark:text-emerald-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center"
+                    :title="terminalLabel">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" /></svg>
+            </button>
             <!-- How many tasks the gateway is running at once. Beside the
                  other workspace-wide controls because that is what it is: the
                  limit belongs to the gateway attached here and governs every
@@ -242,6 +254,7 @@ import { useFormat } from '../composables/useFormat';
 import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
 import { useExtensionPages } from '../composables/useExtensionPages';
+import { useWorkspaceTerminal } from '../composables/useWorkspaceTerminal';
 import AgentConcurrencyControl from '../components/AgentConcurrencyControl.vue';
 import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
@@ -311,6 +324,16 @@ const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy ===
 // Derived, not stored. A ref set at load time is exactly what made this header
 // dot lie until the page was reloaded.
 const isAgentConnected = computed(() => workspace.value?.agentConnected === true);
+
+// Which session is running here, so the header can offer a way into its
+// terminal. Handed the connected flag as well as the id: it re-asks when an
+// agent comes or goes, which is what keeps the button from outliving the
+// session it opens.
+const {
+  offered: terminalOffered,
+  to: terminalPath,
+  label: terminalLabel,
+} = useWorkspaceTerminal({ workspaceId, agentConnected: isAgentConnected });
 
 // Reported by the panel, which is the thing that knows whether any machine is
 // online. It decides which of the two actions in the offline state is primary.

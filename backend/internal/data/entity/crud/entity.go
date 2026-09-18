@@ -1346,6 +1346,17 @@ type (
 		Session SessionView `json:"session"`
 	}
 
+	// WorkspaceSessionResponse answers "is an agent running here, and which
+	// one" for a single workspace.
+	//
+	// A pointer so that "nothing is running" is `null` rather than a
+	// SessionView full of zero values. An empty struct would arrive at the
+	// interface as a session with no id, which reads as a session right up to
+	// the point something tries to open it.
+	WorkspaceSessionResponse struct {
+		Session *SessionView `json:"session"`
+	}
+
 	ListMachinesRequest struct {
 		UserID string
 	}
