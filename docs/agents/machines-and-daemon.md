@@ -188,6 +188,25 @@ xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
 a dark background, and leaving the palette to a default that has never seen
 this surface is where unreadable output comes from.
 
+## A launch ends at the terminal, from either end
+
+Both launch sites — the workspace's `StartAgentPanel` and the machine page's
+own form — navigate to `/sessions/<id>` as soon as the daemon has been asked,
+and that navigation is the feature rather than a convenience.
+
+An agent's first minute is when it asks the questions that stop it dead: trust
+this folder, allow this tool, paste a key. A pseudo-terminal is the only place
+those appear — no event, no toast and no session row carries them — so a launch
+that leaves somebody on the page they launched from shows them a row saying
+`starting` while the agent waits for an answer to a question nobody can see it
+asking. The machine page did exactly that until it didn't.
+
+The path is `terminalPath` in `useTerminalView`, and it is shared rather than
+written out at each call site so the two endings cannot drift. It answers `''`
+for a session with no id, and the callers stay put on that: `/sessions/undefined`
+is a route that resolves, finds no session and reports that the agent has
+ended — a lie, and a worse outcome than not moving.
+
 ## A session is named by its workspace, and the name is filled in one place
 
 A machine runs agents for several workspaces at once and most of them are the

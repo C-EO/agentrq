@@ -19,6 +19,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { KINDS } from '../composables/useAgentLaunch'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
+import { terminalPath } from '../composables/useTerminalView'
 
 const props = defineProps({
   workspace: { type: Object, default: null },
@@ -63,10 +64,13 @@ async function start() {
   started.value = session
   emit('started', session)
   // Straight to the terminal: the daemon has been *asked*, and what happens
-  // next — the folder missing, the agent booting — is visible there and
-  // nowhere else. Leaving somebody on an empty workspace page with a toast
-  // would hide the only thing worth watching.
-  router.push(`/sessions/${session.id}`)
+  // next — the folder missing, the agent booting, the first question it wants
+  // answering — is visible there and nowhere else. Leaving somebody on an
+  // empty workspace page with a toast would hide the only thing worth
+  // watching. The path is `terminalPath`'s to build, shared with the machine
+  // page so the two launches cannot drift.
+  const to = terminalPath(session)
+  if (to) router.push(to)
 }
 </script>
 

@@ -69,6 +69,20 @@ export const TERMINAL_OPTIONS = {
   allowProposedApi: true,
 }
 
+/**
+ * Where a session's terminal lives.
+ *
+ * Empty for anything that is not a session with an id, and that empty is the
+ * case worth having rather than an oversight. A launch that resolved to `{}`
+ * — a server shaping the body differently, an error page parsed as JSON —
+ * would otherwise send the browser to `/sessions/undefined`, which loads,
+ * finds no session and reports that the agent has ended. A caller handed ''
+ * can stay where it is and say nothing, which is the truthful answer.
+ */
+export function terminalPath(session) {
+  return session?.id ? `/sessions/${session.id}` : ''
+}
+
 /** What the status line says, and how it reads. */
 export function statusLabel(status) {
   return (

@@ -32,6 +32,7 @@ import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import DeleteModal from '../components/DeleteModal.vue'
 import { useAgentLaunch, KINDS } from '../composables/useAgentLaunch'
+import { terminalPath } from '../composables/useTerminalView'
 
 const route = useRoute()
 const router = useRouter()
@@ -142,6 +143,18 @@ async function startAgent() {
   // Cleared so the form does not sit there inviting the same launch again,
   // which the server would now refuse.
   launchWorkspace.value = ''
+
+  // Then straight to the terminal, which is the ending the workspace's own
+  // panel already gives this same launch.
+  //
+  // An agent's first minute is where it asks the questions that stop it dead
+  // — trust this folder, allow this tool, paste a key — and a pseudo-terminal
+  // is the only place those appear. Left on this page somebody watches a row
+  // say "starting" while the agent sits waiting for an answer to a question
+  // nobody can see it asking. The row above is still worth writing for the
+  // case where there is nowhere to go.
+  const to = terminalPath(session)
+  if (to) router.push(to)
 }
 
 async function stopSession(id) {
@@ -350,7 +363,7 @@ async function stopSession(id) {
               <div class="flex items-center gap-2 shrink-0">
                 <button
                   v-if="isSessionLive(s.status)"
-                  @click="router.push(`/sessions/${s.id}`)"
+                  @click="router.push(terminalPath(s))"
                   class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
                 >
                   Terminal
