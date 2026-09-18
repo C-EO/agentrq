@@ -140,6 +140,15 @@ func (h *handler) killSession() fiber.Handler {
 				"could not reach that machine", http.StatusBadGateway))
 		}
 
+		// Counted only once the request is on its way to the machine. A kill
+		// that was refused above never happened, and counting the attempt
+		// would make the number mean something else.
+		h.crud.RecordSessionKill(ctx, entity.RecordSessionKillRequest{
+			UserID:      userID,
+			WorkspaceID: rs.Session.WorkspaceID,
+			SessionID:   rs.Session.ID,
+		})
+
 		c.Status(http.StatusAccepted)
 		return nil
 	}

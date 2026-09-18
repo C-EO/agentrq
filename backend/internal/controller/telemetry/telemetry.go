@@ -184,6 +184,28 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUITrajectoryView
 	case entity.ActionAgentModelSelect:
 		action = model.ActionIDAgentModelSelect
+	case entity.ActionMachineAdd:
+		action = model.ActionIDMachineAdd
+	case entity.ActionMachineRemove:
+		action = model.ActionIDMachineRemove
+	case entity.ActionMachineDisable:
+		action = model.ActionIDMachineDisable
+	case entity.ActionMachineSessionCreate:
+		action = model.ActionIDMachineSessionCreate
+	case entity.ActionMachineSessionOpen:
+		action = model.ActionIDMachineSessionOpen
+	case entity.ActionMachineSessionClose:
+		action = model.ActionIDMachineSessionClose
+	case entity.ActionMachineTerminalOpen:
+		action = model.ActionIDMachineTerminalOpen
+	case entity.ActionMachineTerminalClose:
+		action = model.ActionIDMachineTerminalClose
+	case entity.ActionMachineEnable:
+		action = model.ActionIDMachineEnable
+	case entity.ActionMachineSessionKill:
+		action = model.ActionIDMachineSessionKill
+	case entity.ActionMachineEnrolCodeCreate:
+		action = model.ActionIDMachineEnrolCodeCreate
 	default:
 		return
 	}

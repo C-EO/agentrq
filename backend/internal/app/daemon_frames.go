@@ -111,9 +111,13 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 
 		req := entity.UpdateSessionStateRequest{
 			SessionID: monoflake.ID(int64(st.SessionID)).String(),
-			Status:    st.State,
-			ExitCode:  st.ExitCode,
-			Error:     st.Error,
+			// From the authenticated socket, never the payload — the same rule
+			// the heartbeat follows. It is what lets the controller find the
+			// session's workspace in order to count it.
+			UserID:   monoflake.ID(s.Identity.UserID).String(),
+			Status:   st.State,
+			ExitCode: st.ExitCode,
+			Error:    st.Error,
 			// A restored session is a new process with a new terminal: same
 			// kind, same folder, same arguments, and none of the scrollback.
 			// Recorded so the panel can say so rather than leaving somebody

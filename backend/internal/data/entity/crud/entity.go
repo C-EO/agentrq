@@ -969,6 +969,10 @@ const (
 	ResourceWorkspace
 	ResourceTask
 	ResourceMessage
+	// Appended, like the actions below: a machine belongs to an account and a
+	// session to a machine, so neither could be folded into the four above.
+	ResourceMachine
+	ResourceSession
 )
 
 func (r ResourceType) String() string {
@@ -981,6 +985,10 @@ func (r ResourceType) String() string {
 		return "task"
 	case ResourceMessage:
 		return "message"
+	case ResourceMachine:
+		return "machine"
+	case ResourceSession:
+		return "session"
 	}
 	return "unknown"
 }
@@ -1073,6 +1081,50 @@ const (
 	ActionUICopyLink       Action = 53
 	ActionUICopyMarkdown   Action = 54
 	ActionUITrajectoryView Action = 55
+	// Machines and the agents run on them, all emitted by the backend right
+	// after it does the work — an enrolment, a delete, a kill switch, a
+	// session row, a terminal socket. None of them is browser-reported and
+	// none belongs in ClientReportableAction: the server is what observes
+	// every one, so there is nothing for a client to claim.
+	//
+	// The three machine actions carry no workspace, and that is not an
+	// omission: a machine belongs to an account and runs agents for many
+	// workspaces at once, so there is no one workspace to attribute an
+	// enrolment to. The session and terminal actions do carry one, because a
+	// session knows which workspace it is working in.
+	ActionMachineAdd     Action = 60
+	ActionMachineRemove  Action = 61
+	ActionMachineDisable Action = 62
+	// Three moments rather than one, because the gaps between them are where
+	// launching an agent goes wrong: a create with no open is a launch that
+	// never started, and the interval between open and close is how long an
+	// agent actually ran.
+	ActionMachineSessionCreate Action = 63
+	ActionMachineSessionOpen   Action = 64
+	ActionMachineSessionClose  Action = 65
+	// Somebody watching an agent work. The attach is already audited for the
+	// same reason it is counted here — that a person opened a terminal, and
+	// when they left, is the fact worth keeping. What they typed is not.
+	ActionMachineTerminalOpen  Action = 66
+	ActionMachineTerminalClose Action = 67
+	// The other half of the kill switch. Numbered after the terminal actions
+	// rather than beside its opposite because these are only ever appended;
+	// the pairing is in the names, not the values.
+	ActionMachineEnable Action = 68
+	// A person stopping an agent, as distinct from one that ended.
+	//
+	// Close counts every session that finishes, however it finished — the
+	// daemon reports the same terminal state whether the agent completed,
+	// crashed, or was cut short. Only the request distinguishes somebody
+	// deciding this was not working, which is the more interesting of the two.
+	ActionMachineSessionKill Action = 69
+	// Asking for an enrolment code: the first half of adding a machine.
+	//
+	// Counted separately from the enrolment itself because the gap between
+	// them is the install funnel — somebody who asks for a code and never
+	// redeems it got stuck installing the daemon, and that is invisible if
+	// only the finished enrolments are counted.
+	ActionMachineEnrolCodeCreate Action = 70
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1165,6 +1217,28 @@ func (a Action) String() string {
 		return "ui_copy_markdown"
 	case ActionUITrajectoryView:
 		return "ui_trajectory_view"
+	case ActionMachineAdd:
+		return "machine_add"
+	case ActionMachineRemove:
+		return "machine_remove"
+	case ActionMachineDisable:
+		return "machine_disable"
+	case ActionMachineSessionCreate:
+		return "machine_session_create"
+	case ActionMachineSessionOpen:
+		return "machine_session_open"
+	case ActionMachineSessionClose:
+		return "machine_session_close"
+	case ActionMachineTerminalOpen:
+		return "machine_terminal_open"
+	case ActionMachineTerminalClose:
+		return "machine_terminal_close"
+	case ActionMachineEnable:
+		return "machine_enable"
+	case ActionMachineSessionKill:
+		return "machine_session_kill"
+	case ActionMachineEnrolCodeCreate:
+		return "machine_enrol_code_create"
 	}
 	return "unknown"
 }
@@ -1338,6 +1412,31 @@ type (
 		WorkspaceID string
 	}
 
+	// RecordSessionKillRequest counts a person stopping an agent.
+	//
+	// Base62 as it arrives from the route and the session view, because the
+	// caller is a REST handler that has just read the session.
+	RecordSessionKillRequest struct {
+		UserID      string
+		WorkspaceID string
+		SessionID   string
+	}
+
+	// RecordTerminalViewRequest counts a person watching a session's terminal.
+	//
+	// Already-resolved ids rather than base62 strings, because the caller is
+	// the socket handler and it has them as numbers — it authorised the attach
+	// by looking the session up.
+	RecordTerminalViewRequest struct {
+		UserID      int64
+		WorkspaceID int64
+		SessionID   int64
+		// Open distinguishes the attach from the detach. Two actions rather
+		// than one with a duration, because the socket can be closed by a
+		// crash, and half an interval is worse than two counts.
+		Open bool
+	}
+
 	GetSessionRequest struct {
 		UserID    string
 		SessionID string
@@ -1430,9 +1529,18 @@ type (
 
 	UpdateSessionStateRequest struct {
 		SessionID string
-		Status    string
-		ExitCode  *int
-		EndedAt   *time.Time
+		// UserID is who owns the session, and is only used to count it.
+		//
+		// The state report authenticates a machine rather than a workspace and
+		// names no workspace, so counting an agent starting or finishing needs
+		// the row — and the row can only be read scoped to its owner. Optional
+		// on purpose: a caller that does not set it still records the state, it
+		// just is not counted, which is the right way round for a report that
+		// must never fail over telemetry.
+		UserID   string
+		Status   string
+		ExitCode *int
+		EndedAt  *time.Time
 		// Error explains a failure in terms the person can act on. Not stored
 		// on the row today — it reaches the UI through the event stream — but
 		// carried here so the controller has it when that lands.

@@ -987,6 +987,10 @@ func New(cfg Config) (*App, error) {
 		SessionID: func(r *http.Request) uint64 {
 			return uint64(monoflake.IDFromBase62(r.PathValue("id")).Int64())
 		},
+		// Counted here rather than inside the socket handler, which owns no
+		// database and no bus on purpose.
+		OnAttach: countTerminalView(crudCtrl, true),
+		OnDetach: countTerminalView(crudCtrl, false),
 	})
 
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
@@ -1135,6 +1139,36 @@ func pubStatsHandler(ctrl pub.StatsController) http.Handler {
 	})
 }
 
+// terminalViewCounter is the one thing the terminal hooks need.
+//
+// Narrow rather than the whole controller, so the hook can be tested with four
+// lines of stub instead of a database.
+type terminalViewCounter interface {
+	RecordTerminalView(context.Context, entity.RecordTerminalViewRequest)
+}
+
+// countTerminalView builds the hook the terminal socket calls when a viewer
+// arrives or leaves.
+//
+// A function rather than two closures written inline at the mux, because this
+// is the only part of that wiring with anything to get wrong — which id goes
+// where, and which end of the visit it is — and inline in a server constructor
+// is where it could never be tested.
+//
+// The request's context is deliberately unused: it is cancelled the moment the
+// socket closes, which is precisely when the detach fires, so counting the
+// departure through it would drop every one of them.
+func countTerminalView(rec terminalViewCounter, open bool) func(*http.Request, uint64, machine.Attachment) {
+	return func(_ *http.Request, sessionID uint64, at machine.Attachment) {
+		rec.RecordTerminalView(context.Background(), entity.RecordTerminalViewRequest{
+			UserID:      at.UserID,
+			WorkspaceID: at.WorkspaceID,
+			SessionID:   int64(sessionID),
+			Open:        open,
+		})
+	}
+}
+
 // sessionLookup answers "may this request watch this session, and as whom".
 //
 // It is the authorisation boundary for the terminal socket, and it is
@@ -1181,10 +1215,11 @@ func (l sessionLookup) LookupSession(r *http.Request, sessionID uint64) (machine
 	}
 
 	return machine.Attachment{
-		MachineID:  m.ID,
-		InstanceID: m.InstanceID,
-		UserID:     userID,
-		ViewerName: name,
+		MachineID:   m.ID,
+		InstanceID:  m.InstanceID,
+		UserID:      userID,
+		WorkspaceID: sess.WorkspaceID,
+		ViewerName:  name,
 	}, nil
 }
 

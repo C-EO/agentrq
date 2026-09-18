@@ -430,4 +430,27 @@ const (
 	// either would make one of those numbers mean something it does not.
 	ActionIDMCPPermissionExtensionAllow
 	ActionIDMCPPermissionExtensionDeny
+	// Machines, the agent sessions run on them, and somebody watching one.
+	// On the end like everything else here, for the reason recorded above:
+	// these values are the stored ones.
+	//
+	// The three machine actions store workspace 0 — a machine belongs to an
+	// account and runs agents for many workspaces, so there is no workspace to
+	// attribute an enrolment to. Session and terminal rows carry the real one.
+	ActionIDMachineAdd
+	ActionIDMachineRemove
+	ActionIDMachineDisable
+	ActionIDMachineSessionCreate
+	ActionIDMachineSessionOpen
+	ActionIDMachineSessionClose
+	ActionIDMachineTerminalOpen
+	ActionIDMachineTerminalClose
+	// A machine turned back on. Last because it was asked for last, which is
+	// the only ordering these constants may have.
+	ActionIDMachineEnable
+	// A session a person stopped, as opposed to one that ended on its own.
+	ActionIDMachineSessionKill
+	// An enrolment code asked for, which is the start of adding a machine.
+	// The difference between this and ActionIDMachineAdd is the install funnel.
+	ActionIDMachineEnrolCodeCreate
 )

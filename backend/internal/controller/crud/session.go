@@ -25,6 +25,8 @@ type SessionController interface {
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
+	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
+	RecordSessionKill(ctx context.Context, req entity.RecordSessionKillRequest)
 }
 
 func toSessionView(s model.Session) entity.SessionView {
@@ -77,6 +79,16 @@ func (c *controller) CreateSession(ctx context.Context, req entity.CreateSession
 	if err != nil {
 		return nil, err
 	}
+	// The workspace is free here — this is the one place that knows it
+	// without a lookup, because it just wrote it.
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMachineSessionCreate,
+		WorkspaceID:  created.WorkspaceID,
+		UserID:       created.UserID,
+		ResourceType: entity.ResourceSession,
+		ResourceID:   created.ID,
+		Actor:        entity.ActorHuman,
+	})
 	return &entity.CreateSessionResponse{Session: toSessionView(created)}, nil
 }
 
@@ -92,8 +104,37 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 	if id == 0 {
 		return fmt.Errorf("invalid session id")
 	}
+	// Read before the update, and before the delete below, because a session
+	// that has finished is removed — after that there is nothing left to ask
+	// which workspace it was working in. Only when there is a user to scope
+	// the read to, and only for the two states worth counting: the report
+	// itself must not fail over telemetry, so this never returns an error.
+	var counted *model.Session
+	if req.UserID != "" && (req.Status == machinerules.SessionRunning || machinerules.SessionTerminal(req.Status)) {
+		if uid := monoflake.IDFromBase62(req.UserID).Int64(); uid != 0 {
+			if s, err := c.repository.GetSession(ctx, id, uid); err == nil {
+				counted = &s
+			}
+		}
+	}
 	if err := c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored); err != nil {
 		return err
+	}
+	if counted != nil {
+		action := entity.ActionMachineSessionOpen
+		if machinerules.SessionTerminal(req.Status) {
+			action = entity.ActionMachineSessionClose
+		}
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       action,
+			WorkspaceID:  counted.WorkspaceID,
+			UserID:       counted.UserID,
+			ResourceType: entity.ResourceSession,
+			ResourceID:   id,
+			// The daemon reports these, not a person: an agent exits on its
+			// own, and a machine restarting closes every session on it.
+			Actor: entity.ActorAgent,
+		})
 	}
 	if !machinerules.SessionTerminal(req.Status) {
 		return nil
@@ -221,4 +262,58 @@ func (c *controller) ReconcileSessions(ctx context.Context, req entity.Reconcile
 		return fmt.Errorf("invalid machine id")
 	}
 	return c.repository.ReconcileSessions(ctx, req.MachineID, req.Running, time.Now())
+}
+
+// RecordTerminalView counts somebody opening or closing a session's terminal.
+//
+// Called from the socket handler rather than emitted there: that package
+// copies bytes between two WebSockets and deliberately owns no database and no
+// bus, which is what keeps it testable without either. So it reports the fact
+// and this decides what to do with it.
+//
+// Nothing here can fail in a way worth telling the caller about — the caller
+// is a socket that has already been authorised and is about to carry a
+// terminal, and refusing to serve it because a counter did not increment
+// would be the wrong trade. Hence no error.
+func (c *controller) RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest) {
+	if req.UserID == 0 {
+		return
+	}
+	action := entity.ActionMachineTerminalOpen
+	if !req.Open {
+		action = entity.ActionMachineTerminalClose
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       action,
+		WorkspaceID:  req.WorkspaceID,
+		UserID:       req.UserID,
+		ResourceType: entity.ResourceSession,
+		ResourceID:   req.SessionID,
+		Actor:        entity.ActorHuman,
+	})
+}
+
+// RecordSessionKill counts a person stopping an agent.
+//
+// Emitted from the handler that asks the daemon rather than from the state
+// report that follows, because by then the two are indistinguishable: a
+// killed session reports the same terminal state as one that finished, and
+// what is worth counting here is that somebody decided to end it.
+//
+// No error, for the same reason as RecordTerminalView: the kill has already
+// been sent, and failing the request afterwards over a counter would undo
+// nothing and report a failure that did not happen.
+func (c *controller) RecordSessionKill(ctx context.Context, req entity.RecordSessionKillRequest) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if uid == 0 {
+		return
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMachineSessionKill,
+		WorkspaceID:  monoflake.IDFromBase62(req.WorkspaceID).Int64(),
+		UserID:       uid,
+		ResourceType: entity.ResourceSession,
+		ResourceID:   monoflake.IDFromBase62(req.SessionID).Int64(),
+		Actor:        entity.ActorHuman,
+	})
 }

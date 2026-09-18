@@ -59,6 +59,17 @@ func (c *controller) CreateEnrolmentCode(ctx context.Context, req entity.CreateE
 		return nil, err
 	}
 
+	// The start of adding a machine. Paired with ActionMachineAdd, which is
+	// the other end: a code with no enrolment behind it is somebody who could
+	// not finish installing the daemon.
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMachineEnrolCodeCreate,
+		UserID:       uid,
+		ResourceType: entity.ResourceMachine,
+		ResourceID:   stored.ID,
+		Actor:        entity.ActorHuman,
+	})
+
 	return &entity.CreateEnrolmentCodeResponse{Code: code, ExpiresAt: stored.ExpiresAt}, nil
 }
 
@@ -126,6 +137,20 @@ func (c *controller) EnrolMachine(ctx context.Context, req entity.EnrolMachineRe
 		_ = c.repository.DeleteMachine(ctx, created.ID, created.UserID)
 		return nil, ErrEnrolmentRejected
 	}
+
+	// Counted only once the code is actually consumed. Emitting before that
+	// would count the loser of a race as an enrolment, and the machine it
+	// made has just been deleted.
+	//
+	// Workspace 0: a machine belongs to an account and runs agents for many
+	// workspaces, so there is no workspace to attribute this to.
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMachineAdd,
+		UserID:       created.UserID,
+		ResourceType: entity.ResourceMachine,
+		ResourceID:   created.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	return &entity.EnrolMachineResponse{
 		MachineID:    monoflake.ID(created.ID).String(),
