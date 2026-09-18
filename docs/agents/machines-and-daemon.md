@@ -207,6 +207,24 @@ for a session with no id, and the callers stay put on that: `/sessions/undefined
 is a route that resolves, finds no session and reports that the agent has
 ended — a lie, and a worse outcome than not moving.
 
+**No kind is excluded, and that is the rule rather than an oversight.**
+`isWatchable` in `useWorkspaceTerminal` listed `claude-code` alone until
+somebody hit the case it misses. The argument for leaving the gateway out was
+that it is already driveable from the page — its turns arrive in the task
+composer, with a Stop button, because it speaks ACP a turn at a time. That
+holds for the gateway's *turns* and for nothing else. The gateway is also a
+process in a pseudo-terminal, and a process asks its own questions on the way
+up: `install this version (y/n)`, trust this folder, paste a key. None of those
+are ACP, none of them reach the composer, and the agent is stopped until one is
+answered. So the question the code asks is "is there a session", not "which
+kind" — which also means the next kind the daemon learns to run is reachable
+because it is a terminal, rather than because somebody remembered a list.
+
+One creation path deliberately does *not* navigate: the WebMCP `launchAgent`
+tool. An agent calling a tool must not move the person's browser out from under
+them, and the workspace page grows its "Agent terminal" button on its own when
+the session appears.
+
 ## A session is named by its workspace, and the name is filled in one place
 
 A machine runs agents for several workspaces at once and most of them are the
