@@ -528,6 +528,15 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ machineId }) => api.fetchMachineSessions(machineId),
     }),
     tool({
+      name: 'getWorkspaceSession',
+      description:
+        'The agent session running for a workspace, or null if none is. Answers "which agent is working here, and can I watch it" in one call, rather than asking every machine in turn.',
+      properties: { workspaceId: WORKSPACE_ID },
+      required: ['workspaceId'],
+      readOnly: true,
+      run: ({ workspaceId }) => api.fetchWorkspaceSession(workspaceId),
+    }),
+    tool({
       name: 'renameMachine',
       description: 'Rename a machine. The name is what the machines list and the launcher show.',
       properties: { machineId: MACHINE_ID, name: str('The new name.') },

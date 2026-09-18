@@ -296,6 +296,24 @@ export async function fetchMachineSessions(machineId) {
 }
 
 /**
+ * The agent running for a workspace, or null.
+ *
+ * The workspace page knows an agent is *connected* — that arrives over the
+ * event stream — but a connection is not something you can open. This is what
+ * turns it into a session id, which is how the terminal page is addressed.
+ *
+ * Null is the ordinary answer and not a failure: most workspaces have no agent
+ * most of the time. Asking per machine instead would mean one request for
+ * every machine somebody owns, to find at most one row.
+ */
+export async function fetchWorkspaceSession(workspaceId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/session`);
+  if (!res.ok) throw new Error('Failed to fetch the workspace session');
+  const body = await res.json();
+  return body?.session ?? null;
+}
+
+/**
  * Start an agent for a workspace on a chosen machine.
  *
  * Answers 202: the daemon has been asked, and the session's own state report —
