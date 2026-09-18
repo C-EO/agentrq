@@ -232,6 +232,11 @@ func (c *controller) UpdateMachine(ctx context.Context, req entity.UpdateMachine
 	if err != nil {
 		return nil, err
 	}
+	// Captured before the assignment below, because what is counted is the
+	// transition and not the value: somebody disabling a machine that is
+	// already disabled has not turned anything off, and counting it would
+	// make the number mean "how often was this asked for" instead.
+	wasEnabled := m.Enabled
 	if req.Name != nil {
 		m.Name = trim(*req.Name, 128)
 	}
@@ -244,8 +249,23 @@ func (c *controller) UpdateMachine(ctx context.Context, req entity.UpdateMachine
 	if err != nil {
 		return nil, err
 	}
-	// No count here: an update is a rename or a kill switch, and the caller
-	// has the list page's numbers already.
+	// A rename is not counted — it says nothing about whether machines are
+	// being used. The kill switch is, in both directions.
+	if wasEnabled != updated.Enabled {
+		action := entity.ActionMachineEnable
+		if !updated.Enabled {
+			action = entity.ActionMachineDisable
+		}
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       action,
+			UserID:       uid,
+			ResourceType: entity.ResourceMachine,
+			ResourceID:   updated.ID,
+			Actor:        entity.ActorHuman,
+		})
+	}
+	// No count of sessions here: an update is a rename or a kill switch, and
+	// the caller has the list page's numbers already.
 	return &entity.UpdateMachineResponse{Machine: toMachineView(updated, time.Now(), 0)}, nil
 }
 
@@ -261,5 +281,15 @@ func (c *controller) DeleteMachine(ctx context.Context, req entity.DeleteMachine
 	if uid == 0 || id == 0 {
 		return fmt.Errorf("invalid id")
 	}
-	return c.repository.DeleteMachine(ctx, id, uid)
+	if err := c.repository.DeleteMachine(ctx, id, uid); err != nil {
+		return err
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMachineRemove,
+		UserID:       uid,
+		ResourceType: entity.ResourceMachine,
+		ResourceID:   id,
+		Actor:        entity.ActorHuman,
+	})
+	return nil
 }

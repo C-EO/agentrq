@@ -20,9 +20,13 @@ type Attachment struct {
 	// backend process that machine's socket is on.
 	MachineID  int64
 	InstanceID string
-	// UserID is who is attaching. It goes in the audit record, and nowhere
-	// else — the other viewers are shown ViewerName.
+	// UserID is who is attaching. It goes in the audit record and the count,
+	// and nowhere else — the other viewers are shown ViewerName.
 	UserID int64
+	// WorkspaceID is what the session is working in, carried so the attach can
+	// be counted against it. Zero is tolerable and means "not attributed",
+	// never "do not serve".
+	WorkspaceID int64
 	// ViewerName is the display name the other viewers see.
 	ViewerName string
 }
@@ -82,6 +86,15 @@ type ViewerHandler struct {
 	Lookup SessionLookup
 	// SessionID pulls the session out of the request path.
 	SessionID func(*http.Request) uint64
+	// OnAttach and OnDetach report a viewer arriving and leaving, for whoever
+	// wants to count it.
+	//
+	// Function fields rather than an interface, and optional: this package
+	// copies bytes between two sockets and owns no database and no bus, which
+	// is exactly what lets it be tested without either. Nil means nobody is
+	// counting, which is what every test here does.
+	OnAttach func(r *http.Request, sessionID uint64, at Attachment)
+	OnDetach func(r *http.Request, sessionID uint64, at Attachment)
 }
 
 // ServeHTTP attaches a browser to a session.
@@ -133,6 +146,9 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Uint64("session_id", sessionID).
 		Int64("machine_id", at.MachineID).
 		Msg("[audit] terminal attached")
+	if h.OnAttach != nil {
+		h.OnAttach(r, sessionID, at)
+	}
 	defer func() {
 		h.Relay.Detach(sessionID, conn)
 		_ = conn.Close()
@@ -141,6 +157,12 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Uint64("session_id", sessionID).
 			Int64("machine_id", at.MachineID).
 			Msg("[audit] terminal detached")
+		// Counted in the same defer as the audit line, so the two cannot
+		// disagree about whether somebody left: every way out of this handler
+		// after the attach runs both or neither.
+		if h.OnDetach != nil {
+			h.OnDetach(r, sessionID, at)
+		}
 	}()
 
 	ws.SetReadLimit(maxFrame)

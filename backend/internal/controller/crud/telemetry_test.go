@@ -55,6 +55,21 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"UI_SEARCH",
 		"ui_",
 		"task_allow_all_commands_toggle",
+		// Machines and the agents run on them. Every one is emitted by the
+		// backend right after it does the work, so a browser has no business
+		// claiming any of them — a client that could would be able to invent
+		// enrolments and agent runs that never happened.
+		"machine_add",
+		"machine_remove",
+		"machine_disable",
+		"machine_enable",
+		"machine_session_create",
+		"machine_session_open",
+		"machine_session_close",
+		"machine_session_kill",
+		"machine_terminal_open",
+		"machine_terminal_close",
+		"machine_enrol_code_create",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)
