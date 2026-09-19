@@ -72,6 +72,16 @@ type fakeWorkspaceServer struct {
 	concurrencyErr   error
 
 	stopOutcome mcpctrl.StopOutcome
+
+	// calls records, in order, which of ClearContextForTask/SendChannelNotification/
+	// MarkTaskPushed the handler made — a test asserting a push order needs to
+	// see the sequence, not just a count of each.
+	calls              []string
+	clearedTaskID      int64
+	clearContextWanted bool
+	notifiedTaskID     int64
+	notifiedContent    string
+	pushedTaskID       int64
 }
 
 func (f *fakeWorkspaceServer) SendSetModelNotification(ctx context.Context, modelID string) error {
@@ -94,6 +104,20 @@ func (f *fakeWorkspaceServer) SendCancelNotification(ctx context.Context, taskID
 // the handler needs them, not because anything here asserts on them.
 
 func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
+	f.calls = append(f.calls, "SendChannelNotification")
+	f.notifiedTaskID = taskID
+	f.notifiedContent = content
+}
+
+func (f *fakeWorkspaceServer) ClearContextForTask(ctx context.Context, taskID int64, clearContext bool) {
+	f.calls = append(f.calls, "ClearContextForTask")
+	f.clearedTaskID = taskID
+	f.clearContextWanted = clearContext
+}
+
+func (f *fakeWorkspaceServer) MarkTaskPushed(taskID int64) {
+	f.calls = append(f.calls, "MarkTaskPushed")
+	f.pushedTaskID = taskID
 }
 
 func (f *fakeWorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error {

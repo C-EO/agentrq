@@ -111,3 +111,66 @@ func TestTheClearIsGivenTimeToLandBeforeTheTaskIsPushed(t *testing.T) {
 		t.Error("there is no settle at all, so the push is a race")
 	}
 }
+
+// ClearContextForTask is clearContextFor as seen by the REST handlers, which
+// hold an entity's fields rather than a model.Task.
+func TestClearContextForTaskDelegatesToClearContextFor(t *testing.T) {
+	calls := 0
+	ps := serverWithClear(func(context.Context) error {
+		calls++
+		return nil
+	})
+	close(ps.done)
+
+	ps.ClearContextForTask(context.Background(), 7, true)
+	if calls != 1 {
+		t.Errorf("clear called %d times, want 1", calls)
+	}
+
+	ps.ClearContextForTask(context.Background(), 7, false)
+	if calls != 1 {
+		t.Errorf("clear called %d times for a task that did not ask, want still 1", calls)
+	}
+}
+
+// A task delivered immediately by a REST handler must not be rediscovered by
+// StartPoller on its next tick and pushed — and, if it wants one, cleared — a
+// second time while the agent simply hasn't flipped its status yet.
+func TestMarkTaskPushedIsRememberedUntilReconciled(t *testing.T) {
+	ps := serverWithClear(nil)
+
+	if ps.wasTaskPushed(7) {
+		t.Fatal("a task nothing has marked reads as already pushed")
+	}
+
+	ps.MarkTaskPushed(7)
+	if !ps.wasTaskPushed(7) {
+		t.Fatal("MarkTaskPushed did not stick")
+	}
+
+	// Still notstarted on the next tick: still remembered.
+	ps.reconcilePushedTaskIDs(map[int64]struct{}{7: {}})
+	if !ps.wasTaskPushed(7) {
+		t.Fatal("reconcile dropped a task that is still pending")
+	}
+
+	// No longer notstarted (picked up or resolved some other way): forgotten,
+	// so the set does not grow forever.
+	ps.reconcilePushedTaskIDs(map[int64]struct{}{})
+	if ps.wasTaskPushed(7) {
+		t.Fatal("reconcile kept a task that is no longer pending")
+	}
+}
+
+// serverWithClear leaves pushedTaskIDs nil, same as the zero value every
+// caller outside this package's constructor sees; MarkTaskPushed has to
+// initialise it lazily rather than assume NewWorkspaceServer already did.
+func TestMarkTaskPushedOnANilMapDoesNotPanic(t *testing.T) {
+	ps := &WorkspaceServer{}
+
+	ps.MarkTaskPushed(7)
+
+	if !ps.wasTaskPushed(7) {
+		t.Fatal("MarkTaskPushed did not stick on a lazily-initialised map")
+	}
+}

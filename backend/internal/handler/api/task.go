@@ -132,7 +132,15 @@ func (h *handler) createTask() fiber.Handler {
 							Msg("failed to resolve linked event, on-completion publishEvent instruction omitted")
 					}
 				}
+				// This is the same "hand the agent its next task" push StartPoller
+				// makes, only immediate rather than on its next tick — so it must
+				// clear first for the same reason the poller does, and mark the
+				// task pushed so the poller does not rediscover it as still
+				// notstarted and push (and clear) it again before the agent gets a
+				// chance to flip its status.
+				srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
 				srv.SendChannelNotification(ctx, rs.Task.ID, content)
+				srv.MarkTaskPushed(rs.Task.ID)
 			}
 		}
 
@@ -430,7 +438,11 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 		if rq.Assignee == "agent" {
 			srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
 			content := fmt.Sprintf("[Task reassigned to agent] %s", rs.Task.Title)
+			// Same reasoning as the immediate push in createTask: clear before
+			// pushing, and mark it pushed so StartPoller does not repeat both.
+			srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
 			srv.SendChannelNotification(ctx, rs.Task.ID, content)
+			srv.MarkTaskPushed(rs.Task.ID)
 		}
 
 		c.Status(http.StatusOK)
