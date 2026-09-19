@@ -225,7 +225,7 @@ Inside a workspace directory â€” one with the `.mcp.json` an agent works from â€
 the same capabilities are a shell command away:
 
 ```bash
-npx @agentrq/agentrq-ws@latest help
+npx -y @agentrq/agentrq-ws@latest help
 ```
 
 It reads that `.mcp.json`, so there is nothing to configure, and it covers every
