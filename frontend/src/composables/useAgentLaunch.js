@@ -64,7 +64,10 @@ export function workspaceEligibility(workspace) {
   if (workspace.agentConnected) {
     return {
       ok: false,
-      note: 'agent connected',
+      note: 'agent running',
+      // Green, not amber: this is not a problem with the workspace, only a
+      // reason *this* launch cannot start a second one.
+      tone: 'good',
       reason: 'This workspace already has an agent connected.',
     }
   }
@@ -72,6 +75,7 @@ export function workspaceEligibility(workspace) {
     return {
       ok: false,
       note: 'no folder set',
+      tone: 'warn',
       reason: 'This workspace has no working directory, so there is nowhere on the machine to run.',
       fix: { label: 'Set one in workspace settings', to: `/workspaces/${workspace.id}/settings` },
     }
@@ -89,7 +93,9 @@ export function workspaceEligibility(workspace) {
  * answers that disagreed would be worse than one.
  *
  * A ready workspace is noted with its folder, because that is the thing that
- * tells two similarly named workspaces apart on a machine.
+ * tells two similarly named workspaces apart on a machine. `tone` is a token
+ * rather than a colour, the same way `sessionTone` is, so the view owns how
+ * it looks and this stays testable without asserting a class name.
  */
 export function workspaceOptions(workspaces) {
   return (workspaces ?? []).map((w) => {
@@ -99,6 +105,7 @@ export function workspaceOptions(workspaces) {
       name: w.name,
       ready: eligibility.ok,
       note: eligibility.ok ? w.workingDirectory : eligibility.note,
+      tone: eligibility.ok ? null : eligibility.tone,
     }
   })
 }
