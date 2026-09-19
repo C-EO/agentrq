@@ -12,8 +12,6 @@ import {
   paramsEligibility,
   KINDS,
   GATEWAY_DEFAULTS,
-  INITIAL_COLS,
-  INITIAL_ROWS,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -24,6 +22,12 @@ const READY_WORKSPACE = {
 }
 const READY_MACHINE = { id: 'm1', name: 'rpi', enabled: true, online: true }
 
+// What a real measurement would answer, standing in for the one this
+// composable no longer hardcodes. What matters here is that `launch` sends
+// whatever this resolves to; the measurement itself is `launchTerminalSize`'s
+// own test.
+const MEASURED_SIZE = { cols: 164, rows: 52 }
+
 function harness(over = {}) {
   const machine = ref(over.machine === undefined ? { ...READY_MACHINE } : over.machine)
   const sessions = ref(over.sessions ?? [])
@@ -32,6 +36,7 @@ function harness(over = {}) {
     sessions,
     fetchWorkspaces: vi.fn().mockResolvedValue({ workspaces: [{ ...READY_WORKSPACE }] }),
     launchAgent: vi.fn().mockResolvedValue({ session: { id: 's1', status: 'starting' } }),
+    measureTerminalSize: vi.fn().mockResolvedValue(MEASURED_SIZE),
     ...over.deps,
   }
   return { deps, machine, sessions, l: useAgentLaunch(deps) }
@@ -293,8 +298,8 @@ describe('launching', () => {
     expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', {
       machineId: 'm1',
       kind: 'claude-code',
-      cols: INITIAL_COLS,
-      rows: INITIAL_ROWS,
+      cols: MEASURED_SIZE.cols,
+      rows: MEASURED_SIZE.rows,
     })
   })
 
@@ -370,5 +375,24 @@ describe('defaults', () => {
     const l = useAgentLaunch({ machine: ref(READY_MACHINE) })
     await l.load()
     expect(l.error.value).not.toBe('')
+  })
+
+  // jsdom lays nothing out, so the real `launchTerminalSize` finds no content
+  // box to measure here — this only checks that `launch` reaches for it
+  // rather than the constant it used to hardcode.
+  it('reaches for the real measurement when nothing is injected', async () => {
+    const launchAgent = vi.fn().mockResolvedValue({ session: { id: 's1' } })
+    const l = useAgentLaunch({
+      machine: ref(READY_MACHINE),
+      fetchWorkspaces: vi.fn().mockResolvedValue({ workspaces: [{ ...READY_WORKSPACE }] }),
+      launchAgent,
+    })
+    await l.load()
+    l.workspaceId.value = 'ws1'
+    await l.launch()
+    expect(launchAgent).toHaveBeenCalledWith(
+      'ws1',
+      expect.objectContaining({ cols: expect.any(Number), rows: expect.any(Number) })
+    )
   })
 })

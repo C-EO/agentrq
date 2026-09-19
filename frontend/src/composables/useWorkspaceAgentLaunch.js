@@ -22,12 +22,11 @@ import { ref, computed } from 'vue'
 import * as api from '../api'
 import {
   GATEWAY_DEFAULTS,
-  INITIAL_COLS,
-  INITIAL_ROWS,
   KINDS,
   paramsEligibility,
   workspaceEligibility,
 } from './useAgentLaunch'
+import { launchTerminalSize } from './useLaunchTerminalSize'
 
 /**
  * The machines that could take a session right now.
@@ -78,6 +77,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     workspace,
     fetchMachines = api.fetchMachines,
     launchAgent = api.launchAgent,
+    measureTerminalSize = launchTerminalSize,
   } = deps
 
   const machines = ref([])
@@ -165,11 +165,12 @@ export function useWorkspaceAgentLaunch(deps = {}) {
       const extra = {}
       for (const field of spec.needs) extra[field] = params.value[field].trim()
 
+      const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspace.value.id, {
         machineId: machineId.value,
         kind: kind.value,
-        cols: INITIAL_COLS,
-        rows: INITIAL_ROWS,
+        cols,
+        rows,
         ...extra,
       })
       return created?.session ?? null
