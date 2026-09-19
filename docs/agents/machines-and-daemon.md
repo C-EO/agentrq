@@ -272,14 +272,22 @@ Verified by rendering the same agent output at both values and looking at it,
 which is the only way this shows up — nothing throws, nothing is measured
 wrongly, and the sizing maths is identical either way.
 
-Four related facts about how this surface renders, worth knowing before
+Six related facts about how this surface renders, worth knowing before
 debugging something that looks like a font problem:
 
-- **No renderer addon is loaded**, so xterm falls back to its DOM renderer.
-  That is the weakest of the three at exactly this — box drawing and wide
-  glyphs — because the canvas and WebGL renderers draw box characters
-  themselves instead of asking the font for them. `@xterm/addon-webgl` or
-  `@xterm/addon-canvas` is the upgrade if this comes up again.
+- **The WebGL addon draws the box characters, the DOM renderer asks the font.**
+  That is why it is loaded: `customGlyphs` does not work with the DOM renderer,
+  so without it a file tree's verticals come out as detached bars. It falls back
+  to the DOM renderer where WebGL is refused, which fails *inside* `activate()`
+  rather than in the constructor.
+- **A lost GPU context throws nothing** — the addon simply stops drawing and the
+  terminal is blank for good, so `useTerminalRenderer` rebuilds it on
+  `onContextLoss`, bounded so a machine that cannot keep a context stops asking.
+- **Test a renderer at a real device scale factor**, not an emulated one.
+  Playwright's `deviceScaleFactor` (CDP emulation) makes the canvas renderers
+  draw several times too large here; `--force-device-scale-factor` with
+  `viewport: null` renders correctly. The emulated path is a convincing false
+  alarm.
 - **Name no font in `fontFamily` that the app does not ship.** One that is
   named and never loaded is used by whoever happens to have it installed and by
   nobody else, which is how a rendering report stops being reproducible.

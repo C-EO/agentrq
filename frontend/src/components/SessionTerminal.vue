@@ -42,9 +42,11 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalSession, VIEWER_SESSION } from '../composables/useTerminalSession'
 import { useTerminalFit, refitWhenFontsLoad } from '../composables/useTerminalFit'
+import { useTerminalRenderer } from '../composables/useTerminalRenderer'
 import {
   TERMINAL_OPTIONS,
   TERMINAL_THEME,
@@ -69,6 +71,7 @@ let session = null
 let observer = null
 let fitter = null
 let fontWatch = null
+let renderer = null
 
 /** Ask for a fit. Safe before the fitter exists, which the observer can be. */
 const refit = () => fitter?.request()
@@ -78,6 +81,21 @@ onMounted(async () => {
   fit = new FitAddon()
   term.loadAddon(fit)
   term.open(host.value)
+
+  // After `open` and before the first fit, in that order and for two different
+  // reasons. A renderer addon has no element to attach to before `open`; and
+  // the fit addon proposes a size from the *render service's* cell, so fitting
+  // first would measure the DOM renderer's and then have it change underneath.
+  renderer = useTerminalRenderer({
+    term,
+    // WebGL only, and the DOM renderer under it. `@xterm/addon-canvas` would
+    // be the natural middle rung and is deliberately not here: its latest
+    // release is still from the xterm 5.5 train and declares `peer @xterm/xterm
+    // ^5.0.0`, so it would be the one dependency in this app a major version
+    // behind the engine it draws for.
+    candidates: [{ name: 'webgl', make: () => new WebglAddon() }],
+  })
+  renderer.attach()
 
   fitter = useTerminalFit({
     measure: () => (host.value ? { width: host.value.clientWidth, height: host.value.clientHeight } : null),
@@ -158,6 +176,10 @@ onBeforeUnmount(() => {
   fitter?.stop()
   observer?.disconnect()
   session?.close()
+  // Before the terminal: the addon holds a GPU context, and disposing it
+  // through a terminal that has already gone is the blank-canvas case in
+  // reverse.
+  renderer?.dispose()
   term?.dispose()
 })
 

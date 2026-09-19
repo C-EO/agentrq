@@ -52,6 +52,29 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }))
 
+/**
+ * The real WebGL addon reaches for a GPU context that jsdom has not got, and
+ * `HTMLCanvasElement.getContext` is not implemented there either — so it is
+ * stood in for. Which renderer is chosen, and what happens when it dies, is
+ * `terminalRenderer.test.js`; what matters here is that one is attached at all
+ * and let go again.
+ */
+const renderers = { attached: [], disposed: 0 }
+
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: class {
+    constructor() {
+      renderers.attached.push('webgl')
+    }
+    onContextLoss() {
+      return { dispose: () => {} }
+    }
+    dispose() {
+      renderers.disposed += 1
+    }
+  },
+}))
+
 vi.mock('../src/api', () => ({
   terminalSocketUrl: () => Promise.resolve('ws://localhost/ignored'),
 }))
@@ -85,6 +108,8 @@ const PADDING = /^(p|py|pt|pb)-/
 describe('the terminal host', () => {
   beforeEach(() => {
     openedOn = null
+    renderers.attached = []
+    renderers.disposed = 0
     document.body.innerHTML = ''
   })
 
@@ -120,5 +145,27 @@ describe('the terminal host', () => {
     expect([...openedOn.classList]).toContain('flex-1')
 
     app.unmount()
+  })
+
+  // Without a renderer addon xterm draws through the DOM, which asks the *font*
+  // for box drawing — and the shipped font's subset has none. The preference
+  // order lives in the composable; that it is wired up at all is here, because
+  // the component is the only place it can be got wrong silently.
+  it('attaches a renderer, preferring WebGL', () => {
+    const { app } = mount()
+
+    expect(renderers.attached).toEqual(['webgl'])
+
+    app.unmount()
+  })
+
+  // A renderer holds a GPU context. Leaving it behind on a page that opens
+  // terminals all day is how a tab runs out of them.
+  it('lets the renderer go on unmount', () => {
+    const { app } = mount()
+    expect(renderers.disposed).toBe(0)
+
+    app.unmount()
+    expect(renderers.disposed).toBe(1)
   })
 })
