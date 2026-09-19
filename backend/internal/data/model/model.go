@@ -461,4 +461,8 @@ const (
 	// An enrolment code asked for, which is the start of adding a machine.
 	// The difference between this and ActionIDMachineAdd is the install funnel.
 	ActionIDMachineEnrolCodeCreate
+	// The backend clearing an agent's context ahead of a task push. Emitted
+	// only when the clear actually went out, not on every task that asked for
+	// one — a failed clear left nothing to count.
+	ActionIDMCPClearContext
 )

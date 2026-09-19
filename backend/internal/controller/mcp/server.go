@@ -990,6 +990,7 @@ func (ps *WorkspaceServer) clearContextFor(ctx context.Context, task model.Task)
 			Msg("could not clear the agent's context; pushing the task anyway")
 		return
 	}
+	ps.emitTelemetry(ctx, ActionMCPClearContext, "clear", clientIdentity{})
 	select {
 	case <-ps.done:
 	case <-time.After(ClearSettleDelay):
@@ -2668,6 +2669,9 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 }
 
 func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, toolOrMethod string, ci clientIdentity) {
+	if ps.pubsub == nil {
+		return
+	}
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	ps.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicMCP,

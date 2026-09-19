@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/golang/mock/gomock"
 )
 
 // serverWithClear is a WorkspaceServer with nothing but the clear seam wired.
@@ -172,5 +175,59 @@ func TestMarkTaskPushedOnANilMapDoesNotPanic(t *testing.T) {
 
 	if !ps.wasTaskPushed(7) {
 		t.Fatal("MarkTaskPushed did not stick on a lazily-initialised map")
+	}
+}
+
+// A successful /clear is counted, so how often this happens is visible
+// without reading a pty transcript.
+func TestASuccessfulClearIsCounted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	ps := serverWithClear(func(context.Context) error { return nil })
+	ps.pubsub = mockPS
+	close(ps.done)
+
+	var published MCPEvent
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
+			published = req.Event.(MCPEvent)
+			return &pubsub.PublishResponse{}, nil
+		})
+
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+
+	if published.Action != ActionMCPClearContext {
+		t.Errorf("published action = %v, want ActionMCPClearContext", published.Action)
+	}
+}
+
+// A failed clear sent nothing down the pty, so it must not inflate the count
+// of clears that actually happened.
+func TestAFailedClearIsNotCounted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	ps := serverWithClear(func(context.Context) error { return errors.New("no running session") })
+	ps.pubsub = mockPS
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Times(0)
+
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+}
+
+// emitTelemetry is reachable from callers, like serverWithClear, that never
+// wired a pubsub in — every other test in this file among them.
+func TestEmitTelemetryWithNoPubsubDoesNotPanic(t *testing.T) {
+	ps := serverWithClear(nil)
+
+	ps.emitTelemetry(context.Background(), ActionMCPClearContext, "clear", clientIdentity{})
+}
+
+func TestActionMCPClearContextStringsAsClearContext(t *testing.T) {
+	if got := ActionMCPClearContext.String(); got != "clear_context" {
+		t.Errorf("ActionMCPClearContext.String() = %q, want %q", got, "clear_context")
 	}
 }
