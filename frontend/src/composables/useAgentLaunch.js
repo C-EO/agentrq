@@ -16,7 +16,7 @@
  * between the page loading and the button being pressed.
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import * as api from '../api'
 import { launchTerminalSize } from './useLaunchTerminalSize'
 
@@ -42,6 +42,43 @@ export const KINDS = [
  * required fields.
  */
 export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
+
+/**
+ * Where the gateway's last agent and model are remembered.
+ *
+ * A per-browser convenience, not settings: never read by the server, and
+ * nothing here is trusted for anything beyond pre-filling the two fields, the
+ * same way a form remembers what somebody typed last time.
+ */
+const LAST_ACP_GATEWAY_KEY = 'agentrq:lastAcpGateway'
+
+/**
+ * The agent and model somebody last launched the gateway with, or null.
+ *
+ * Wrapped in a try/catch rather than assumed available: private browsing, a
+ * blocked site data setting, or a full quota all throw here, and the correct
+ * fallback for any of them is the same as having nothing stored — the form
+ * opens on {@link GATEWAY_DEFAULTS} instead of failing to open at all.
+ */
+export function lastAcpGatewayChoice() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_ACP_GATEWAY_KEY) ?? 'null')
+    if (!parsed?.agent || !parsed?.model) return null
+    return { agent: parsed.agent, model: parsed.model }
+  } catch {
+    return null
+  }
+}
+
+/** Remembers a gateway launch's agent and model for the next one. */
+export function rememberAcpGatewayChoice({ agent, model }) {
+  try {
+    localStorage.setItem(LAST_ACP_GATEWAY_KEY, JSON.stringify({ agent, model }))
+  } catch {
+    // Nothing to fall back to here: the next launch just opens on
+    // GATEWAY_DEFAULTS again, exactly as it did before this existed.
+  }
+}
 
 /**
  * What the daemon accepts as a model or agent name.
@@ -170,6 +207,71 @@ export function paramsEligibility(kind, params) {
 }
 
 /**
+ * Suggestions for the gateway's Agent and Model fields, kept behind the two
+ * launch composables so there is one place that decides when to ask rather
+ * than two that could disagree.
+ *
+ * Both lookups are best-effort in the same way the eligibility checks above
+ * are not: a machine that cannot be asked, or a workspace with no `.mcp.json`
+ * on it yet, answers with nothing to suggest rather than an error, because the
+ * plain text field behind this is always the real fallback.
+ *
+ * @param {object} deps
+ * @param {import('vue').Ref<string>} deps.kind
+ * @param {import('vue').Ref<{agent: string}>} deps.params
+ * @param {() => string} deps.getMachineId current machine id, or falsy
+ * @param {() => string} deps.getWorkspaceId current workspace id, or falsy —
+ *        only needed for the model lookup, which the gateway can only answer
+ *        from a workspace's own folder
+ * @param {typeof api.fetchAcpAgents} [deps.fetchAcpAgents]
+ * @param {typeof api.fetchAcpModels} [deps.fetchAcpModels]
+ */
+export function useAcpGatewaySuggestions({
+  kind,
+  params,
+  getMachineId,
+  getWorkspaceId,
+  fetchAcpAgents = api.fetchAcpAgents,
+  fetchAcpModels = api.fetchAcpModels,
+}) {
+  const acpAgents = ref([])
+  const acpModels = ref([])
+
+  watch(
+    () => (kind.value === 'acp-gateway' ? getMachineId() : ''),
+    async (machineId) => {
+      acpAgents.value = []
+      if (!machineId) return
+      try {
+        const data = await fetchAcpAgents(machineId)
+        acpAgents.value = data?.agents ?? []
+      } catch {
+        acpAgents.value = []
+      }
+    },
+    { immediate: true }
+  )
+
+  watch(
+    () => (kind.value === 'acp-gateway' ? (params.value.agent ?? '').trim() : ''),
+    async (agent) => {
+      acpModels.value = []
+      const machineId = getMachineId()
+      const workspaceId = getWorkspaceId()
+      if (!agent || !machineId || !workspaceId) return
+      try {
+        const data = await fetchAcpModels(workspaceId, machineId, agent)
+        acpModels.value = data?.models ?? []
+      } catch {
+        acpModels.value = []
+      }
+    }
+  )
+
+  return { acpAgents, acpModels }
+}
+
+/**
  * The launcher for one machine.
  *
  * @param {object} deps `machine` (a ref) plus, in tests, the API functions
@@ -183,6 +285,8 @@ export function useAgentLaunch(deps = {}) {
     fetchWorkspaces = api.fetchWorkspaces,
     launchAgent = api.launchAgent,
     measureTerminalSize = launchTerminalSize,
+    fetchAcpAgents,
+    fetchAcpModels,
   } = deps
 
   const workspaces = ref([])
@@ -192,7 +296,16 @@ export function useAgentLaunch(deps = {}) {
 
   const workspaceId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = ref({ ...GATEWAY_DEFAULTS })
+  const params = ref(lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS })
+
+  const { acpAgents, acpModels } = useAcpGatewaySuggestions({
+    kind,
+    params,
+    getMachineId: () => machine?.value?.id,
+    getWorkspaceId: () => workspaceId.value,
+    ...(fetchAcpAgents ? { fetchAcpAgents } : {}),
+    ...(fetchAcpModels ? { fetchAcpModels } : {}),
+  })
 
   const selected = computed(() => workspaces.value.find((w) => w.id === workspaceId.value) ?? null)
 
@@ -255,6 +368,7 @@ export function useAgentLaunch(deps = {}) {
         rows,
         ...extra,
       })
+      if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'
@@ -276,6 +390,8 @@ export function useAgentLaunch(deps = {}) {
     selected,
     blockers,
     canLaunch,
+    acpAgents,
+    acpModels,
     load,
     launch,
   }

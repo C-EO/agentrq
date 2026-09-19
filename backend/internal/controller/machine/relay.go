@@ -267,6 +267,13 @@ type rate struct {
 	bytes       int
 }
 
+// Deliver routes a correlated reply from a daemon to whatever backend request
+// is waiting for it, such as an on-demand acp-gateway lookup. See
+// [Registry.Deliver].
+func (r *Relay) Deliver(c wire.Control) bool {
+	return r.registry.Deliver(c)
+}
+
 func (r *Relay) allow(sessionID uint64, n int) bool {
 	now := time.Now()
 

@@ -22,7 +22,18 @@ import (
 const (
 	_routePathAgentLaunch  = "/workspaces/:id/agent"
 	_routePathAgentSession = "/workspaces/:id/session"
+	_routePathAcpAgents    = "/machines/:id/acp-agents"
+	_routePathAcpModels    = "/workspaces/:id/acp-models"
 )
+
+// acpGatewayAskTimeout bounds how long a lookup waits on the daemon.
+//
+// Long enough for `npx` to fetch a package it has never run before —
+// --list-models has been seen taking most of a minute cold — and bounded
+// regardless, because this backs an autocomplete a person can always bypass
+// by typing: a request that hung forever behind a slow daemon would be a
+// worse outcome than answering "nothing to suggest" on time.
+const acpGatewayAskTimeout = 50 * time.Second
 
 // mcpServerName is the entry written into .mcp.json and what `server:<name>`
 // refers to on the command line.
@@ -35,6 +46,104 @@ const mcpServerName = "agentrq-workspace"
 func (h *handler) registerAgentLaunchRoutes() {
 	h.router.Post(_routePathAgentLaunch, h.launchAgent())
 	h.router.Get(_routePathAgentSession, h.workspaceSession())
+	h.router.Get(_routePathAcpAgents, h.listAcpAgents())
+	h.router.Get(_routePathAcpModels, h.listAcpModels())
+}
+
+// listAcpAgents answers the acp-gateway's agent catalogue, for the launch
+// form's autocomplete.
+//
+// Fails open, deliberately and completely: an unrecognised or unowned
+// machine, one not connected, a daemon too old to know the op, a command
+// that errored on that machine, or a reply that never arrives all answer the
+// same way — an empty list, with 200 OK — because free text is always the
+// form's fallback and there is nothing an error status would tell it that
+// emptiness does not already say.
+func (h *handler) listAcpAgents() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		out := wire.AcpAgentsList{}
+		if _, err := h.crud.GetMachine(ctx, entity.GetMachineRequest{
+			UserID: c.Locals("user_id").(string), MachineID: c.Params("id"),
+		}); err != nil {
+			return c.JSON(out)
+		}
+		machineID := monoflake.IDFromBase62(c.Params("id")).Int64()
+
+		reply, err := h.askDaemon(ctx, machineID, wire.Control{Op: wire.OpListAcpAgents})
+		if err != nil {
+			return c.JSON(out)
+		}
+		_ = json.Unmarshal(reply.Body, &out)
+		return c.JSON(out)
+	}
+}
+
+// listAcpModels answers what one agent supports, for the same autocomplete
+// once somebody has picked an agent.
+//
+// --list-models opens a real agent session, and the gateway refuses without
+// a .mcp.json it can find in its working directory — so this needs a
+// workspace, unlike [handler.listAcpAgents], for the folder to run it in. A
+// workspace with no working directory set, or one nothing has ever launched
+// from (so no .mcp.json exists there yet), fails open the same as any other
+// reason this could come back empty.
+func (h *handler) listAcpModels() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		agent := c.Query("agent")
+		out := wire.AcpModelsList{Agent: agent}
+		if agent == "" || c.Query("machineId") == "" {
+			return c.JSON(out)
+		}
+
+		userID := c.Locals("user_id").(string)
+		ws, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
+			ID: monoflake.IDFromBase62(c.Params("id")).Int64(), UserID: userID,
+		})
+		if err != nil || ws.Workspace.WorkingDirectory == "" {
+			return c.JSON(out)
+		}
+		if _, err := h.crud.GetMachine(ctx, entity.GetMachineRequest{
+			UserID: userID, MachineID: c.Query("machineId"),
+		}); err != nil {
+			return c.JSON(out)
+		}
+		machineID := monoflake.IDFromBase62(c.Query("machineId")).Int64()
+
+		body, err := json.Marshal(wire.ListAcpModels{Agent: agent, Dir: ws.Workspace.WorkingDirectory})
+		if err != nil {
+			return c.JSON(out)
+		}
+		reply, err := h.askDaemon(ctx, machineID, wire.Control{Op: wire.OpListAcpModels, Body: body})
+		if err != nil {
+			return c.JSON(out)
+		}
+		_ = json.Unmarshal(reply.Body, &out)
+		return c.JSON(out)
+	}
+}
+
+// askDaemon sends a correlated request to a machine and waits for its reply,
+// failing open the same way for every reason it might not get one: no
+// registry configured on this server, no socket held for that machine, a
+// write that failed, or a reply that never arrived in time.
+func (h *handler) askDaemon(ctx context.Context, machineID int64, c wire.Control) (wire.Control, error) {
+	if h.machineRegistry == nil {
+		return wire.Control{}, machinectrl.ErrNotConnected
+	}
+	reply, err := h.machineRegistry.Ask(ctx, machineID, c, acpGatewayAskTimeout)
+	if err != nil {
+		zlog.Debug().Err(err).Int64("machine_id", machineID).Str("op", string(c.Op)).
+			Msg("[machine] an acp-gateway lookup did not answer")
+	}
+	return reply, err
 }
 
 // workspaceSession returns the session running for a workspace, or null.

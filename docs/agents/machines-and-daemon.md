@@ -256,6 +256,14 @@ without it prints "Could not find .mcp.json" and dies a second after starting.
 So the backend mints an MCP token for both kinds and the daemon writes a config
 for both.
 
+The one exception: `acp-gateway --list-agents` needs no workspace at all — it
+answers from the public registry before the gateway ever looks for
+`.mcp.json` — but `--list-models --agent <a>` opens a real (if throwaway)
+session and hits the same check, so `supervisor.ListAcpModels` (the daemon
+side of the launch form's model autocomplete) takes a working directory and
+`ListAcpAgents` does not. Confirmed against the gateway's own source, not
+assumed from the pattern above.
+
 ## The terminal must never size itself
 
 The fit addon reads the host element's box and sets the terminal's rows to

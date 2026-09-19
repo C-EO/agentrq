@@ -27,6 +27,8 @@ const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 'sess-9' } }))
 vi.mock('../src/api', () => ({
   fetchMachines: () => Promise.resolve({ machines }),
   launchAgent: (...args) => launchAgent(...args),
+  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
 }))
 
 const { default: StartAgentPanel } = await import('../src/components/StartAgentPanel.vue')

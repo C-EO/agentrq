@@ -4,8 +4,13 @@
 package machine
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -28,6 +33,9 @@ type Conn interface {
 // the machine is really gone.
 var ErrNotConnected = errors.New("machine: not connected to this instance")
 
+// ErrRequestTimeout is [Registry.Ask] giving up on a reply.
+var ErrRequestTimeout = errors.New("machine: no reply from the daemon before the deadline")
+
 // Registry is the machines whose sockets this process holds.
 //
 // Per-process by nature, which is why the (machineId, instanceId) pairing is
@@ -38,6 +46,9 @@ type Registry struct {
 
 	mu    sync.RWMutex
 	conns map[int64]Conn
+
+	pendingMu sync.RWMutex
+	pending   map[string]chan wire.Control
 }
 
 // NewRegistry makes a registry for one backend instance.
@@ -47,7 +58,7 @@ type Registry struct {
 // configured value. Two instances sharing an id would route to each other's
 // sockets.
 func NewRegistry(instanceID string) *Registry {
-	return &Registry{instanceID: instanceID, conns: map[int64]Conn{}}
+	return &Registry{instanceID: instanceID, conns: map[int64]Conn{}, pending: map[string]chan wire.Control{}}
 }
 
 // InstanceID names this process.
@@ -148,4 +159,74 @@ func (r *Registry) Drop(machineID int64) bool {
 	}
 	_ = c.Close()
 	return true
+}
+
+// Deliver routes a correlated reply from a daemon to whatever [Registry.Ask]
+// call is waiting for it.
+//
+// Reports whether anything was waiting, so a caller with an op it does not
+// otherwise treat as a reply can tell "delivered" from "nobody asked" —
+// there is no request outstanding for a reply that arrives after its own
+// [Registry.Ask] already timed out and stopped listening, and that is a
+// stray message rather than a bug.
+func (r *Registry) Deliver(c wire.Control) bool {
+	if c.ID == "" {
+		return false
+	}
+	r.pendingMu.RLock()
+	ch, ok := r.pending[c.ID]
+	r.pendingMu.RUnlock()
+	if !ok {
+		return false
+	}
+	select {
+	case ch <- c:
+	default:
+		// Already delivered, or nobody is reading any more — Ask only ever
+		// receives once. Either way there is nothing further to do with a
+		// second reply to the same id.
+	}
+	return true
+}
+
+// Ask sends a correlated request to a machine and waits for its reply.
+//
+// The wait is bounded: a daemon that never answers — one still fetching a
+// package over a bad connection, or one too old to know the op — must not
+// hold the caller open forever. A timeout here is reported the same as any
+// other failure, and it is the caller's job to decide what "no answer" means
+// for whatever it was asking; this package has no opinion on it.
+func (r *Registry) Ask(ctx context.Context, machineID int64, c wire.Control, timeout time.Duration) (wire.Control, error) {
+	if c.ID == "" {
+		c.ID = uuid.NewString()
+	}
+
+	ch := make(chan wire.Control, 1)
+	r.pendingMu.Lock()
+	r.pending[c.ID] = ch
+	r.pendingMu.Unlock()
+	defer func() {
+		r.pendingMu.Lock()
+		delete(r.pending, c.ID)
+		r.pendingMu.Unlock()
+	}()
+
+	f, err := wire.ControlFrame(c)
+	if err != nil {
+		return wire.Control{}, fmt.Errorf("machine: build request: %w", err)
+	}
+	if err := r.Send(machineID, f); err != nil {
+		return wire.Control{}, err
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case reply := <-ch:
+		return reply, nil
+	case <-timer.C:
+		return wire.Control{}, ErrRequestTimeout
+	case <-ctx.Done():
+		return wire.Control{}, ctx.Err()
+	}
 }

@@ -64,6 +64,12 @@ type Link struct {
 	// several beats before anybody is told it is gone.
 	HeartbeatEvery time.Duration
 
+	// ListAcpAgents and ListAcpModels ask the gateway what it can run,
+	// injected so a dispatch test does not have to shell out to npx. Nil
+	// defaults to the supervisor package's real implementation.
+	ListAcpAgents func(ctx context.Context) []wire.AcpAgent
+	ListAcpModels func(ctx context.Context, dir, agent string) []wire.AcpModel
+
 	streams  *streams
 	viewers  *viewerCount
 	restored bool
@@ -296,6 +302,14 @@ func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 		l.start(ctx, conn, c)
 	case wire.OpUpdateNow:
 		l.updateNow(ctx, conn, c)
+	case wire.OpListAcpAgents:
+		// Its own goroutine: this shells out and can take tens of seconds on
+		// a cold npx cache, and the frame loop reading this connection must
+		// not block behind it — every session on the machine rides the same
+		// socket.
+		go l.listAcpAgents(ctx, conn, c)
+	case wire.OpListAcpModels:
+		go l.listAcpModels(ctx, conn, c)
 	default:
 		if err := l.Supervisor.Handle(ctx, l.Profile, c, conn); err != nil {
 			l.Log.Warn("control message failed", "op", string(c.Op), "error", err)
@@ -360,6 +374,44 @@ func (l *Link) report(conn *Conn, id, message string) {
 		ID:   id,
 		Op:   wire.OpError,
 		Body: mustJSON(map[string]string{"error": message}),
+	})
+}
+
+// listAcpAgents answers a request for the gateway's agent catalogue.
+//
+// Always answered, even with nothing to say: an empty AcpAgentsList is a
+// normal reply here, not a failure, since [supervisor.ListAcpAgents] already
+// turned every failure it could hit into that same empty list.
+func (l *Link) listAcpAgents(ctx context.Context, conn *Conn, c wire.Control) {
+	fn := l.ListAcpAgents
+	if fn == nil {
+		fn = supervisor.ListAcpAgents
+	}
+	agents := fn(ctx)
+	_ = conn.Control(wire.Control{
+		ID:   c.ID,
+		Op:   wire.OpAcpAgents,
+		Body: mustJSON(wire.AcpAgentsList{Agents: agents}),
+	})
+}
+
+// listAcpModels answers a request for one agent's models.
+func (l *Link) listAcpModels(ctx context.Context, conn *Conn, c wire.Control) {
+	var req wire.ListAcpModels
+	if err := json.Unmarshal(c.Body, &req); err != nil {
+		l.Log.Warn("unreadable list-models request", "error", err)
+		_ = conn.Control(wire.Control{ID: c.ID, Op: wire.OpAcpModels, Body: mustJSON(wire.AcpModelsList{})})
+		return
+	}
+	fn := l.ListAcpModels
+	if fn == nil {
+		fn = supervisor.ListAcpModels
+	}
+	models := fn(ctx, req.Dir, req.Agent)
+	_ = conn.Control(wire.Control{
+		ID:   c.ID,
+		Op:   wire.OpAcpModels,
+		Body: mustJSON(wire.AcpModelsList{Agent: req.Agent, Models: models}),
 	})
 }
 
