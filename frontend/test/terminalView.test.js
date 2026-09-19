@@ -8,6 +8,7 @@ import {
   statusTone,
   hasEnded,
   endedReason,
+  terminalPath,
   TERMINAL_THEME,
   TERMINAL_OPTIONS,
 } from '../src/composables/useTerminalView.js'
@@ -25,6 +26,22 @@ function harness(over = {}) {
 
 const presence = (viewers, you = 0) =>
   new TextEncoder().encode(JSON.stringify({ op: 'presence', body: { viewers, you } }))
+
+describe('terminalPath', () => {
+  it('addresses a session by its id', () => {
+    expect(terminalPath(RUNNING)).toBe('/sessions/s1')
+  })
+
+  it('answers with nowhere rather than a page that cannot work', () => {
+    // `/sessions/undefined` is the failure this exists to prevent: it is a
+    // route that resolves, loads, finds no session and tells somebody their
+    // agent has ended — which is a lie, and a worse one than staying put.
+    expect(terminalPath({})).toBe('')
+    expect(terminalPath({ id: '' })).toBe('')
+    expect(terminalPath(null)).toBe('')
+    expect(terminalPath(undefined)).toBe('')
+  })
+})
 
 describe('statusLabel', () => {
   it('says what each state means in words', () => {

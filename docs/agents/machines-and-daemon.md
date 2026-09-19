@@ -188,6 +188,43 @@ xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
 a dark background, and leaving the palette to a default that has never seen
 this surface is where unreadable output comes from.
 
+## A launch ends at the terminal, from either end
+
+Both launch sites — the workspace's `StartAgentPanel` and the machine page's
+own form — navigate to `/sessions/<id>` as soon as the daemon has been asked,
+and that navigation is the feature rather than a convenience.
+
+An agent's first minute is when it asks the questions that stop it dead: trust
+this folder, allow this tool, paste a key. A pseudo-terminal is the only place
+those appear — no event, no toast and no session row carries them — so a launch
+that leaves somebody on the page they launched from shows them a row saying
+`starting` while the agent waits for an answer to a question nobody can see it
+asking. The machine page did exactly that until it didn't.
+
+The path is `terminalPath` in `useTerminalView`, and it is shared rather than
+written out at each call site so the two endings cannot drift. It answers `''`
+for a session with no id, and the callers stay put on that: `/sessions/undefined`
+is a route that resolves, finds no session and reports that the agent has
+ended — a lie, and a worse outcome than not moving.
+
+**No kind is excluded, and that is the rule rather than an oversight.**
+`isWatchable` in `useWorkspaceTerminal` listed `claude-code` alone until
+somebody hit the case it misses. The argument for leaving the gateway out was
+that it is already driveable from the page — its turns arrive in the task
+composer, with a Stop button, because it speaks ACP a turn at a time. That
+holds for the gateway's *turns* and for nothing else. The gateway is also a
+process in a pseudo-terminal, and a process asks its own questions on the way
+up: `install this version (y/n)`, trust this folder, paste a key. None of those
+are ACP, none of them reach the composer, and the agent is stopped until one is
+answered. So the question the code asks is "is there a session", not "which
+kind" — which also means the next kind the daemon learns to run is reachable
+because it is a terminal, rather than because somebody remembered a list.
+
+One creation path deliberately does *not* navigate: the WebMCP `launchAgent`
+tool. An agent calling a tool must not move the person's browser out from under
+them, and the workspace page grows its "Agent terminal" button on its own when
+the session appears.
+
 ## A session is named by its workspace, and the name is filled in one place
 
 A machine runs agents for several workspaces at once and most of them are the

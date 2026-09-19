@@ -3,11 +3,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
-import {
-  WATCHABLE_KINDS,
-  isWatchable,
-  useWorkspaceTerminal,
-} from '../src/composables/useWorkspaceTerminal.js'
+import { isWatchable, useWorkspaceTerminal } from '../src/composables/useWorkspaceTerminal.js'
 
 const RUNNING = { id: 's77', kind: 'claude-code', status: 'running', workspaceId: 'ws1' }
 
@@ -37,8 +33,16 @@ describe('isWatchable', () => {
     expect(isWatchable(RUNNING)).toBe(true)
   })
 
-  it('refuses the gateway, which the page can already drive from the composer', () => {
-    expect(isWatchable({ id: 's1', kind: 'acp-gateway', status: 'running' })).toBe(false)
+  it('accepts the gateway too, which asks its own questions on the way up', () => {
+    // This used to be refused, on the grounds that the gateway is driveable
+    // from the task composer. That covers its ACP turns and nothing else: the
+    // process itself asks `install this version (y/n)` on stdin, which reaches
+    // no composer, and the agent is stopped until somebody answers it.
+    expect(isWatchable({ id: 's1', kind: 'acp-gateway', status: 'running' })).toBe(true)
+  })
+
+  it('accepts a kind nobody has added yet, because a terminal is a terminal', () => {
+    expect(isWatchable({ id: 's2', kind: 'something-new', status: 'starting' })).toBe(true)
   })
 
   it('refuses a session with no id, which is what `{}` instead of `null` looks like here', () => {
@@ -49,10 +53,6 @@ describe('isWatchable', () => {
   it('copes with nothing at all', () => {
     expect(isWatchable(null)).toBe(false)
     expect(isWatchable(undefined)).toBe(false)
-  })
-
-  it('names the kinds rather than hiding them in a comparison', () => {
-    expect(WATCHABLE_KINDS).toEqual(['claude-code'])
   })
 })
 
@@ -97,11 +97,17 @@ describe('useWorkspaceTerminal', () => {
     expect(t.label.value).toBe('')
   })
 
-  it('offers nothing for a gateway session', async () => {
-    const { t, settle } = harness({ session: { id: 's1', kind: 'acp-gateway', status: 'running' } })
+  it('offers a gateway session its terminal, same as any other', async () => {
+    const { t, settle } = harness({
+      session: { id: 's1', kind: 'acp-gateway', status: 'starting' },
+    })
     await settle()
 
-    expect(t.offered.value).toBe(false)
+    expect(t.offered.value).toBe(true)
+    expect(t.to.value).toBe('/sessions/s1')
+    // Still starting is exactly when it is worth opening: a gateway that wants
+    // `install this version (y/n)` answered never gets past it on its own.
+    expect(t.label.value).toBe('Agent terminal (starting)')
   })
 
   it('draws no button when the lookup fails, and says nothing about it', async () => {

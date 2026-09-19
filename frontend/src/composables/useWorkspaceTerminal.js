@@ -17,33 +17,35 @@
 
 import { computed, ref, watch } from 'vue'
 import * as api from '../api'
-
-/**
- * The agent kinds whose terminal is worth offering.
- *
- * Only Claude Code, and the reason is not that the gateway's terminal is
- * uninteresting — it is that the gateway is already driveable from the page.
- * Its turns arrive in the task composer, with a Stop button, because it speaks
- * ACP and the gateway chains a turn at a time. Claude Code speaks MCP straight
- * to the workspace: it cannot be stopped from here and takes no input from
- * here, so the terminal is the only place a person can actually reach it.
- *
- * A list rather than an equality check, because "which kinds can be watched"
- * is the question being answered, and the next kind added should be a line
- * here rather than an `||` somewhere.
- */
-export const WATCHABLE_KINDS = ['claude-code']
+import { terminalPath } from './useTerminalView'
 
 /**
  * Whether a session is one this workspace should offer a terminal for.
  *
- * Exported and pure so the rule can be tested on its own — the interesting
- * cases are the ones that are nearly right: a gateway session, or a row with
- * no id, which is what a backend answering `{}` instead of `null` would look
- * like by the time it reaches here.
+ * Any session with an id — and the absence of a kind check is the decision,
+ * not an omission.
+ *
+ * This listed `claude-code` alone until somebody hit the case it misses. The
+ * argument for excluding the gateway was that it is already driveable from the
+ * page: its turns arrive in the task composer, with a Stop button, because it
+ * speaks ACP a turn at a time. That is true of the gateway's *turns* and of
+ * nothing else. The gateway is also a process in a pseudo-terminal, and a
+ * process asks its own questions on the way up — install this version (y/n),
+ * trust this folder, paste a key. None of those are ACP, none of them reach
+ * the composer, and until one is answered the agent is stopped. Excluding a
+ * kind here excluded the only place those questions can be seen or answered.
+ *
+ * So the rule is the session, not the kind, which also means the next kind the
+ * daemon learns to run is watchable because it is a terminal rather than
+ * because somebody remembered a list.
+ *
+ * Exported and pure so the rule can be tested on its own. The id is what is
+ * really being asked for: a row with none is what a backend answering `{}`
+ * instead of `null` looks like by the time it reaches here, and offering a
+ * button to `/sessions/undefined` is worse than offering nothing.
  */
 export function isWatchable(session) {
-  return !!session?.id && WATCHABLE_KINDS.includes(session?.kind)
+  return !!terminalPath(session)
 }
 
 /**
@@ -65,8 +67,13 @@ export function useWorkspaceTerminal(deps = {}) {
   /** Whether to draw the button at all. */
   const offered = computed(() => isWatchable(session.value))
 
-  /** Where it goes. Empty when there is nothing to go to. */
-  const to = computed(() => (offered.value ? `/sessions/${session.value.id}` : ''))
+  /**
+   * Where it goes. Empty when there is nothing to go to.
+   *
+   * Built by the same function `offered` is decided with, so the two cannot
+   * disagree: a button that is drawn always has somewhere to send you.
+   */
+  const to = computed(() => terminalPath(session.value))
 
   /**
    * What the button says it will show.
