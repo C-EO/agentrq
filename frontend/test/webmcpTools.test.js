@@ -287,7 +287,7 @@ describe('each tool calls the interface the way the UI does', () => {
       'createTask',
       { workspaceId: 'ws1', title: 'T', body: 'B' },
       'createTask',
-      ['ws1', 'T', 'B', 'agent', [], 'notstarted', '', false, '', ''],
+      ['ws1', 'T', 'B', 'agent', [], 'notstarted', '', false, '', '', false],
     ],
     [
       'createTask',
@@ -301,9 +301,10 @@ describe('each tool calls the interface the way the UI does', () => {
         allowAllCommands: true,
         eventId: 'e1',
         workflowId: 'wf1',
+        clearContext: true,
       },
       'createTask',
-      ['ws1', 'T', 'B', 'human', [], 'ongoing', '0 9 * * *', true, 'e1', 'wf1'],
+      ['ws1', 'T', 'B', 'human', [], 'ongoing', '0 9 * * *', true, 'e1', 'wf1', true],
     ],
     ['replyToTask', { workspaceId: 'ws1', taskId: 't1', text: 'hi' }, 'replyToTask', ['ws1', 't1', 'hi']],
     [

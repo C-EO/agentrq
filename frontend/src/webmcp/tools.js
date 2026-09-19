@@ -290,6 +290,10 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         allowAllCommands: bool('Let the agent run commands without asking each time.'),
         eventId: str('Optional event this task publishes when it completes.'),
         workflowId: str('Optional workflow this task belongs to.'),
+        clearContext: bool(
+          'Send /clear to the agent before it picks this task up, so it starts on a clean ' +
+          'context. Ignored when the workspace has no running Claude Code session.'
+        ),
       },
       required: ['workspaceId', 'title', 'body'],
       run: ({
@@ -302,6 +306,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         allowAllCommands = false,
         eventId = '',
         workflowId = '',
+        clearContext = false,
       }) =>
         api.createTask(
           workspaceId,
@@ -313,7 +318,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
           cronSchedule,
           allowAllCommands,
           eventId,
-          workflowId
+          workflowId,
+          clearContext
         ),
     }),
     tool({

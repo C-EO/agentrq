@@ -125,6 +125,22 @@
                   </button>
                 </div>
 
+                <!-- Clear-context toggle. Icon only, and shown only when the
+                     workspace has a running Claude Code session to type /clear
+                     into — see useClearContext for why it is hidden rather
+                     than disabled when it cannot work. -->
+                <button v-if="newTask.assignee === 'agent' && clearContextOffered" type="button"
+                        @click.stop="newTask.clearContext = !newTask.clearContext; tooltipStore.hide()"
+                        @mouseenter="tooltipStore.show($event, clearContextTooltip(newTask.clearContext), 'top')"
+                        @mouseleave="tooltipStore.hide()"
+                        :class="newTask.clearContext ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black border-transparent shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+                        class="flex items-center justify-center w-7 h-7 rounded-md transition-all">
+                  <!-- An eraser. Drawn as a broom first, which at 14px read as a pen —
+                       i.e. "edit", which is a plausible and wrong meaning next to a
+                       task form. Compared side by side before choosing. -->
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 20H20" /><path stroke-linecap="round" stroke-linejoin="round" d="M14.5 4.5l5 5a1.5 1.5 0 010 2.12l-7.4 7.4a1.5 1.5 0 01-2.12 0l-5-5a1.5 1.5 0 010-2.12l7.4-7.4a1.5 1.5 0 012.12 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l7 7" /></svg>
+                </button>
+
                 <!-- YOLO Toggle -->
                 <button v-if="newTask.assignee === 'agent'" type="button" @click.stop="newTask.allowAllCommands = !newTask.allowAllCommands; tooltipStore.hide()"
                         @mouseenter="tooltipStore.show($event, newTask.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
@@ -307,6 +323,7 @@ import { useSpeechToText } from '../composables/useSpeechToText';
 import { useAutoTitle } from '../composables/useAutoTitle';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useClearContext, clearContextTooltip } from '../composables/useClearContext';
 import AgentModelPicker from '../components/AgentModelPicker.vue';
 
 const { getNextRunLabel, daysOptions } = useCron();
@@ -316,6 +333,13 @@ const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
 
 const workspaceId = route.params.id;
+// Whether this workspace has a terminal to type /clear into. Asked once, on
+// mount; a workspace with no running Claude Code session simply never shows
+// the icon.
+const {
+  offered: clearContextOffered,
+  load: loadClearContext,
+} = useClearContext({ workspaceId });
 const taskId = route.params.taskId;
 const isEditMode = computed(() => !!taskId);
 
@@ -334,7 +358,7 @@ const workspaceStore = useWorkspaceStore();
 const liveWorkspace = computed(() => workspaceStore.getWorkspace(workspaceId) || workspace.value);
 const fileInput = ref(null);
 
-const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });
+const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false, clearContext: false });
 const newTaskAttachments = ref([]);
 
 // We use computed refs to bridge to the composables
@@ -429,6 +453,9 @@ onMounted(async () => {
       getWorkspace(workspaceId),
       fetchEvents().catch(() => ({ events: [] })),
       fetchWorkflows().catch(() => ({ workflows: [] })),
+      // Alongside the rest rather than after: it decides one icon, and the
+      // form must not wait on it. It swallows its own failures.
+      loadClearContext(),
     ]);
     workspace.value = wsRes.workspace;
     events.value = eventsRes.events ?? [];
@@ -442,7 +469,8 @@ onMounted(async () => {
         body: t.body,
         assignee: t.assignee,
         cronSchedule: t.cronSchedule,
-        allowAllCommands: t.allowAllCommands || false
+        allowAllCommands: t.allowAllCommands || false,
+        clearContext: t.clearContext || false
       };
       markOverridden(); // Assume edited tasks shouldn't auto-title
 
@@ -452,6 +480,7 @@ onMounted(async () => {
       document.title = `Edit Task | ${workspace.value?.name || 'Workspace'} | AgentRQ`;
     } else {
       newTask.value.allowAllCommands = wsRes.workspace.allowAllCommands || false;
+      newTask.value.clearContext = wsRes.workspace.clearContextDefault || false;
       document.title = `New Task | ${workspace.value?.name || 'Workspace'} | AgentRQ`;
     }
   } catch (err) {
@@ -612,7 +641,10 @@ async function submitHumanTask() {
       workspaceId, newTask.value.title, newTask.value.body,
       newTask.value.assignee, newTaskAttachments.value,
       status, newTask.value.cronSchedule, newTask.value.allowAllCommands,
-      selectedEventId.value, selectedWorkflowId.value
+      selectedEventId.value, selectedWorkflowId.value,
+      // Only ever true when the icon was there to be pressed: the option is
+      // hidden when nothing could act on it.
+      clearContextOffered.value && newTask.value.clearContext
     );
     notifySuccess('Task Created successfully');
     goBack(status === 'cron');
@@ -627,7 +659,11 @@ async function submitEditProtocol() {
     await updateScheduledTask(
       workspaceId, taskId, newTask.value.title, newTask.value.body,
       newTask.value.assignee, newTask.value.cronSchedule,
-      newTask.value.allowAllCommands
+      newTask.value.allowAllCommands,
+      // Sent on edit as well as create, so the icon is not a control that
+      // looks like it saved and did not. Still only offered where there is a
+      // terminal to act on it.
+      clearContextOffered.value && newTask.value.clearContext
     );
     notifySuccess('Task Updated');
     goBack(newTask.value.cronSchedule !== '');

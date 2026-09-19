@@ -23,6 +23,8 @@ type (
 		NotificationSettings  datatypes.JSON `gorm:"type:text"`
 		AutoAllowedTools      datatypes.JSON `gorm:"type:text"`
 		AllowAllCommands      bool           `gorm:"default:false"`
+		// ClearContextDefault is what a new task's ClearContext starts as.
+		ClearContextDefault bool `gorm:"default:false"`
 		SelfLearningLoopNote  string         `gorm:"type:text"`
 		InputSendDelaySeconds int            `gorm:"default:0"`
 		WorkingDirectory      string         `gorm:"type:text"`
@@ -55,6 +57,12 @@ type (
 		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
 		SortOrder        float64 `gorm:"type:real;default:0"`
 		AllowAllCommands bool    `gorm:"default:false"`
+		// ClearContext asks the agent to start this task on a clean slate: the
+		// backend sends /clear down the session's terminal before it pushes the
+		// task. Stored per task rather than read from the workspace at push
+		// time so that what a task was created with is what it runs with, even
+		// if the workspace default changes in between.
+		ClearContext bool `gorm:"default:false"`
 		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
 		// WorkflowID carries workflow context through a run: when this task

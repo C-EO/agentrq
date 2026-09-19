@@ -30,6 +30,8 @@ type (
 		MCPToken              string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
 		AllowAllCommands      bool                  `json:"allowAllCommands"`
+		// ClearContextDefault is what a new task's clearContext starts as.
+		ClearContextDefault   bool                  `json:"clearContextDefault"`
 		SelfLearningLoopNote  string                `json:"selfLearningLoopNote,omitempty"`
 		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
 		WorkingDirectory      string                `json:"workingDirectory,omitempty"`
@@ -191,7 +193,11 @@ type (
 		ParentID         string       `json:"parentId,omitempty"`
 		SortOrder        float64      `json:"sortOrder"`
 		AllowAllCommands bool         `json:"allowAllCommands"`
-		EventID          string       `json:"eventId,omitempty"`
+		// ClearContext asks the backend to send /clear down the agent's
+		// terminal before it pushes this task, so the task starts on a clean
+		// context rather than on whatever the last one left behind.
+		ClearContext bool   `json:"clearContext"`
+		EventID      string `json:"eventId,omitempty"`
 		// WorkflowID runs a whole named pipeline on completion instead of
 		// firing a single event. Choosing one also sets EventID to that
 		// workflow's start event, so CompletionTriggerType records which of the

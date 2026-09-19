@@ -217,6 +217,27 @@ func (r *Relay) FromViewer(sessionID uint64, f wire.Frame) error {
 	return r.registry.Send(machineID, f)
 }
 
+// SendInput writes bytes into a session's terminal on the server's own behalf.
+//
+// Separate from [Relay.FromViewer] deliberately. That path answers "may this
+// browser send this frame", and its bookkeeping — `r.machines[sessionID]` — is
+// only populated when somebody *attaches*. A server-originated write has no
+// viewer and usually no attach: it is sent to a session that is running on a
+// machine whose socket this instance holds, whether or not anyone is watching.
+// Routing it through the viewer path would mean either weakening that check or
+// faking an attach, and both are worse than one honest extra method.
+//
+// The daemon needs no attach either — it writes input to any *running*
+// session's PTY — so the only thing that has to be true is that this instance
+// holds the machine, which [Registry.Send] answers.
+func (r *Relay) SendInput(machineID int64, sessionID uint64, data []byte) error {
+	f, err := wire.SessionFrame(wire.TypeInput, sessionID, data)
+	if err != nil {
+		return err
+	}
+	return r.registry.Send(machineID, f)
+}
+
 // Viewers is how many people are watching a session.
 func (r *Relay) Viewers(sessionID uint64) int {
 	r.mu.RLock()

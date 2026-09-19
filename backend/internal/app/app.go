@@ -338,6 +338,14 @@ func New(cfg Config) (*App, error) {
 	authSvc := auth.NewGoogle(cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, fmt.Sprintf("%s/api/v1/auth/google/callback", cfg.App.BaseURL))
 	githubAuthSvc := auth.NewGitHub(cfg.Auth.GitHub.ClientID, cfg.Auth.GitHub.ClientSecret, fmt.Sprintf("%s/api/v1/auth/github/callback", cfg.App.BaseURL))
 
+	// The daemon sockets this process holds. Created up here because three
+	// things need it: the API handler (revoking a machine has to close its
+	// socket, and only the process holding it can), the daemon mount below, and
+	// each workspace's MCP server, which sends /clear down a session's terminal
+	// before pushing a task that asked for a clean context.
+	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
+	machineRelay := machine.NewRelay(machineRegistry)
+
 	// ── MCP manager ───────────────────────────────────────────────────────────
 	mcpManager := mcp.NewManager(func(workspaceID int64, userID string) *mcp.WorkspaceServer {
 		var workspaceOwner string
@@ -354,6 +362,13 @@ func New(cfg Config) (*App, error) {
 			cfg.App.BaseURL,
 			func(ctx context.Context, task model.Task) (model.Task, error) {
 				task.AllowAllCommands = workspace.AllowAllCommands
+				// Unlike allowAllCommands above, an explicit true from the tool
+				// is kept: asking for a clean context is a per-task decision,
+				// and the workspace setting is only the default for callers
+				// that said nothing.
+				if !task.ClearContext {
+					task.ClearContext = workspace.ClearContextDefault
+				}
 				res, err := repo.CreateTask(ctx, task)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
@@ -586,6 +601,27 @@ func New(cfg Config) (*App, error) {
 					Tools:       tools,
 					UserID:      monoflake.ID(workspace.UserID).String(),
 				})
+			},
+			// Send /clear down this workspace's agent terminal.
+			//
+			// Every early return is a workspace that simply has no terminal to
+			// type into right now, which is why they are errors only so the
+			// caller can log one — the task is pushed either way.
+			func(ctx context.Context) error {
+				sess, err := repo.ActiveSessionForWorkspace(ctx, workspace.ID, workspace.UserID)
+				if err != nil {
+					return fmt.Errorf("no running session for this workspace: %w", err)
+				}
+				// Only Claude Code is asked. /clear is its command, and typing
+				// it at another agent would be putting five stray characters
+				// into whatever that agent is doing.
+				if sess.Kind != machineKindClaudeCode {
+					return fmt.Errorf("session kind %q has no /clear", sess.Kind)
+				}
+				if sess.Status != "running" {
+					return fmt.Errorf("session is %s, not running", sess.Status)
+				}
+				return machineRelay.SendInput(sess.MachineID, uint64(sess.ID), []byte(clearCommand))
 			},
 			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ, run mcp.WorkflowRunContext) error {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
@@ -878,12 +914,6 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("mcp handler: %w", err)
 	}
 
-	// The daemon sockets this process holds. Created here rather than at the
-	// mount below because the API handler needs it too: revoking a machine has
-	// to close its socket, and only the process holding it can do that.
-	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
-	machineRelay := machine.NewRelay(machineRegistry)
-
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
 	if _, err := handlerapi.New(handlerapi.Params{
@@ -1033,6 +1063,16 @@ func New(cfg Config) (*App, error) {
 // than it is wrong, and a random value would be worse: it changes on every
 // restart, leaving stale pairings that point at an instance id nothing will
 // ever answer to again.
+// machineKindClaudeCode is the session kind that understands /clear.
+const machineKindClaudeCode = "claude-code"
+
+// clearCommand is what gets typed into the terminal.
+//
+// Carriage return, not newline: this is a PTY in raw mode, and \r is what the
+// Enter key actually produces — the same bytes the browser's terminal sends.
+// A \n would leave the command sitting on the prompt, unsent.
+const clearCommand = "/clear\r"
+
 func instanceID(idgenNode uint16) string {
 	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {
 		return v

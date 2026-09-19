@@ -45,7 +45,7 @@ Node 20.6 or newer.
 | `workspace` | Show the workspace title and mission |
 | `task get <taskId>` | Fetch a task, with `--conversation` for its history |
 | `task next` | Take the next not-started task — **this dequeues the queue** |
-| `task create <title>` | Create a task |
+| `task create <title>` | Create a task, with `--clear-context` to send `/clear` to the agent first |
 | `task status <taskId> <status>` | Set a task's status |
 | `reply <taskId> <text>` | Send a message to a task |
 | `attachment get <id> --task <taskId>` | Download an attachment to a file |

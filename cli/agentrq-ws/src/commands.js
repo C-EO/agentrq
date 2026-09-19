@@ -161,12 +161,16 @@ export const COMMANDS = [
   {
     path: ['task', 'create'],
     summary: 'Create a task',
-    usage: 'agentrq-ws task create <title> [--body TEXT|@file|-] [--attach PATH]...',
+    usage: 'agentrq-ws task create <title> [--body TEXT|@file|-] [--clear-context] [--attach PATH]...',
     options: {
       body: { type: 'string', short: 'b', description: 'Task details (@file or - for stdin)' },
       assignee: { type: 'string', description: "'human' or 'agent' (default agent)" },
       cron: { type: 'string', description: "5-field cron schedule, e.g. '30 * * * *'" },
       event: { type: 'string', description: 'Event id to publish when the task completes' },
+      'clear-context': {
+        type: 'boolean',
+        description: 'Send /clear to the agent before it picks this task up',
+      },
       attach: { type: 'string', multiple: true, description: 'File to attach (repeatable)' },
     },
     async run(ctx) {
@@ -178,6 +182,10 @@ export const COMMANDS = [
         assignee: ctx.values.assignee,
         cronSchedule: ctx.values.cron,
         eventId: ctx.values.event,
+        // Only sent when asked for. Absent means "use the workspace default",
+        // and a literal false would override that with an opinion the caller
+        // never expressed.
+        clearContext: ctx.values['clear-context'] || undefined,
         attachments: collectAttachments(ctx.values),
       })
     },
