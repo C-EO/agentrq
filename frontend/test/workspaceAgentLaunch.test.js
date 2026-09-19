@@ -270,6 +270,15 @@ describe('useWorkspaceAgentLaunch: acp-gateway suggestions', () => {
     expect(l.acpAgents.value).toEqual([{ id: 'codex-acp', name: 'Codex' }])
   })
 
+  it('copes with a response carrying no agents key at all', async () => {
+    const fetchAcpAgents = vi.fn().mockResolvedValue(undefined)
+    const { l } = harness({ deps: { fetchAcpAgents } })
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    await flush()
+    expect(l.acpAgents.value).toEqual([])
+  })
+
   it('asks for model suggestions once an agent is typed, with the workspace and machine', async () => {
     const fetchAcpModels = vi
       .fn()
@@ -284,12 +293,62 @@ describe('useWorkspaceAgentLaunch: acp-gateway suggestions', () => {
     expect(l.acpModels.value).toEqual([{ id: 'gpt-5.5', current: true }])
   })
 
+  it('copes with a response carrying no models key at all', async () => {
+    const fetchAcpModels = vi.fn().mockResolvedValue(undefined)
+    const { l } = harness({ deps: { fetchAcpModels } })
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { ...l.params.value, agent: 'codex-acp' }
+    await flush()
+    expect(l.acpModels.value).toEqual([])
+  })
+
+  it('does not ask for models before a machine is chosen', async () => {
+    const fetchAcpModels = vi.fn()
+    const { l } = harness({ deps: { fetchAcpModels } })
+    // Not calling load(): machineId stays '', even though the workspace and
+    // an agent are both already there.
+    l.kind.value = 'acp-gateway'
+    l.params.value = { ...l.params.value, agent: 'codex-acp' }
+    await flush()
+    expect(fetchAcpModels).not.toHaveBeenCalled()
+  })
+
+  it('does not ask for models while the agent field is blank', async () => {
+    const fetchAcpModels = vi.fn()
+    const { l } = harness({ deps: { fetchAcpModels } })
+    await l.load() // machine and workspace are both present
+    l.kind.value = 'acp-gateway'
+    l.params.value = { ...l.params.value, agent: '' }
+    await flush()
+    expect(fetchAcpModels).not.toHaveBeenCalled()
+  })
+
+  it('copes with params carrying no agent key at all, not only an empty one', async () => {
+    const fetchAcpModels = vi.fn()
+    const { l } = harness({ deps: { fetchAcpModels } })
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { model: 'gemini-3.8-flash-high' } // no `agent` property
+    await flush()
+    expect(fetchAcpModels).not.toHaveBeenCalled()
+  })
+
   it('fails open: a rejected lookup leaves the suggestions empty rather than throwing', async () => {
     const { l } = harness({ deps: { fetchAcpAgents: vi.fn().mockRejectedValue(new Error('offline')) } })
     await l.load()
     l.kind.value = 'acp-gateway'
     await flush()
     expect(l.acpAgents.value).toEqual([])
+  })
+
+  it('fails open: a rejected model lookup leaves the models empty rather than throwing', async () => {
+    const { l } = harness({ deps: { fetchAcpModels: vi.fn().mockRejectedValue(new Error('offline')) } })
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { ...l.params.value, agent: 'codex-acp' }
+    await flush()
+    expect(l.acpModels.value).toEqual([])
   })
 })
 
