@@ -14,9 +14,12 @@
  * change, because there is no hot reload for the main process.
  */
 import { build, createServer } from 'vite'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import electronPath from 'electron'
+
+import { QUARANTINE_ATTRIBUTE, checkMacSandbox } from './mac-sandbox-preflight.mjs'
 
 const config = (name) => fileURLToPath(new URL(`../vite.${name}.config.mjs`, import.meta.url))
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -45,6 +48,17 @@ async function restartElectron(devServerUrl) {
   restarting = false
   startElectron(devServerUrl)
 }
+
+// Said once, before Electron starts, so the macOS sandbox line in the log has
+// an explanation next to it rather than being a mystery every time.
+const sandboxProblem = checkMacSandbox({
+  platform: process.platform,
+  electronPath,
+  exists: existsSync,
+  hasQuarantine: (path) =>
+    spawnSync('xattr', ['-p', QUARANTINE_ATTRIBUTE, path], { stdio: 'pipe' }).status === 0,
+})
+if (sandboxProblem) console.warn(`\n▸ macOS sandbox:\n  ${sandboxProblem}\n`)
 
 const server = await createServer({ configFile: config('renderer') })
 await server.listen()

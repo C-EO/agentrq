@@ -34,9 +34,10 @@ Each line says what the note will stop you getting wrong.
 - **[Desktop app](docs/agents/desktop.md)** — `desktop/`, and *any* frontend
   change, since the desktop build renders the same Vue app. The `app://` proxy
   and why a cross-origin API call can never carry the auth cookie; how a profile
-  keeps the name of the account it belongs to; and four traps that leave no
-  trace in source — Tailwind's scan root, the macOS title bar, macOS URL
-  schemes, and the Linux app icon.
+  keeps the name of the account it belongs to; why every main-process await
+  needs a deadline; and five traps that leave no trace in source — Tailwind's
+  scan root, the macOS title bar, macOS URL schemes, the macOS sandbox log
+  line, and the Linux app icon.
 - **[Machines and the daemon](docs/agents/machines-and-daemon.md)** — `daemon/`,
   the machines pages, terminals. Why a reconnect must not kill the agents and a
   shutdown must; why the browser names no session; why the terminal socket

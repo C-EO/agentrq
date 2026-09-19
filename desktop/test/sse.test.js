@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from 'vitest'
 
 import {
+  IDLE_TIMEOUT,
   INITIAL_RECONNECT_DELAY,
   MAX_RECONNECT_DELAY,
   createEventStreamClient,
@@ -24,6 +25,20 @@ function streamingResponse(chunks, { status = 200 } = {}) {
           i < chunks.length ? { done: false, value: encoder.encode(chunks[i++]) } : { done: true, value: undefined },
       }),
     },
+  }
+}
+
+/**
+ * A response that connects and then says nothing, ever.
+ *
+ * This is what a crashed network service leaves behind: not an error, not an
+ * end of stream, just a read that never settles.
+ */
+function silentResponse() {
+  return {
+    ok: true,
+    status: 200,
+    body: { getReader: () => ({ read: () => new Promise(() => {}) }) },
   }
 }
 
@@ -246,7 +261,10 @@ describe('createEventStreamClient', () => {
     const { client } = setup({ netFetch, streamUrl: () => url, stopAfterDelays: 1 })
 
     client.start()
-    await waitFor(() => netFetch.mock.calls.length >= 1, 'the first attempt')
+    // Waiting for the client to have *stopped*, not merely for the request to
+    // have been made: start() is a no-op while the previous loop is still
+    // running, so anything earlier than this only passes by microtask luck.
+    await waitFor(() => !client.isRunning(), 'the first attempt to fail and the client to stop')
     url = 'https://second.example.com/api/v1/events/stream'
     client.start()
     await waitFor(
@@ -323,6 +341,80 @@ describe('createEventStreamClient', () => {
     await waitFor(() => !client.isRunning(), 'the 401 to stop the client')
 
     expect(client.isRunning()).toBe(false)
+  })
+
+  it('gives up on a stream that goes silent, and reconnects', async () => {
+    // The backend flushes a keepalive every thirty seconds, so silence means
+    // the connection is gone. Without the watchdog the read below never
+    // settles, the loop never reaches its backoff, and notifications stop for
+    // the life of the process with nothing logged.
+    const netFetch = vi.fn(async () => silentResponse())
+    const { client, onStatus } = setup({ netFetch, idleTimeoutMs: 5, stopAfterDelays: 2 })
+
+    client.start()
+    await waitFor(() => netFetch.mock.calls.length >= 2, 'a reconnect after the silence')
+
+    expect(onStatus).toHaveBeenCalledWith(false)
+  })
+
+  it('gives up on a connection attempt that never answers', async () => {
+    // The same failure one step earlier. Left unguarded the loop stops on this
+    // line and never reaches the backoff below it.
+    const netFetch = vi.fn(() => new Promise(() => {}))
+    const { client } = setup({ netFetch, idleTimeoutMs: 5, stopAfterDelays: 2 })
+
+    client.start()
+    await waitFor(() => netFetch.mock.calls.length >= 2, 'a retry after the silent connect')
+
+    expect(netFetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('aborts the request it gave up on', async () => {
+    let signal
+    const netFetch = vi.fn((_url, init) => {
+      signal = init.signal
+      return new Promise(() => {})
+    })
+    const { client } = setup({ netFetch, idleTimeoutMs: 5, stopAfterDelays: 1 })
+
+    client.start()
+    await waitFor(() => signal !== undefined && signal.aborted, 'the abandoned request to be aborted')
+
+    expect(signal.aborted).toBe(true)
+  })
+
+  it('restart() reconnects a stream that would otherwise never answer', async () => {
+    // What the network-service crash handler calls. The read never settles and
+    // the abort is ignored — the case restart() exists for — so ending the
+    // watchdog early is the only thing that moves the loop on.
+    const netFetch = vi.fn(async () => silentResponse())
+    const { client, onStatus } = setup({ netFetch, idleTimeoutMs: 60000, stopAfterDelays: 2 })
+
+    client.start()
+    // Connected, not merely requested — there is no stream to interrupt until
+    // the read has begun.
+    await waitFor(() => onStatus.mock.calls.some(([up]) => up === true), 'the stream to connect')
+    client.restart()
+
+    await waitFor(() => netFetch.mock.calls.length >= 2, 'the reconnect restart() asked for')
+    expect(netFetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('restart() on a stopped client is a no-op', async () => {
+    // Reconnecting a client nobody started is not a recovery, it is a leak.
+    const netFetch = vi.fn(async () => streamingResponse([]))
+    const { client } = setup({ netFetch })
+
+    client.restart()
+
+    expect(netFetch).not.toHaveBeenCalled()
+    expect(client.isRunning()).toBe(false)
+  })
+
+  it('waits two and a half keepalives before calling a stream dead', () => {
+    // backend/internal/app/app.go flushes `: agentrq` every thirty seconds, so
+    // one missed tick or a slow round trip must not look like a dead socket.
+    expect(IDLE_TIMEOUT).toBe(75000)
   })
 
   it('aborts the in-flight request when stopped', async () => {

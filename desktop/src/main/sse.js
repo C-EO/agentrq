@@ -21,6 +21,25 @@
 export const INITIAL_RECONNECT_DELAY = 1000
 export const MAX_RECONNECT_DELAY = 30000
 
+/**
+ * How long the stream may deliver nothing at all before it is treated as dead.
+ *
+ * The reconnect loop below only runs when a read ends or throws, and a stream
+ * can do neither: when Chromium's network service crashes it abandons the
+ * response rather than failing it, so `reader.read()` waits forever and the
+ * backoff underneath is never reached. Notifications stop for the life of the
+ * process and nothing anywhere says why.
+ *
+ * Silence is a sound test here because the backend never goes quiet — it
+ * flushes a `: agentrq` keepalive comment every thirty seconds
+ * (backend/internal/app/app.go). This is 2.5 of those, so a slow round trip or
+ * one missed tick is not mistaken for a dead connection.
+ */
+export const IDLE_TIMEOUT = 75000
+
+/** Resolved by the watchdog, and distinguishable from any real read result. */
+const IDLE = Symbol('idle')
+
 /** The delay after a failure at `current`. Mirrors useEventBus.js. */
 export function nextReconnectDelay(current) {
   return Math.min(current * 2, MAX_RECONNECT_DELAY)
@@ -80,6 +99,8 @@ export function createSSEParser() {
  * @param {(ms: number) => Promise<void>} deps.delay
  * @param {() => void} [deps.onUnauthorized] called instead of reconnecting when
  *                                           the server rejects the credentials
+ * @param {number} [deps.idleTimeoutMs]     silence after which the stream is
+ *                                          assumed dead; see [IDLE_TIMEOUT]
  * @returns {{ start: () => void, stop: () => void, isRunning: () => boolean }}
  */
 export function createEventStreamClient({
@@ -89,9 +110,33 @@ export function createEventStreamClient({
   onStatus = () => {},
   delay,
   onUnauthorized = () => {},
+  idleTimeoutMs = IDLE_TIMEOUT,
 }) {
   let running = false
   let controller = null
+  /** Set while a watchdog is pending, so `restart` can end the wait early. */
+  let interrupt = null
+
+  /**
+   * `promise`, or [IDLE] if it has not settled within `ms`.
+   *
+   * A race and not an abort, because the promise being guarded against is
+   * precisely the one that will never answer. The timer is always cleared, so a
+   * settled promise leaves nothing holding the event loop open.
+   */
+  async function orIdle(promise, ms) {
+    let expire
+    const watchdog = new Promise((resolve) => {
+      expire = setTimeout(() => resolve(IDLE), ms)
+      interrupt = () => resolve(IDLE)
+    })
+    try {
+      return await Promise.race([promise, watchdog])
+    } finally {
+      clearTimeout(expire)
+      interrupt = null
+    }
+  }
 
   async function readStream(response) {
     const parser = createSSEParser()
@@ -99,7 +144,16 @@ export function createEventStreamClient({
     const reader = response.body.getReader()
 
     while (running) {
-      const { done, value } = await reader.read()
+      const result = await orIdle(reader.read(), idleTimeoutMs)
+
+      if (result === IDLE) {
+        // Abandon the request so the socket is released, and throw so the
+        // caller's backoff treats this as the failed connection it is.
+        controller?.abort()
+        throw new Error('event stream went silent')
+      }
+
+      const { done, value } = result
       if (done) return
 
       for (const data of parser.feed(decoder.decode(value, { stream: true }))) {
@@ -119,10 +173,20 @@ export function createEventStreamClient({
     while (running) {
       controller = new AbortController()
       try {
-        const response = await netFetch(streamUrl(), {
-          headers: { Accept: 'text/event-stream' },
-          signal: controller.signal,
-        })
+        const response = await orIdle(
+          netFetch(streamUrl(), {
+            headers: { Accept: 'text/event-stream' },
+            signal: controller.signal,
+          }),
+          idleTimeoutMs
+        )
+
+        // Same failure as a silent read, one step earlier: without this the
+        // loop stops here and never reaches its own backoff.
+        if (response === IDLE) {
+          controller.abort()
+          throw new Error('event stream did not connect')
+        }
 
         if (response.status === 401) {
           // Reconnecting would just be rejected again. The renderer's own
@@ -163,6 +227,23 @@ export function createEventStreamClient({
       if (running) return
       running = true
       loop()
+    },
+    /**
+     * Give up on the current connection and let the loop reconnect.
+     *
+     * Both halves are needed. The abort is the ordinary way to end a request,
+     * but the case this exists for — the network service having crashed under
+     * a live stream — is exactly the one where the request may not answer an
+     * abort either. Ending the watchdog moves the loop on regardless, which is
+     * what makes recovery immediate rather than a wait of [IDLE_TIMEOUT].
+     *
+     * A no-op when stopped: reconnecting a client nobody started is not a
+     * recovery, it is a leak.
+     */
+    restart() {
+      if (!running) return
+      controller?.abort()
+      interrupt?.()
     },
     stop() {
       running = false
