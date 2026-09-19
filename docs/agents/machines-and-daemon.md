@@ -91,6 +91,15 @@ Two details in `cmdServe` are load-bearing and easy to undo:
 - **The wait is bounded.** A process that ignores the hang-up must not hold the
   machine's shutdown open, so `StopAll` gives up after `shutdownGrace` and says
   how many it stopped.
+- **SIGHUP is one of the signals it stops for**, because `agentrqd serve` is
+  documented as something you run in a terminal: unhandled, the default
+  disposition ends the process when that terminal closes and none of this runs,
+  so every agent on the machine is orphaned. An *ignored* SIGHUP is left alone —
+  that is `nohup`, asking for exactly the opposite.
+- **The shutdown is announced before the work, with the signal that caused it.**
+  Without that line a stop and a kill leave identical logs, and the absence of
+  it is what identifies a SIGKILL — which is why `signal.NotifyContext`, which
+  cancels without saying what did it, is not used here.
 
 ## Self-update is the one place where getting it wrong is unrecoverable
 

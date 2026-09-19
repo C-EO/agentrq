@@ -194,6 +194,14 @@ func cmdServe(ctx context.Context, args []string) error {
 
 	<-ctx.Done()
 
+	// Said before any of the work below, because the work below can take
+	// seconds. Until this line existed the daemon went out in silence, so a
+	// stop it was asked for and a process destroyed outright left identical
+	// logs — and "who stopped this" is the first question asked of a daemon
+	// that is no longer running. SIGKILL still leaves nothing, and that
+	// absence is now an answer rather than an ambiguity.
+	log.Info("shutting down", "reason", stopReason(ctx))
+
 	// The agents go with the daemon, on purpose.
 	//
 	// They would mostly go anyway: closing a pseudo-terminal hangs up on the

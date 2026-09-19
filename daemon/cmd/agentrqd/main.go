@@ -17,7 +17,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/config"
@@ -49,7 +48,7 @@ this machine, as you. https://agentrq.com/docs/daemon
 `
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := notifyShutdown(shutdownSignals(signal.Ignored))
 	defer stop()
 
 	if err := run(ctx, os.Args[1:]); err != nil {
