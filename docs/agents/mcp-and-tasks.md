@@ -55,6 +55,17 @@ and a list that is merely *mostly* complete fails silently — the agent works
 until its first call to the one missing tool, then stalls waiting on a human
 who is not watching.
 
+## Annotations, and why `Name:` stays first
+
+Every tool on both servers declares annotations, built by
+`internal/service/mcphint` so the hints cannot disagree tool to tool. A client
+decides from them whether to run something without asking, so `readOnlyHint` on
+a tool that writes is worse than no hint at all.
+
+**Keep `Name:` the first field of every `&mcp.Tool{…}` literal.** Three tests
+regex the Go source for it — the frontend allow-list parity test and two plugin
+doc checks — and all three stop seeing a tool if anything precedes its name.
+
 ## Workspace memory
 
 `loadMemory` / `saveMemory` (`memory.go`) give agents notes that outlive a task.

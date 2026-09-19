@@ -11,6 +11,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
@@ -253,26 +254,26 @@ type GetMemoryParams struct {
 // ── Tool Definitions ──────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) registerTools() {
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listWorkspaces", Description: "List all workspaces for the authenticated user"}, s.handleListWorkspaces)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "createWorkspace", Description: "Create a new workspace"}, s.handleCreateWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspace", Description: "Get a workspace by ID"}, s.handleGetWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateWorkspace", Description: "Update a workspace"}, s.handleUpdateWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspaceStats", Description: "Get statistics for a workspace"}, s.handleGetWorkspaceStats)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listTasks", Description: "List tasks in a specific workspace"}, s.handleListTasks)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listAllTasks", Description: "List all tasks across all workspaces"}, s.handleListAllTasks)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "createTask", Description: "Create a new task in a workspace"}, s.handleCreateTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getTask", Description: "Get a specific task by ID"}, s.handleGetTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "respondToTask", Description: "Answer a permission request a task is waiting on: allow, allow_all, reject, or text to reply without deciding"}, s.handleRespondToTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "replyToTask", Description: "Post a message to a task thread"}, s.handleReplyToTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskStatus", Description: "Update a task's status"}, s.handleUpdateTaskStatus)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskOrder", Description: "Update a task's sort order"}, s.handleUpdateTaskOrder)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAssignee", Description: "Update a task's assignee"}, s.handleUpdateTaskAssignee)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task"}, s.handleUpdateTaskAllowAll)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task"}, s.handleUpdateScheduledTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "deleteTask", Description: "Delete a task, with its messages and attachments. This cannot be undone; to stop a scheduled task without losing its history, set its status to rejected instead"}, s.handleDeleteTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata"}, s.handleGetAttachment)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that."}, s.handleListMemories)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off."}, s.handleGetMemory)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listWorkspaces", Description: "List all workspaces for the authenticated user", Annotations: mcphint.Read("List workspaces")}, s.handleListWorkspaces)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "createWorkspace", Description: "Create a new workspace", Annotations: mcphint.Write("Create a workspace")}, s.handleCreateWorkspace)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspace", Description: "Get a workspace by ID", Annotations: mcphint.Read("Get a workspace")}, s.handleGetWorkspace)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateWorkspace", Description: "Update a workspace", Annotations: mcphint.Update("Update a workspace")}, s.handleUpdateWorkspace)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspaceStats", Description: "Get statistics for a workspace", Annotations: mcphint.Read("Workspace statistics")}, s.handleGetWorkspaceStats)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listTasks", Description: "List tasks in a specific workspace", Annotations: mcphint.Read("List a workspace's tasks")}, s.handleListTasks)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listAllTasks", Description: "List all tasks across all workspaces", Annotations: mcphint.Read("List every task")}, s.handleListAllTasks)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "createTask", Description: "Create a new task in a workspace", Annotations: mcphint.Write("Create a task")}, s.handleCreateTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getTask", Description: "Get a specific task by ID", Annotations: mcphint.Read("Get a task")}, s.handleGetTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "respondToTask", Description: "Answer a permission request a task is waiting on: allow, allow_all, reject, or text to reply without deciding", Annotations: mcphint.Write("Answer a permission request")}, s.handleRespondToTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "replyToTask", Description: "Post a message to a task thread", Annotations: mcphint.Write("Reply in a task thread")}, s.handleReplyToTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskStatus", Description: "Update a task's status", Annotations: mcphint.Update("Update a task's status")}, s.handleUpdateTaskStatus)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskOrder", Description: "Update a task's sort order", Annotations: mcphint.Update("Reorder a task")}, s.handleUpdateTaskOrder)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAssignee", Description: "Update a task's assignee", Annotations: mcphint.Update("Reassign a task")}, s.handleUpdateTaskAssignee)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task", Annotations: mcphint.Update("Set allow-all-commands")}, s.handleUpdateTaskAllowAll)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task", Annotations: mcphint.Update("Update a scheduled task")}, s.handleUpdateScheduledTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "deleteTask", Description: "Delete a task, with its messages and attachments. This cannot be undone; to stop a scheduled task without losing its history, set its status to rejected instead", Annotations: mcphint.Overwrite("Delete a task")}, s.handleDeleteTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata", Annotations: mcphint.Read("Get an attachment")}, s.handleGetAttachment)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that.", Annotations: mcphint.Read("List a workspace's memories")}, s.handleListMemories)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off.", Annotations: mcphint.Read("Get a memory")}, s.handleGetMemory)
 
 	// Events and their triggers — see events.go.
 	s.registerEventTools()

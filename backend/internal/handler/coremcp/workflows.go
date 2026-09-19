@@ -8,6 +8,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -111,46 +112,57 @@ func (s *WorkspaceServer) registerWorkflowTools() {
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listWorkflows",
 		Description: "List the workflows defined for this account. A workflow is a named graph: a start event, and the steps that react to it and to each other",
+		Annotations: mcphint.Read("List workflows"),
 	}, s.handleListWorkflows)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "createWorkflow",
 		Description: "Create an empty workflow around a start event. Add steps to it afterwards, one at a time or as a whole document",
+		Annotations: mcphint.Write("Create a workflow"),
 	}, s.handleCreateWorkflow)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "getWorkflow",
 		Description: "Get a workflow by ID",
+		Annotations: mcphint.Read("Get a workflow"),
 	}, s.handleGetWorkflow)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "updateWorkflow",
 		Description: "Revise a workflow. Only the fields sent are changed, so leaving one out keeps it",
+		Annotations: mcphint.Update("Revise a workflow"),
 	}, s.handleUpdateWorkflow)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "deleteWorkflow",
 		Description: "Delete a workflow and its steps. The events it named are left alone",
+		Annotations: mcphint.Overwrite("Delete a workflow"),
 	}, s.handleDeleteWorkflow)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "createWorkflowStep",
 		Description: "Add a step: when this event fires, create a task in this workspace, and optionally emit a second event when that task completes",
+		Annotations: mcphint.Write("Add a workflow step"),
 	}, s.handleCreateWorkflowStep)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listWorkflowSteps",
 		Description: "List a workflow's steps — everything that happens once it starts",
+		Annotations: mcphint.Read("List a workflow's steps"),
 	}, s.handleListWorkflowSteps)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "deleteWorkflowStep",
 		Description: "Remove one step from a workflow, leaving the rest of the graph in place",
+		Annotations: mcphint.Overwrite("Delete a workflow step"),
 	}, s.handleDeleteWorkflowStep)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listWorkflowTasks",
 		Description: "List the tasks a workflow has spawned, to see whether a system that was wired up is running",
+		Annotations: mcphint.Read("List a workflow's tasks"),
 	}, s.handleListWorkflowTasks)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "getWorkflowText",
 		Description: "Read a workflow's whole graph as the indented document the UI's text mode edits. Steps naming a deleted event or workspace are left out, so the document always parses",
+		Annotations: mcphint.Read("Read a workflow's document"),
 	}, s.handleGetWorkflowText)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "replaceWorkflowFromText",
 		Description: "Replace a workflow's entire graph with a document. Every name is resolved before anything is written, so an unknown one on the last line leaves the workflow untouched",
+		Annotations: mcphint.Overwrite("Replace a workflow's graph"),
 	}, s.handleReplaceWorkflowFromText)
 }
 
