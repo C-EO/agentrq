@@ -6,6 +6,7 @@ import { ref } from 'vue'
 import {
   useAgentLaunch,
   workspaceEligibility,
+  workspaceOptions,
   machineEligibility,
   sessionEligibility,
   paramsEligibility,
@@ -201,6 +202,35 @@ describe('loading workspaces', () => {
     const h2 = harness({ deps: { fetchWorkspaces: vi.fn().mockResolvedValue({}) } })
     await h2.l.load()
     expect(h2.l.workspaces.value).toEqual([])
+  })
+})
+
+// The page lists the workspaces instead of hiding them in a dropdown, which
+// only helps if the list says which of them can actually take an agent.
+describe('workspaceOptions', () => {
+  it('notes a ready workspace with its folder, which is what tells two apart', () => {
+    expect(workspaceOptions([READY_WORKSPACE])).toEqual([
+      { id: 'ws1', name: 'Ops', ready: true, note: '/srv/app' },
+    ])
+  })
+
+  it('notes why one cannot be picked, in the space a folder would use', () => {
+    const [busy, homeless] = workspaceOptions([
+      { ...READY_WORKSPACE, agentConnected: true },
+      { ...READY_WORKSPACE, id: 'ws2', workingDirectory: '' },
+    ])
+    expect(busy).toMatchObject({ ready: false, note: 'agent connected' })
+    expect(homeless).toMatchObject({ ready: false, note: 'no folder set' })
+  })
+
+  it('has nothing to list before the workspaces have loaded', () => {
+    expect(workspaceOptions(undefined)).toEqual([])
+  })
+
+  it('is what the launcher hands the page', async () => {
+    const h = harness()
+    await h.l.load()
+    expect(h.l.choices.value).toEqual([{ id: 'ws1', name: 'Ops', ready: true, note: '/srv/app' }])
   })
 })
 

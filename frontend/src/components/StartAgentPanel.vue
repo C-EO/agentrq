@@ -17,8 +17,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { KINDS } from '../composables/useAgentLaunch'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
+import AgentKindPicker from './AgentKindPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 
 const props = defineProps({
@@ -132,20 +132,7 @@ async function start() {
           </select>
         </div>
 
-        <div>
-          <label
-            for="start-agent-kind"
-            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >What to run</label
-          >
-          <select
-            id="start-agent-kind"
-            v-model="kind"
-            class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-          >
-            <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}</option>
-          </select>
-        </div>
+        <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
       </div>
 
       <!-- Only the gateway needs these, and it needs both. -->

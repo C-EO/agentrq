@@ -83,17 +83,17 @@ describe('StartAgentPanel', () => {
   it('does not ask which machine when there is only one', async () => {
     const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE])
     await open()
-    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-kind'])
+    // The only dropdown left on this form is the machine, and there is
+    // nothing to pick: what to run is a segmented control.
+    expect(el.querySelectorAll('select')).toHaveLength(0)
+    expect(el.querySelector('#start-agent-kind-claude-code')).toBeTruthy()
     expect(text()).toMatch(/Runs in \/srv\/app on workshop-pi, your only machine that is online\./)
   })
 
   it('asks which machine when there are several, and says so before the button', async () => {
     const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
     await open()
-    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual([
-      'start-agent-machine',
-      'start-agent-kind',
-    ])
+    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-machine'])
     expect(text()).toMatch(/on the machine you pick/)
     expect(text()).toMatch(/Pick a machine to run on/)
     expect(el.querySelector('button[disabled]')).toBeTruthy()
@@ -101,7 +101,7 @@ describe('StartAgentPanel', () => {
 
   it('opens straight into the form on the setup page, with nothing to cancel back to', async () => {
     const { el, text } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
-    expect(el.querySelector('#start-agent-kind')).toBeTruthy()
+    expect(el.querySelector('#start-agent-kind-claude-code')).toBeTruthy()
     expect(text()).not.toMatch(/Cancel/)
   })
 
