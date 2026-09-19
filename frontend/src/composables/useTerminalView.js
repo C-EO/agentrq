@@ -50,13 +50,48 @@ export const TERMINAL_THEME = {
   brightWhite: '#fafafa',
 }
 
+/**
+ * The font the terminal is shipped with.
+ *
+ * Self-hosted through `@fontsource/jetbrains-mono` (imported by `style.css`),
+ * never a font CDN: the desktop build serves the app from `app://` under
+ * `font-src 'self' data:`, so an external font URL works in the browser and is
+ * blocked there — the trap `docs/agents/desktop.md` exists for.
+ *
+ * Its subsets carry Google's `unicode-range`s, which stop short of box drawing
+ * (U+2500-257F). Those glyphs come from the fallback below, exactly as they do
+ * today; what shipping this fixes is the *cell*, which is measured from the
+ * primary font and was therefore whatever each person happened to have.
+ */
+export const TERMINAL_FONT = 'JetBrains Mono'
+
+/**
+ * The stack under it, and a value in its own right.
+ *
+ * Named separately because `remeasureCell` needs a font stack that is real,
+ * differs from the full one, and does not depend on anything being loaded.
+ */
+export const TERMINAL_FALLBACK_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+
+/**
+ * What the terminal asks for.
+ *
+ * Nothing is named here that the app does not ship. `"Fira Code"` used to sit
+ * second and was never loaded either, which meant it could only ever be reached
+ * for the glyphs the shipped subset lacks — i.e. box drawing — so whoever had
+ * Fira Code installed got different box characters from everybody else. Naming
+ * a font nobody loads is how a terminal stops looking the same on two machines,
+ * which is the whole reason this file now ships one.
+ */
+export const TERMINAL_FONT_FAMILY = `"${TERMINAL_FONT}", ${TERMINAL_FALLBACK_FAMILY}`
+
 /** How xterm itself is set up. */
 export const TERMINAL_OPTIONS = {
   // The agent controls the cursor; a blink the agent did not ask for is a lie
   // about what the program is doing.
   cursorBlink: true,
   cursorStyle: 'bar',
-  fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontFamily: TERMINAL_FONT_FAMILY,
   fontSize: 13,
   // Exactly 1, and this is not a style preference. A row taller than its
   // glyphs cannot join the row above it, so every vertical box-drawing
@@ -74,6 +109,54 @@ export const TERMINAL_OPTIONS = {
   // terminal that converted line endings would be changing them.
   convertEol: false,
   allowProposedApi: true,
+}
+
+/**
+ * What to hand `document.fonts.load()`, as CSS font shorthand.
+ *
+ * Both weights, because xterm renders bold text in the bold face. Built from
+ * `TERMINAL_OPTIONS.fontSize` rather than written out, so a change of size
+ * cannot leave this waiting on a face the terminal does not use.
+ */
+export const TERMINAL_FONT_SPECS = [
+  `${TERMINAL_OPTIONS.fontSize}px "${TERMINAL_FONT}"`,
+  `bold ${TERMINAL_OPTIONS.fontSize}px "${TERMINAL_FONT}"`,
+]
+
+/**
+ * Make xterm measure a character cell again.
+ *
+ * Needed because **a terminal does not re-measure when its font arrives, and a
+ * re-fit on its own changes nothing.** `FitAddon` divides the host box by the
+ * cell xterm cached when the terminal opened, so fitting after the webfont
+ * lands returns the same columns it already had, computed from the fallback.
+ * Measured: without this the terminal stayed at 74 columns of a 6.5px cell
+ * while rendering a 7.8px font, and its frame ran off the right of the box.
+ *
+ * The only public lever is `term.options`, and xterm re-measures on a *change*
+ * of `fontFamily` or `fontSize` — its options service drops an assignment equal
+ * to the current value, so setting the same stack back does nothing at all. So
+ * the option is moved off the shipped face and back onto it, both assignments
+ * in the same tick, before anything is painted.
+ *
+ * The atlas goes with it: a canvas or WebGL renderer caches glyphs drawn in the
+ * old face and would otherwise keep painting them at the new cell size. There
+ * is no renderer addon today, so `clearTextureAtlas` is xterm's own no-op —
+ * and already correct for the day there is one.
+ *
+ * @param {import('@xterm/xterm').Terminal} term
+ * @returns {boolean} whether a re-measure was actually provoked.
+ */
+export function remeasureCell(term) {
+  const wanted = term?.options?.fontFamily
+  // Nothing to move it off: the stack is already the one the poke would use, so
+  // both assignments would be dropped and this would quietly do nothing.
+  if (!wanted || wanted === TERMINAL_FALLBACK_FAMILY) return false
+
+  term.options.fontFamily = TERMINAL_FALLBACK_FAMILY
+  term.options.fontFamily = wanted
+  term.clearTextureAtlas?.()
+  return true
 }
 
 /**

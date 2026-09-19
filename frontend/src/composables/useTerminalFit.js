@@ -197,3 +197,76 @@ export function useTerminalFit({
 
   return { attempt, request, settle, stop }
 }
+
+/**
+ * Re-fit once the terminal's webfont is really there.
+ *
+ * xterm measures a character cell when the terminal opens. Before this repo
+ * shipped a font that measurement was safe, because whatever the stack resolved
+ * to was already installed — the cell it measured was the cell it would keep.
+ * A webfont breaks that: the first measurement is of the *fallback*, the real
+ * face arrives a moment later, and from then on every glyph is a different
+ * width from the cell it is drawn into. Nothing re-measures on its own, so the
+ * terminal stays that shape until somebody resizes something.
+ *
+ * ## `document.fonts.ready` alone is the wrong answer
+ *
+ * It reads like the whole fix and it is not, because **a font nothing has asked
+ * for is not loading, and `ready` does not wait for it.** A face is only
+ * fetched when a glyph needs it, so `ready` read in the same tick as `open()`
+ * can resolve against whatever else was in flight — the UI font, say — and say
+ * nothing about the terminal's. That version passes review and re-fits at the
+ * wrong moment.
+ *
+ * So each face is `load()`ed first, which is what starts the request, and only
+ * then is `ready` awaited. Measured: with `ready` alone the webfont had not
+ * been applied by the time the terminal was measured.
+ *
+ * A face that fails to load is *not* a reason to skip the re-fit — the cell
+ * then still holds the fallback that was measured at open, and `useTerminalFit`
+ * drops a size that has not changed anyway.
+ *
+ * ## ...and re-fitting on its own changes nothing
+ *
+ * The second half, and the one that looks like it should not be needed: the fit
+ * addon divides the host box by the cell xterm **cached when it opened**, so a
+ * fit after the font lands returns the columns it already had. `remeasure` is
+ * what makes the terminal measure the cell again, and without it this whole
+ * file is an elaborate no-op. See `remeasureCell` in `useTerminalView`, which
+ * is what the component passes and where the awkward part lives.
+ *
+ * @param {object} deps
+ * @param {FontFaceSet} deps.fonts `document.fonts`, or nothing where there is
+ *        no font loading API — jsdom, so the caller needs no guard of its own.
+ * @param {string[]} deps.specs CSS font shorthands, one per face to wait for.
+ * @param {() => void} deps.refit `useTerminalFit`'s `request`.
+ * @param {() => void} [deps.remeasure] makes xterm measure a cell again, before
+ *        the fit that reads it.
+ * @returns {{cancel: () => void, done: Promise<boolean>}} `cancel` for unmount;
+ *        `done` resolves to whether a re-fit was asked for, which is what a
+ *        test can wait on.
+ */
+export function refitWhenFontsLoad({ fonts, specs, refit, remeasure = () => {} }) {
+  let cancelled = false
+  const cancel = () => {
+    cancelled = true
+  }
+
+  if (typeof fonts?.load !== 'function') return { cancel, done: Promise.resolve(false) }
+
+  const done = Promise.all(specs.map((spec) => fonts.load(spec)))
+    .then(() => fonts.ready)
+    // Swallowed on purpose: see above. The terminal is still showing something.
+    .catch(() => {})
+    .then(() => {
+      // The terminal is gone. Touching a disposed one throws, and this promise
+      // outlives the component that started it by design.
+      if (cancelled) return false
+      // Before the fit, never after: the fit is what reads the new cell.
+      remeasure()
+      refit()
+      return true
+    })
+
+  return { cancel, done }
+}
