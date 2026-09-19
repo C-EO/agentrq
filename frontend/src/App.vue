@@ -102,10 +102,10 @@
 
         <div class="space-y-0.5 mt-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2">
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-2">
-            <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Navigation</span>
+            <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Overview</span>
           </div>
           <router-link to="/"
-              @mouseenter="showTooltip($event, 'Overview')" @mouseleave="hideTooltip"
+              @mouseenter="showTooltip($event, 'Workspaces')" @mouseleave="hideTooltip"
               class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
@@ -114,7 +114,20 @@
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
             </svg>
-            <span v-if="!isCollapsed || isMobileMenuOpen">Overview</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Workspaces</span>
+          </router-link>
+
+          <router-link to="/machines"
+              @mouseenter="showTooltip($event, 'Machines')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/machines') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 17.25v-.228a4.5 4.5 0 00-.12-1.03l-2.268-9.64a3.375 3.375 0 00-3.285-2.602H7.923a3.375 3.375 0 00-3.285 2.602l-2.268 9.64a4.5 4.5 0 00-.12 1.03v.228m19.5 0a3 3 0 01-3 3H5.25a3 3 0 01-3-3m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m16.5 0h.008v.008h-.008v-.008zm-3 0h.008v.008h-.008v-.008z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
           </router-link>
 
           <template v-if="workspaces.length > 0 && (!isCollapsed || isMobileMenuOpen)">
@@ -233,19 +246,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.769-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Workflows</span>
-          </router-link>
-
-          <router-link to="/machines"
-              @mouseenter="showTooltip($event, 'Machines')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
-              :class="[
-                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path.startsWith('/machines') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
-              ]">
-            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 17.25v-.228a4.5 4.5 0 00-.12-1.03l-2.268-9.64a3.375 3.375 0 00-3.285-2.602H7.923a3.375 3.375 0 00-3.285 2.602l-2.268 9.64a4.5 4.5 0 00-.12 1.03v.228m19.5 0a3 3 0 01-3 3H5.25a3 3 0 01-3-3m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m16.5 0h.008v.008h-.008v-.008zm-3 0h.008v.008h-.008v-.008z" />
-            </svg>
-            <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
           </router-link>
 
           <!-- Desktop only: extensions run in the app, so the browser has

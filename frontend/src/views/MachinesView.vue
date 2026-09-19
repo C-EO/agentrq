@@ -52,8 +52,11 @@ const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false 
 const platform = ref(detectPlatform(navigator.userAgent))
 const guide = computed(() => installGuide(platform.value, enrolCommand.value))
 
-onMounted(() => {
-  load()
+onMounted(async () => {
+  await load()
+  // Nobody with zero machines wants a card that just says so — the add-a-machine
+  // screen is what they came here to see, so skip straight to it.
+  if (machines.value.length === 0) await requestCode()
   // onEvent rather than a watcher on the buffer: a machine going offline is a
   // transition, and two events landing in one flush would collapse into one.
   onEvent(handleEvent)
