@@ -177,9 +177,14 @@ const surface = computed(() => TERMINAL_THEME.background)
 
     <p v-if="failed" class="px-3 py-2 text-[11px] text-red-400">{{ failed }}</p>
 
-    <!-- The terminal's own box. flex-1 min-h-0 gives it a definite height that
-         does not depend on what is inside it. -->
-    <div ref="host" class="flex-1 min-h-0 px-2 py-1.5" />
+    <!-- The padding belongs here, not on the host: the fit addon measures the
+         host's border-box height, so padding there is counted but undrawable
+         and the bottom row is clipped. -->
+    <div class="flex-1 min-h-0 px-2 py-1.5 flex flex-col">
+      <!-- flex-1 min-h-0 gives a definite height that does not depend on its
+           content. No padding, or see above. -->
+      <div ref="host" class="flex-1 min-h-0" />
+    </div>
   </div>
 </template>
 

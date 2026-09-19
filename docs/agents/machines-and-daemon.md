@@ -244,6 +244,10 @@ xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
 a dark background, and leaving the palette to a default that has never seen
 this surface is where unreadable output comes from.
 
+The terminal's host element must carry **no padding** — the fit addon measures
+its `border-box` height, so padding there is counted but undrawable and the
+bottom row gets clipped. Put it on a wrapper.
+
 ## `lineHeight` is 1 because a terminal is drawn, not typeset
 
 It reads like a comfort setting, and it is the one value in `TERMINAL_OPTIONS`
