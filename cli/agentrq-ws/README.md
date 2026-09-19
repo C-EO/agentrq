@@ -4,7 +4,7 @@ The AgentRQ workspace client: everything an agent can do in a workspace, from a
 shell, without spending an agent's tokens to do it.
 
 ```bash
-npx @agentrq/agentrq-ws@latest help
+npx -y @agentrq/agentrq-ws@latest help
 ```
 
 It reads the `.mcp.json` in the current directory — the same file the agent
@@ -13,7 +13,7 @@ configure.
 
 ```bash
 cd ~/code/my-workspace
-npx @agentrq/agentrq-ws@latest workspace
+npx -y @agentrq/agentrq-ws@latest workspace
 ```
 
 ## Why it exists
@@ -28,7 +28,7 @@ below.
 
 ## Install
 
-Nothing to install: `npx @agentrq/agentrq-ws@latest <command>` fetches it on
+Nothing to install: `npx -y @agentrq/agentrq-ws@latest <command>` fetches it on
 demand, and it has no runtime dependencies. To keep it around:
 
 ```bash
