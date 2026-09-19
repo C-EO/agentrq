@@ -88,6 +88,7 @@ export default defineConfig({
         'src/composables/useTerminalSession.js',
         'src/composables/useTerminalFit.js',
         'src/composables/useTerminalRenderer.js',
+        'src/composables/useClearContext.js',
         'src/composables/useMachineFormat.js',
         'src/composables/useMachines.js',
         'src/composables/useMachineDetail.js',

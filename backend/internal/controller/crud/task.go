@@ -106,6 +106,15 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		allowAll = w.AllowAllCommands
 	}
 
+	// Same rule as allowAll above, and for the same reason: a caller that says
+	// nothing gets the workspace's preference, and one that says false means
+	// false. The form always sends the toggle's real state, so turning this off
+	// in a workspace that defaults it on does what it looks like it does.
+	clearContext := req.Task.ClearContext
+	if req.Task.CreatedBy == "agent" && !clearContext {
+		clearContext = w.ClearContextDefault
+	}
+
 	if req.Task.Assignee == "agent" {
 		req.Task.Body = appendSelfLearningNote(req.Task.Body, w.SelfLearningLoopNote)
 	}
@@ -145,6 +154,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		ParentID:              req.Task.ParentID,
 		SortOrder:             sortOrder,
 		AllowAllCommands:      allowAll,
+		ClearContext:          clearContext,
 		EventID:               eventID,
 		WorkflowID:            req.Task.WorkflowID,
 		CompletionTriggerType: completionTrigger,
@@ -748,6 +758,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		ParentID:              m.ParentID,
 		SortOrder:             m.SortOrder,
 		AllowAllCommands:      m.AllowAllCommands,
+		ClearContext:          m.ClearContext,
 		EventID:               m.EventID,
 		WorkflowID:            m.WorkflowID,
 		WorkflowDepth:         m.WorkflowDepth,
@@ -841,6 +852,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	m.Body = req.Body
 	m.Assignee = req.Assignee
 	m.AllowAllCommands = req.AllowAllCommands
+	m.ClearContext = req.ClearContext
 	m.UpdatedAt = time.Now()
 
 	updated, err := c.repository.UpdateTask(ctx, m)

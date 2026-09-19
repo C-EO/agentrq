@@ -496,6 +496,34 @@
                       </div>
                     </label>
                   </div>
+
+                  <!-- Clear context before each task -->
+                  <div class="pt-8 border-t border-gray-100 dark:border-zinc-800">
+                    <label class="flex items-center justify-between p-6 bg-gray-50 dark:bg-zinc-800/50 rounded-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all border border-gray-100 dark:border-zinc-700">
+                      <div class="flex items-center gap-4">
+                        <div class="p-2.5 bg-white dark:bg-zinc-900 rounded-sm shadow-sm border border-gray-100 dark:border-zinc-700 text-gray-600 dark:text-zinc-300">
+                          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 20H20" /><path stroke-linecap="round" stroke-linejoin="round" d="M14.5 4.5l5 5a1.5 1.5 0 010 2.12l-7.4 7.4a1.5 1.5 0 01-2.12 0l-5-5a1.5 1.5 0 010-2.12l7.4-7.4a1.5 1.5 0 012.12 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l7 7" /></svg>
+                        </div>
+                        <div class="flex flex-col">
+                          <span class="text-xs font-bold text-gray-900 dark:text-zinc-100">Clear context before each task</span>
+                          <!-- Says what it does and when it does nothing. The
+                               second half matters: the setting is accepted in
+                               any workspace, but only acts where there is a
+                               Claude Code terminal to type into. -->
+                          <span class="text-[10px] text-gray-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                            New tasks start with this on. Before handing a task over, AgentRQ sends
+                            <span class="font-mono text-gray-700 dark:text-zinc-200">/clear</span> to the agent's terminal, so it
+                            reads the task without the previous one still in its context. Ignored when this
+                            workspace has no running Claude Code session.
+                          </span>
+                        </div>
+                      </div>
+                      <div class="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" v-model="form.clearContextDefault" class="sr-only peer" />
+                        <div class="w-10 h-6 bg-gray-200 dark:bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black dark:peer-checked:bg-white dark:peer-checked:after:bg-zinc-900"></div>
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 <!-- Notifications -->
@@ -1350,6 +1378,7 @@ const form = ref({
   },
   autoAllowedTools: [],
   allowAllCommands: false,
+  clearContextDefault: false,
   selfLearningLoopNote: '',
   inputSendDelaySeconds: 0,
   workingDirectory: ''
@@ -1411,6 +1440,7 @@ async function load() {
       },
       autoAllowedTools: workspace.value.autoAllowedTools || [],
       allowAllCommands: workspace.value.allowAllCommands || false,
+      clearContextDefault: workspace.value.clearContextDefault || false,
       selfLearningLoopNote: workspace.value.selfLearningLoopNote || '',
       inputSendDelaySeconds: workspace.value.inputSendDelaySeconds || 0,
       workingDirectory: workspace.value.workingDirectory || ''

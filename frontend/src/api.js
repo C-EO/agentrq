@@ -106,8 +106,8 @@ export async function getTask(workspaceId, taskId) {
 
 // The trailing eventId/workflowId are mutually exclusive: they are the two
 // forms of "what fires when this completes", and the form only lets one be set.
-export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false, eventId = '', workflowId = '') {
-  const task = { title, body, createdBy: 'human', assignee, attachments, status, cronSchedule, allowAllCommands };
+export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false, eventId = '', workflowId = '', clearContext = false) {
+  const task = { title, body, createdBy: 'human', assignee, attachments, status, cronSchedule, allowAllCommands, clearContext };
   if (eventId) task.eventId = eventId;
   if (workflowId) task.workflowId = workflowId;
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
@@ -537,7 +537,7 @@ export async function respondToElicitation(workspaceId, taskId, requestId, actio
   if (!res.ok) throw new Error('Failed to send response');
   return res;
 }
-export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands) {
+export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands, clearContext = false) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -547,7 +547,8 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
         body,
         assignee,
         cronSchedule,
-        allowAllCommands
+        allowAllCommands,
+        clearContext
       }
     })
   });

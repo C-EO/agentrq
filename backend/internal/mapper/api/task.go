@@ -48,6 +48,7 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 			CronSchedule:     payload.Task.CronSchedule,
 			SortOrder:        payload.Task.SortOrder,
 			AllowAllCommands: payload.Task.AllowAllCommands,
+			ClearContext:     payload.Task.ClearContext,
 			EventID:          monoflake.IDFromBase62(payload.Task.EventID).Int64(),
 			WorkflowID:       monoflake.IDFromBase62(payload.Task.WorkflowID).Int64(),
 		},
@@ -331,6 +332,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
+		ClearContext:     t.ClearContext,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
@@ -456,6 +458,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
+		ClearContext:     t.ClearContext,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
@@ -490,6 +493,7 @@ func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.Upd
 		Assignee:         payload.Task.Assignee,
 		CronSchedule:     payload.Task.CronSchedule,
 		AllowAllCommands: payload.Task.AllowAllCommands,
+		ClearContext:     payload.Task.ClearContext,
 	}
 }
 

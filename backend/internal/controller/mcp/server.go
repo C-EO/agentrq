@@ -53,6 +53,17 @@ type ReplyFunc func(ctx context.Context, chatID string, text string, attachments
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 
+// ClearAgentContextFunc asks the agent to start from a clean context, by
+// sending /clear down its session's terminal.
+//
+// It returns an error only so the caller can log one. **Every reason this
+// cannot be done is an ordinary state, not a failure**: the workspace may have
+// no machine, its machine may be offline, the session may have exited, or its
+// socket may be held by another backend instance. A task must still be pushed
+// in all of those cases — refusing to hand an agent its work because a
+// convenience could not be performed would be much worse than a stale context.
+type ClearAgentContextFunc func(ctx context.Context) error
+
 // WorkflowRunContext identifies the workflow run a publishing task belongs to.
 // The zero value means "not part of a workflow run", which keeps the publish on
 // the original global-trigger path.
@@ -101,6 +112,7 @@ type WorkspaceServer struct {
 	reply                 ReplyFunc
 	updateMessageMetadata UpdateMessageMetadataFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
+	clearAgentContext     ClearAgentContextFunc
 	publishEvent          PublishEventFunc
 	loadMemory            LoadMemoryFunc
 	saveMemory            SaveMemoryFunc
@@ -195,6 +207,7 @@ type CreateTaskParams struct {
 	Attachments  []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments"`
 	CronSchedule string              `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
 	EventID      string              `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+	ClearContext bool                `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
 }
 
 // PublishEventParams is the input to the publishEvent tool.
@@ -350,6 +363,7 @@ func NewWorkspaceServer(
 	reply ReplyFunc,
 	updateMessageMetadata UpdateMessageMetadataFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
+	clearAgentContext ClearAgentContextFunc,
 	publishEvent PublishEventFunc,
 	loadMemory LoadMemoryFunc,
 	saveMemory SaveMemoryFunc,
@@ -380,6 +394,7 @@ func NewWorkspaceServer(
 		reply:                  reply,
 		updateMessageMetadata:  updateMessageMetadata,
 		updateAutoAllowed:      updateAutoAllowed,
+		clearAgentContext:      clearAgentContext,
 		publishEvent:           publishEvent,
 		loadMemory:             loadMemory,
 		saveMemory:             saveMemory,
@@ -921,6 +936,39 @@ func (ps *WorkspaceServer) StartPing() {
 	}()
 }
 
+// ClearSettleDelay is how long the push waits after asking for a clear.
+//
+// /clear travels down the session's terminal while the task travels over the
+// MCP session — two different transports, so without a pause the task can
+// arrive while the agent is still acting on the clear and be wiped by it,
+// which is the exact opposite of what was asked for. Two seconds is far longer
+// than a TUI takes to handle one command and far shorter than the poller's
+// sixty-second period, so it costs a task nothing and cannot stack up.
+const ClearSettleDelay = 2 * time.Second
+
+// clearContextFor asks for a clean context when the task wants one.
+//
+// Failure is deliberately not propagated. Every way this can fail — no
+// machine, machine offline, session gone, socket held elsewhere — is an
+// ordinary state of a workspace, and none of them is a reason to withhold a
+// task from an agent that is sitting there waiting for one.
+func (ps *WorkspaceServer) clearContextFor(ctx context.Context, task model.Task) {
+	if !task.ClearContext || ps.clearAgentContext == nil {
+		return
+	}
+	if err := ps.clearAgentContext(ctx); err != nil {
+		zlog.Debug().Err(err).
+			Int64("workspace_id", ps.workspaceID).
+			Int64("task_id", task.ID).
+			Msg("could not clear the agent's context; pushing the task anyway")
+		return
+	}
+	select {
+	case <-ps.done:
+	case <-time.After(ClearSettleDelay):
+	}
+}
+
 // StartPoller checks for pending tasks periodically and pushes them if no ongoing tasks exist.
 func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 	go func() {
@@ -981,6 +1029,10 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 					return pendingTasks[i].ID < pendingTasks[j].ID
 				})
 				nextTask := pendingTasks[0]
+				// Asked for before the push, never after: the point is that the
+				// agent reads this task on a clean context, and clearing once it
+				// has already been handed the task would throw the task away.
+				ps.clearContextFor(context.Background(), nextTask)
 				// The ID is part of the push because a task body can instruct the
 				// agent to quote it back when publishing an event, and this path
 				// is how workflow-step tasks are delivered.
@@ -1085,6 +1137,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		Body:         params.Body,
 		CronSchedule: params.CronSchedule,
 		EventID:      eventID,
+		ClearContext: params.ClearContext,
 	}
 
 	if attachmentsJSON != "" {

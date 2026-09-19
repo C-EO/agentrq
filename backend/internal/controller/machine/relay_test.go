@@ -409,3 +409,47 @@ func TestAnnouncingToADeadViewerDoesNotReapIt(t *testing.T) {
 		t.Errorf("a failed announcement closed the viewer")
 	}
 }
+
+// The server types into a session nobody is watching.
+//
+// This is the whole reason SendInput exists apart from FromViewer: a task that
+// asks for a clean context sends /clear whether or not a browser happens to be
+// attached, and FromViewer refuses a session with no viewer because its
+// bookkeeping is populated by Attach.
+func TestTheServerCanTypeIntoAnUnwatchedSession(t *testing.T) {
+	r, _, conn := relayWithMachine(t)
+
+	if err := r.SendInput(11, 42, []byte("/clear\r")); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+
+	if n := conn.count(); n != 1 {
+		t.Fatalf("frames sent = %d, want 1 (no attach, just the keystrokes)", n)
+	}
+	f, ok := conn.firstOfType(wire.TypeInput)
+	if !ok {
+		t.Fatal("no input frame reached the daemon")
+	}
+	if f.SessionID != 42 {
+		t.Errorf("session = %d, want 42", f.SessionID)
+	}
+	// Exactly the bytes asked for. A relay that rewrote input would be a relay
+	// that could get it wrong.
+	if !bytes.Equal(f.Payload, []byte("/clear\r")) {
+		t.Errorf("payload = %q, want %q", f.Payload, "/clear\r")
+	}
+	// No viewer was attached, and none was needed.
+	if n := r.Viewers(42); n != 0 {
+		t.Errorf("viewers = %d, want 0", n)
+	}
+}
+
+// A machine this instance does not hold cannot be typed into, and says so
+// rather than reporting a write that went nowhere.
+func TestTypingIntoAMachineHeldElsewhereFails(t *testing.T) {
+	r, _, _ := relayWithMachine(t)
+
+	if err := r.SendInput(999, 42, []byte("/clear\r")); err == nil {
+		t.Error("SendInput to an unheld machine returned nil, want an error")
+	}
+}

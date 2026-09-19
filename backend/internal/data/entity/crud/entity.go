@@ -40,6 +40,7 @@ type (
 		AgentConcurrency      *AgentConcurrency
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
+		ClearContextDefault   bool
 		SelfLearningLoopNote  string
 		InputSendDelaySeconds int
 		WorkingDirectory      string
@@ -261,6 +262,7 @@ type (
 		ParentID              int64
 		SortOrder             float64
 		AllowAllCommands      bool
+		ClearContext          bool
 		EventID               int64
 		WorkflowID            int64
 		WorkflowDepth         int
@@ -419,6 +421,7 @@ type (
 		Assignee         string
 		CronSchedule     string
 		AllowAllCommands bool
+		ClearContext     bool
 		UserID           string
 	}
 

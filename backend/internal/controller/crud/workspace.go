@@ -36,6 +36,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		Name:                  req.Workspace.Name,
 		Description:           req.Workspace.Description,
 		AllowAllCommands:      req.Workspace.AllowAllCommands,
+		ClearContextDefault:   req.Workspace.ClearContextDefault,
 		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
 		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
 		WorkingDirectory:      workingDirectory,
@@ -242,6 +243,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	m.Name = req.Workspace.Name
 	m.Description = req.Workspace.Description
 	m.AllowAllCommands = req.Workspace.AllowAllCommands
+	m.ClearContextDefault = req.Workspace.ClearContextDefault
 	m.SelfLearningLoopNote = req.Workspace.SelfLearningLoopNote
 	m.InputSendDelaySeconds = req.Workspace.InputSendDelaySeconds
 	m.WorkingDirectory = workingDirectory
@@ -421,6 +423,7 @@ func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 		ArchivedAt:            m.ArchivedAt,
 		AutoAllowedTools:      make([]string, 0),
 		AllowAllCommands:      m.AllowAllCommands,
+		ClearContextDefault:   m.ClearContextDefault,
 		SelfLearningLoopNote:  m.SelfLearningLoopNote,
 		InputSendDelaySeconds: m.InputSendDelaySeconds,
 		WorkingDirectory:      m.WorkingDirectory,

@@ -1240,3 +1240,97 @@ func TestGetWorkspaceTaskCounts_Error(t *testing.T) {
 		t.Fatal("expected error from repository call")
 	}
 }
+
+// An agent that says nothing about clearing gets what the workspace prefers.
+func TestCreateTask_AgentInheritsClearContextDefault(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.ClearContextDefault = true
+
+	created := model.Task{ID: 61, WorkspaceID: 1, CreatedBy: "agent", ClearContext: true}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(61))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if !m.ClearContext {
+			return model.Task{}, fmt.Errorf("expected ClearContext to be inherited from workspace")
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Agent Task", CreatedBy: "agent"},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Task.ClearContext {
+		t.Errorf("expected task to have ClearContext=true")
+	}
+}
+
+// A human turning the icon off in a workspace that defaults it on means off.
+// The form always sends the toggle's real state, so this is the common case
+// rather than a corner: without it the setting would be a floor, not a default.
+func TestCreateTask_HumanOverridesClearContextDefault(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.ClearContextDefault = true
+
+	created := model.Task{ID: 62, WorkspaceID: 1, CreatedBy: "human", ClearContext: false}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(62))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.ClearContext {
+			return model.Task{}, fmt.Errorf("expected ClearContext to stay false as requested by human")
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Human Task", CreatedBy: "human", ClearContext: false},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.ClearContext {
+		t.Errorf("expected task to have ClearContext=false")
+	}
+}
+
+// A task that asks for it in a workspace that does not default it on.
+func TestCreateTask_ClearContextAskedForExplicitly(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+
+	created := model.Task{ID: 63, WorkspaceID: 1, CreatedBy: "human", ClearContext: true}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(63))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if !m.ClearContext {
+			return model.Task{}, fmt.Errorf("expected ClearContext to be carried through as asked")
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Human Task", CreatedBy: "human", ClearContext: true},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Task.ClearContext {
+		t.Errorf("expected task to have ClearContext=true")
+	}
+}
