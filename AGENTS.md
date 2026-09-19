@@ -34,9 +34,10 @@ Each line says what the note will stop you getting wrong.
   schemes, and the Linux app icon.
 - **[Machines and the daemon](docs/agents/machines-and-daemon.md)** — `daemon/`,
   the machines pages, terminals. Why a reconnect must not kill the agents and a
-  shutdown must; why the browser names no session; why the terminal must never
-  size itself; and the self-update rules, which are the one place here where
-  getting it wrong cannot be undone.
+  shutdown must; why the browser names no session; why the terminal socket
+  carries a ticket rather than the cookie every other call uses; why the
+  terminal must never size itself; and the self-update rules, which are the one
+  place here where getting it wrong cannot be undone.
 - **[The MCP server, and tasks](docs/agents/mcp-and-tasks.md)** — adding or
   renaming a tool on the server is a change in five other places, and only one
   of them is guarded by a test that really compares the two.

@@ -142,6 +142,38 @@ export function filterResponseHeaders(headers) {
 }
 
 /**
+ * The WebSocket origin for a server, or '' when there is not one yet.
+ *
+ * The terminal socket is the only thing the renderer opens that does not go
+ * through this handler, because Electron's protocol handler forwards HTTP and
+ * does not intercept WebSocket upgrades. So it is addressed absolutely, at the
+ * configured server, and `connect-src 'self'` — which means this app:// origin
+ * — refuses it. That refusal is silent in a way worth knowing about: the
+ * WebSocket constructor throws, so nothing is ever connected and no error
+ * reaches the page.
+ *
+ * Only the origin is returned, and only the ws/wss form of it. A policy is not
+ * a place to be generous: the server's https origin does not belong in
+ * connect-src, because nothing in the renderer is allowed to address it
+ * directly.
+ */
+export function webSocketOrigin(serverUrl) {
+  if (!serverUrl) return ''
+  let url
+  try {
+    url = new URL(serverUrl)
+  } catch {
+    // Before the connection screen is answered this is whatever somebody has
+    // typed so far. A policy with a broken entry in it is rejected wholesale
+    // by Chromium, which would break far more than the terminal.
+    return ''
+  }
+  if (url.protocol === 'https:') return `wss://${url.host}`
+  if (url.protocol === 'http:') return `ws://${url.host}`
+  return ''
+}
+
+/**
  * Content-Security-Policy for the renderer.
  *
  * `wasm-unsafe-eval` is what lets the transformers.js speech-to-text worker
@@ -168,15 +200,27 @@ export function filterResponseHeaders(headers) {
  *
  * In dev the Vite client needs inline and eval'd script, so the policy is
  * relaxed there and there only.
+ *
+ * `serverUrl` is here for the terminal socket, and for nothing else — see
+ * [webSocketOrigin]. It is why this is rebuilt per request rather than once:
+ * the configured server changes when somebody switches profile or answers the
+ * connection screen, and a policy baked in at startup would still name the
+ * previous one.
  */
-export function buildCSP({ dev = false, devServerUrl = '' } = {}) {
+export function buildCSP({ dev = false, devServerUrl = '', serverUrl = '' } = {}) {
   const hf = 'https://huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co'
   // Google serves avatars from lh3/lh4/lh5.googleusercontent.com and rotates
   // between them; GitHub uses a single host. Both are the providers the app
   // offers, so a new sign-in provider means a new entry here.
   const avatars = 'https://*.googleusercontent.com https://avatars.githubusercontent.com'
   const script = dev ? `'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'` : `'self' 'wasm-unsafe-eval'`
-  const connect = dev ? `'self' ${hf} ${devServerUrl} ws://localhost:* ws://127.0.0.1:*` : `'self' ${hf}`
+  // The terminal socket, at the configured server. In dev the local sockets
+  // stay listed as well: they cover Vite's HMR client, which is a different
+  // connection to a different port.
+  const socket = webSocketOrigin(serverUrl)
+  const connect = dev
+    ? `'self' ${hf} ${devServerUrl} ws://localhost:* ws://127.0.0.1:* ${socket}`.trimEnd()
+    : `'self' ${hf} ${socket}`.trimEnd()
 
   return [
     `default-src 'self'`,
@@ -260,7 +304,9 @@ export function createAppProtocolHandler({
   onRequestProxied = () => {},
 }) {
   const dev = Boolean(devServerUrl)
-  const csp = buildCSP({ dev, devServerUrl })
+  // A function rather than a value: `serverUrl` is answered by the shell and
+  // changes under a running app, and the policy names it.
+  const csp = () => buildCSP({ dev, devServerUrl, serverUrl: serverUrl() })
 
   async function proxyToServer(request, url) {
     onRequestProxied(request.method, url.pathname)
@@ -310,7 +356,7 @@ export function createAppProtocolHandler({
     const res = await netFetch(new URL(pathname + search, devServerUrl).toString())
     const headers = filterResponseHeaders(res.headers)
     if ((headers.get('content-type') ?? '').includes('text/html')) {
-      headers.set('content-security-policy', csp)
+      headers.set('content-security-policy', csp())
     }
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   }
@@ -331,7 +377,7 @@ export function createAppProtocolHandler({
     const headers = new Headers({ 'content-type': mimeTypeFor(filePath) })
 
     if (plan.kind === 'index') {
-      headers.set('content-security-policy', csp)
+      headers.set('content-security-policy', csp())
       // index.html is the SPA entry; a stale copy would pin the app to an old
       // asset graph after an update.
       headers.set('cache-control', 'no-store')

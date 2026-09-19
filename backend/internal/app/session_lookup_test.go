@@ -16,6 +16,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 )
 
@@ -145,6 +146,108 @@ func TestSessionLookupRefusals(t *testing.T) {
 		r.AddCookie(&http.Cookie{Name: "at", Value: newTestToken(t, tokens, userBase62)})
 		l := sessionLookup{repo: repo, tokens: tokens}
 		if _, err := l.LookupSession(r, 500); err == nil {
+			t.Fatal("expected a refusal")
+		}
+	})
+}
+
+// The credential the desktop app can actually present.
+//
+// The cookie half of this is covered above; this is the other half, and the
+// reason the endpoint has two. A terminal socket from the desktop app is a
+// cross-site request from an app:// page, so the browser withholds the
+// SameSite=Lax `at` cookie from it — which is why that build sat on
+// "connecting" while the browser's terminal worked.
+func TestSessionLookupAcceptsATerminalTicket(t *testing.T) {
+	const userID int64 = 3
+	userBase62 := monoflake.ID(userID).String()
+
+	ctrl := gomock.NewController(t)
+	repo := mock_repository.NewMockRepository(ctrl)
+	repo.EXPECT().GetSession(gomock.Any(), int64(500), userID).
+		Return(model.Session{ID: 500, UserID: userID, MachineID: 11, WorkspaceID: 70}, nil)
+	repo.EXPECT().GetMachine(gomock.Any(), int64(11), userID).
+		Return(model.Machine{ID: 11, UserID: userID, InstanceID: "pod-a"}, nil)
+	repo.EXPECT().SystemGetUser(gomock.Any(), userID).
+		Return(model.User{ID: userID, Name: "Ada"}, nil)
+
+	tokens := newTestTokenService(t)
+	ticket, err := tokens.CreateTerminalTicket(userBase62, "500")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No cookie at all, which is the situation being reproduced.
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/x/terminal?ticket="+ticket, nil)
+
+	at, err := sessionLookup{repo: repo, tokens: tokens}.LookupSession(r, 500)
+	if err != nil {
+		t.Fatalf("a ticket-authenticated attach was refused: %v", err)
+	}
+	if at.UserID != userID || at.WorkspaceID != 70 || at.ViewerName != "Ada" {
+		t.Errorf("attach = %+v — a ticket must describe the same viewer a cookie does", at)
+	}
+}
+
+// What a ticket must not do. Each of these would be a way to watch a terminal
+// the holder was never given.
+func TestSessionLookupTicketRefusals(t *testing.T) {
+	const userID int64 = 3
+	userBase62 := monoflake.ID(userID).String()
+
+	// The repository is never reached in any of these: the credential is
+	// refused before anything is read, so a strict mock with no expectations
+	// is itself the assertion.
+	newLookup := func(t *testing.T) (sessionLookup, auth.TokenService) {
+		t.Helper()
+		tokens := newTestTokenService(t)
+		repo := mock_repository.NewMockRepository(gomock.NewController(t))
+		return sessionLookup{repo: repo, tokens: tokens}, tokens
+	}
+
+	t.Run("a ticket for another session", func(t *testing.T) {
+		lookup, tokens := newLookup(t)
+		ticket, err := tokens.CreateTerminalTicket(userBase62, "501")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/x?ticket="+ticket, nil)
+		if _, err := lookup.LookupSession(r, 500); err == nil {
+			t.Fatal("a ticket for session 501 attached to 500")
+		}
+	})
+
+	// The access token is what a page holds already. If it worked here, the
+	// cookie's contents would become a URL parameter that opens any terminal
+	// on the account.
+	t.Run("an access token in the ticket parameter", func(t *testing.T) {
+		lookup, tokens := newLookup(t)
+		r := httptest.NewRequest(http.MethodGet, "/x?ticket="+newTestToken(t, tokens, userBase62), nil)
+		if _, err := lookup.LookupSession(r, 500); err == nil {
+			t.Fatal("an access token was accepted in the URL")
+		}
+	})
+
+	// A present-but-unusable ticket must not fall through to the cookie. It
+	// would turn every refusal above into "try the other credential", and the
+	// narrow scope of a ticket would stop meaning anything.
+	t.Run("a bad ticket does not fall back to a good cookie", func(t *testing.T) {
+		lookup, tokens := newLookup(t)
+		wrong, err := tokens.CreateTerminalTicket(userBase62, "501")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/x?ticket="+wrong, nil)
+		r.AddCookie(&http.Cookie{Name: "at", Value: newTestToken(t, tokens, userBase62)})
+		if _, err := lookup.LookupSession(r, 500); err == nil {
+			t.Fatal("a refused ticket was rescued by the cookie")
+		}
+	})
+
+	t.Run("nonsense", func(t *testing.T) {
+		lookup, _ := newLookup(t)
+		r := httptest.NewRequest(http.MethodGet, "/x?ticket=not-a-token", nil)
+		if _, err := lookup.LookupSession(r, 500); err == nil {
 			t.Fatal("expected a refusal")
 		}
 	})

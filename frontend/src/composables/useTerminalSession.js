@@ -138,12 +138,18 @@ export function reconnectDelay(attempt, random = Math.random) {
  *
  * @param {object} deps
  * @param {string|number|bigint} deps.sessionId
- * @param {() => WebSocket} deps.connect   opens a socket; called again to reconnect
+ * @param {() => WebSocket|Promise<WebSocket>} deps.connect
+ *        opens a socket; called again for every reconnect, and awaited — see
+ *        [open].
  * @param {(bytes: Uint8Array) => void} deps.onOutput   write to the terminal
  * @param {() => void} deps.onReplay       clear before a redraw is written
  * @param {(payload: Uint8Array) => void} [deps.onControl]  presence, and the like
  * @param {(code: number) => void} [deps.onExit]
  * @param {(state: string) => void} [deps.onStatus]
+ * @param {(err: Error|null) => void} [deps.onError]
+ *        why a connection attempt could not even be made, and null once one
+ *        succeeds. Separate from onStatus because "disconnected" is a state
+ *        and this is a reason.
  * @param {(fn: Function, ms: number) => any} [deps.setTimer]
  * @param {(handle: any) => void} [deps.clearTimer]
  */
@@ -155,6 +161,7 @@ export function useTerminalSession({
   onControl = () => {},
   onExit = () => {},
   onStatus = () => {},
+  onError = () => {},
   setTimer = setTimeout,
   clearTimer = clearTimeout,
   random = Math.random,
@@ -204,11 +211,49 @@ export function useTerminalSession({
     }
   }
 
-  function open() {
+  /**
+   * Open a connection, and keep trying if the attempt itself fails.
+   *
+   * `connect` is awaited, which is what lets it be more than a constructor
+   * call: opening this socket means first asking the server for a ticket for
+   * it, because the socket cannot use the cookie the rest of the API does. A
+   * ticket lasts about a minute, so every attempt has to ask again rather than
+   * reuse a URL — which is exactly why the await is here and not at the call
+   * site, where the answer would be computed once and then go stale.
+   *
+   * The try/catch is the other half, and it is the bug this whole change
+   * exists to fix rather than a precaution. A `connect` that throws used to
+   * take the rest of this function with it: the status had already been set to
+   * "connecting", no handlers were attached yet, and nothing was left to set
+   * it to anything else — so the panel sat on "Connecting" forever, with the
+   * real reason on the floor. A failed attempt is now a reason and a retry,
+   * the same as a socket that opened and dropped.
+   */
+  async function open() {
     if (closed) return
     status(attempts === 0 ? 'connecting' : 'reconnecting')
 
-    socket = connect()
+    let next
+    try {
+      next = await connect()
+    } catch (err) {
+      attempts += 1
+      onError(err instanceof Error ? err : new Error(String(err)))
+      status('disconnected')
+      setTimer(open, reconnectDelay(attempts, random))
+      return
+    }
+
+    // Awaiting gave the caller a chance to unmount. Without this the socket
+    // would be left open with nobody holding it, and its handlers would write
+    // into a terminal that has been disposed.
+    if (closed) {
+      next.close()
+      return
+    }
+
+    onError(null)
+    socket = next
     socket.binaryType = 'arraybuffer'
 
     socket.onopen = () => {

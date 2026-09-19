@@ -78,25 +78,29 @@ onMounted(async () => {
   term.open(host.value)
   refit()
 
-  let url
-  try {
-    url = await terminalSocketUrl(props.sessionId)
-  } catch (e) {
-    failed.value = e?.message || 'Could not work out where the server is.'
-    return
-  }
-
   session = useTerminalSession({
     // Not props.sessionId: that is a base62 string, and the frame header wants
     // a number the browser has no way to produce. The backend decides which
     // session this socket may drive and overwrites it.
     sessionId: VIEWER_SESSION,
-    connect: () => new WebSocket(url),
+    // Built per attempt, not once. The URL carries a ticket that expires in
+    // about a minute — the socket cannot authenticate with the app's cookie —
+    // so a URL computed here and kept would be refused by every reconnect
+    // after the first minute, which is the failure nobody would think to look
+    // for on a terminal left open all afternoon.
+    connect: async () => new WebSocket(await terminalSocketUrl(props.sessionId)),
     onOutput: (bytes) => term.write(bytes),
     onReplay: () => term.reset(),
     onControl: (payload) => emit('control', payload),
     onExit: (code) => emit('exit', code),
     onStatus: (s) => emit('status', s),
+    // Said out loud rather than retried in silence: an attempt that cannot
+    // even be made is usually a permission or a server that is not there, and
+    // a terminal that only says "Reconnecting" gives somebody nothing to act
+    // on.
+    onError: (err) => {
+      failed.value = err ? err.message || 'Could not connect to that terminal.' : ''
+    },
   })
 
   // Exactly the bytes the key produced. Esc is 0x1b and gets no special

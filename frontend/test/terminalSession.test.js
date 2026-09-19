@@ -77,8 +77,11 @@ function harness(overrides = {}) {
     fire: () => {
       const t = [...timers].reverse().find((x) => !x.cancelled && !x.ran)
       t.ran = true
-      t.fn()
-      return t
+      // Returned so a caller can await it: the reconnect timer's callback is
+      // `open`, which is async now that a connection attempt has to fetch a
+      // ticket before it can build a socket.
+      const returned = t.fn()
+      return returned instanceof Promise ? returned.then(() => t) : t
     },
   }
 }
@@ -86,7 +89,7 @@ function harness(overrides = {}) {
 const text = (bytes) => new TextDecoder().decode(bytes)
 
 describe('framing', () => {
-  it('writes the type, the session id and the payload', () => {
+  it('writes the type, the session id and the payload', async () => {
     const frame = encodeFrame(FrameType.INPUT, 7, new Uint8Array([0x1b]))
     expect(frame[0]).toBe(FrameType.INPUT)
     expect(frame.length).toBe(HEADER_SIZE + 1)
@@ -97,30 +100,30 @@ describe('framing', () => {
     expect(Array.from(decoded.payload)).toEqual([0x1b])
   })
 
-  it('accepts a string payload, and an empty one', () => {
+  it('accepts a string payload, and an empty one', async () => {
     expect(text(decodeFrame(encodeFrame(FrameType.INPUT, 1, 'hi')).payload)).toBe('hi')
     expect(decodeFrame(encodeFrame(FrameType.CONTROL, 1)).payload.length).toBe(0)
   })
 
   // Shifting a 64-bit id with JavaScript's 32-bit bitwise operators would lose
   // the high bits and deliver a keystroke to a different session.
-  it('round-trips a session id above 2^32', () => {
+  it('round-trips a session id above 2^32', async () => {
     const id = 9007199254740881n
     expect(decodeFrame(encodeFrame(FrameType.INPUT, id, 'x')).sessionId).toBe(id)
   })
 
-  it('decodes an ArrayBuffer as the socket delivers it', () => {
+  it('decodes an ArrayBuffer as the socket delivers it', async () => {
     const frame = encodeFrame(FrameType.OUTPUT, 3, 'ok')
     expect(text(decodeFrame(frame.buffer).payload)).toBe('ok')
   })
 
-  it('refuses a buffer too short to be a frame', () => {
+  it('refuses a buffer too short to be a frame', async () => {
     expect(decodeFrame(new Uint8Array(HEADER_SIZE - 1))).toBeNull()
   })
 
   // The socket reuses its read buffer, so a payload that is a view onto it is
   // overwritten by the next message before the terminal has drawn this one.
-  it('copies the payload rather than viewing the source buffer', () => {
+  it('copies the payload rather than viewing the source buffer', async () => {
     const frame = encodeFrame(FrameType.OUTPUT, 1, 'a')
     const { payload } = decodeFrame(frame)
     frame[HEADER_SIZE] = 0x7a
@@ -134,64 +137,64 @@ describe('framing', () => {
 describe('a session id the browser actually holds', () => {
   const REAL_ID = '0is9t9UOwO9'
 
-  it('does not throw on one', () => {
+  it('does not throw on one', async () => {
     expect(() => encodeFrame(FrameType.INPUT, REAL_ID, 'y')).not.toThrow()
   })
 
   // Thrown over, this happened inside a keystroke handler where nothing was
   // watching: output kept arriving and the keyboard did nothing.
-  it('sends every keystroke rather than throwing on each one', () => {
+  it('sends every keystroke rather than throwing on each one', async () => {
     const h = harness({ sessionId: REAL_ID })
-    h.session.open()
+    await h.session.open()
     expect(h.session.sendInput('y')).toBe(true)
     expect(h.session.sendInput('\r')).toBe(true)
     expect(text(decodeFrame(h.last().sent[0]).payload)).toBe('y')
   })
 
-  it('resizes rather than throwing', () => {
+  it('resizes rather than throwing', async () => {
     const h = harness({ sessionId: REAL_ID })
-    h.session.open()
+    await h.session.open()
     h.session.sendResize(80, 24)
-    h.fire()
+    await h.fire()
     expect(h.last().sent).toHaveLength(1)
   })
 
   // A viewer names no session, because the backend decides which one this
   // socket may drive and overwrites whatever arrives.
-  it('writes no session for a viewer', () => {
+  it('writes no session for a viewer', async () => {
     expect(VIEWER_SESSION).toBe(0)
     expect(decodeFrame(encodeFrame(FrameType.INPUT, VIEWER_SESSION, 'y')).sessionId).toBe(0n)
   })
 
-  it('still writes a real number when it is given one', () => {
+  it('still writes a real number when it is given one', async () => {
     expect(decodeFrame(encodeFrame(FrameType.INPUT, 9007199254740881n, 'y')).sessionId).toBe(
       9007199254740881n
     )
     expect(decodeFrame(encodeFrame(FrameType.INPUT, '42', 'y')).sessionId).toBe(42n)
   })
 
-  it('treats a missing id as none rather than as a crash', () => {
+  it('treats a missing id as none rather than as a crash', async () => {
     expect(decodeFrame(encodeFrame(FrameType.INPUT, undefined, 'y')).sessionId).toBe(0n)
     expect(decodeFrame(encodeFrame(FrameType.INPUT, null, 'y')).sessionId).toBe(0n)
   })
 })
 
 describe('reconnectDelay', () => {
-  it('grows with each attempt and stays within the jitter window', () => {
+  it('grows with each attempt and stays within the jitter window', async () => {
     expect(reconnectDelay(1, () => 0)).toBe(250)
     expect(reconnectDelay(1, () => 1)).toBe(500)
     expect(reconnectDelay(3, () => 0)).toBe(1000)
   })
 
-  it('caps so a tab left open overnight still recovers promptly', () => {
+  it('caps so a tab left open overnight still recovers promptly', async () => {
     expect(reconnectDelay(40, () => 1)).toBe(RECONNECT_MAX_MS)
   })
 
-  it('treats a zeroth attempt as the first', () => {
+  it('treats a zeroth attempt as the first', async () => {
     expect(reconnectDelay(0, () => 1)).toBe(500)
   })
 
-  it('jitters by default so every tab does not retry on the same tick', () => {
+  it('jitters by default so every tab does not retry on the same tick', async () => {
     const delays = new Set(Array.from({ length: 40 }, () => reconnectDelay(5)))
     expect(delays.size).toBeGreaterThan(1)
   })
@@ -207,54 +210,54 @@ describe('input', () => {
     ['enter as carriage return', '\r'],
     ['an arrow key', '\x1b[A'],
     ['a NUL', '\x00'],
-  ])('passes %s through untouched', (_name, keys) => {
+  ])('passes %s through untouched', async (_name, keys) => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendInput(keys)
     const payload = decodeFrame(h.last().sent[0]).payload
     expect(Array.from(payload)).toEqual(Array.from(new TextEncoder().encode(keys)))
   })
 
-  it('sends raw bytes that are not valid UTF-8 unchanged', () => {
+  it('sends raw bytes that are not valid UTF-8 unchanged', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendInput(new Uint8Array([0xff, 0xfe, 0x80]))
     expect(Array.from(decodeFrame(h.last().sent[0]).payload)).toEqual([0xff, 0xfe, 0x80])
   })
 
-  it('sends each keystroke on its own rather than batching', () => {
+  it('sends each keystroke on its own rather than batching', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendInput('a')
     h.session.sendInput('b')
     expect(h.last().sent).toHaveLength(2)
   })
 
-  it('ignores an empty keystroke', () => {
+  it('ignores an empty keystroke', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     expect(h.session.sendInput('')).toBe(false)
     expect(h.last().sent).toHaveLength(0)
   })
 
-  it('drops input while the socket is not open', () => {
+  it('drops input while the socket is not open', async () => {
     const h = harness()
     expect(h.session.sendInput('a')).toBe(false)
-    h.session.open()
+    await h.session.open()
     h.last().readyState = 0
     expect(h.session.sendInput('a')).toBe(false)
   })
 })
 
 describe('resize', () => {
-  it('debounces, so dragging a window sends one size and not a hundred', () => {
+  it('debounces, so dragging a window sends one size and not a hundred', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendResize(80, 24)
     h.session.sendResize(100, 30)
     h.session.sendResize(120, 40)
     expect(h.last().sent).toHaveLength(0)
-    const fired = h.fire()
+    const fired = await h.fire()
     expect(fired.ms).toBe(RESIZE_DEBOUNCE_MS)
     expect(h.last().sent).toHaveLength(1)
     const frame = decodeFrame(h.last().sent[0])
@@ -262,9 +265,9 @@ describe('resize', () => {
     expect(JSON.parse(text(frame.payload))).toEqual({ cols: 120, rows: 40 })
   })
 
-  it('ignores a size with no dimensions', () => {
+  it('ignores a size with no dimensions', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     expect(h.session.sendResize(0, 24)).toBe(false)
     expect(h.session.sendResize(80, 0)).toBe(false)
     expect(h.timers).toHaveLength(0)
@@ -272,31 +275,31 @@ describe('resize', () => {
 
   // Nothing on the far end knows the shape of this window until it is told,
   // and after a reconnect it may have been told something else.
-  it('resends the known size on every connection', () => {
+  it('resends the known size on every connection', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendResize(90, 20)
-    h.fire()
+    await h.fire()
     h.last().onclose()
-    h.fire() // the reconnect timer
+    await h.fire() // the reconnect timer
     h.last().onopen()
     const frame = decodeFrame(h.last().sent[0])
     expect(frame.type).toBe(FrameType.RESIZE)
     expect(JSON.parse(text(frame.payload))).toEqual({ cols: 90, rows: 20 })
   })
 
-  it('sends nothing on connect when the size is not known yet', () => {
+  it('sends nothing on connect when the size is not known yet', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onopen()
     expect(h.last().sent).toHaveLength(0)
   })
 })
 
 describe('output and replay', () => {
-  it('writes output straight to the terminal', () => {
+  it('writes output straight to the terminal', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(FrameType.OUTPUT, 7, 'hello') })
     expect(text(h.output[0])).toBe('hello')
     expect(h.replays).toHaveLength(0)
@@ -304,34 +307,34 @@ describe('output and replay', () => {
 
   // A redraw painted on top of what was already there interleaves into
   // nonsense, so the terminal is cleared first.
-  it('clears before writing a replay', () => {
+  it('clears before writing a replay', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(FrameType.REPLAY, 7, 'screen') })
     expect(h.replays).toHaveLength(1)
     expect(text(h.output[0])).toBe('screen')
   })
 
-  it('reports the exit code', () => {
+  it('reports the exit code', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(FrameType.EXIT, 7, JSON.stringify({ code: 130 })) })
     expect(h.exits).toEqual([130])
   })
 
   // A malformed or code-less exit still means the session ended, which is the
   // part the person watching needs to see.
-  it('still reports an exit whose body cannot be read', () => {
+  it('still reports an exit whose body cannot be read', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(FrameType.EXIT, 7, 'not json') })
     h.last().onmessage({ data: encodeFrame(FrameType.EXIT, 7, '{}') })
     expect(h.exits).toEqual([0, 0])
   })
 
-  it('ignores a frame type it does not know, and a runt frame', () => {
+  it('ignores a frame type it does not know, and a runt frame', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(0x7f, 7, 'x') })
     h.last().onmessage({ data: new Uint8Array(2) })
     expect(h.output).toHaveLength(0)
@@ -341,10 +344,10 @@ describe('output and replay', () => {
   // Presence and the like: about the session rather than through it. Handed
   // on unparsed, because what a control message means is the caller's
   // business, not the framing layer's.
-  it('hands a control frame to the caller unparsed', () => {
+  it('hands a control frame to the caller unparsed', async () => {
     const controls = []
     const h = harness({ onControl: (p) => controls.push(p) })
-    h.session.open()
+    await h.session.open()
     h.last().onmessage({ data: encodeFrame(FrameType.CONTROL, 7, '{"op":"presence"}') })
     expect(controls).toHaveLength(1)
     expect(text(controls[0])).toBe('{"op":"presence"}')
@@ -352,46 +355,159 @@ describe('output and replay', () => {
   })
 })
 
+// Opening this socket means asking the server for a ticket first, because the
+// socket cannot authenticate with the cookie the rest of the API uses. That
+// makes a connection attempt something that can fail before there is any
+// socket to report it — which is the shape of the bug this group exists for.
+describe('an attempt that cannot even be made', () => {
+  /** A connect that fails the first `failures` times, then works. */
+  function flaky(failures, err = new Error('no ticket for you')) {
+    const sockets = []
+    let calls = 0
+    const connect = async () => {
+      calls += 1
+      if (calls <= failures) throw err
+      const s = new FakeSocket()
+      sockets.push(s)
+      return s
+    }
+    return { connect, sockets, calls: () => calls }
+  }
+
+  // The bug itself. `connect` threw, the status had already been set to
+  // "connecting", and the throw took the rest of `open` with it — so no
+  // handler was ever attached and nothing could set the status again. The
+  // panel said "Connecting" until somebody navigated away.
+  it('does not leave the status on connecting', async () => {
+    const f = flaky(1)
+    const h = harness({ connect: f.connect })
+    await h.session.open()
+    expect(h.statuses).toEqual(['connecting', 'disconnected'])
+  })
+
+  // A reason, not just a state. "Reconnecting" forever gives somebody nothing
+  // to act on, and the reason here is usually a permission or a server that
+  // is not there.
+  it('says why', async () => {
+    const errors = []
+    const f = flaky(1, new Error('Could not get permission to watch that terminal'))
+    const h = harness({ connect: f.connect, onError: (e) => errors.push(e) })
+    await h.session.open()
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toBe('Could not get permission to watch that terminal')
+  })
+
+  it('retries, and clears the reason once one succeeds', async () => {
+    const errors = []
+    const f = flaky(1)
+    const h = harness({ connect: f.connect, onError: (e) => errors.push(e) })
+
+    await h.session.open()
+    expect(f.sockets).toHaveLength(0)
+
+    await h.fire()
+    expect(f.sockets).toHaveLength(1)
+    expect(h.statuses).toEqual(['connecting', 'disconnected', 'reconnecting'])
+    // Null rather than another message: a stale reason left on screen next to
+    // a working terminal is its own bug.
+    expect(errors[errors.length - 1]).toBeNull()
+  })
+
+  // Not everything that is thrown is an Error — a rejected fetch, a string
+  // thrown from a bridge. The caller is handed something with a message
+  // either way rather than having to test what it was given.
+  it('reports something that was thrown but is not an Error', async () => {
+    const errors = []
+    const h = harness({
+      connect: () => Promise.reject('no ticket for you'),
+      onError: (e) => errors.push(e),
+    })
+    await h.session.open()
+    expect(errors[0]).toBeInstanceOf(Error)
+    expect(errors[0].message).toBe('no ticket for you')
+  })
+
+  it('backs off over repeated failures rather than spinning', async () => {
+    const f = flaky(3)
+    const h = harness({ connect: f.connect })
+    await h.session.open()
+    const first = (await h.fire()).ms
+    const second = (await h.fire()).ms
+    expect(second).toBeGreaterThan(first)
+    expect(f.sockets).toHaveLength(0)
+  })
+
+  // The ticket in the URL lasts about a minute, so a reconnect an hour later
+  // has to ask for a new one. Reusing a URL computed once is a terminal that
+  // silently stops recovering after its first minute.
+  it('asks again for every attempt rather than reusing an answer', async () => {
+    const f = flaky(0)
+    const h = harness({ connect: f.connect })
+    await h.session.open()
+    expect(f.calls()).toBe(1)
+    f.sockets[0].onclose()
+    await h.fire()
+    expect(f.calls()).toBe(2)
+  })
+
+  // Awaiting gives the page a chance to unmount mid-attempt. A socket that
+  // arrives after that must be closed rather than wired to a terminal that
+  // has been disposed.
+  it('closes a socket that arrives after the viewer left', async () => {
+    let resolve
+    const socket = new FakeSocket()
+    const h = harness({ connect: () => new Promise((r) => { resolve = r }) })
+
+    const opening = h.session.open()
+    h.session.close()
+    resolve(socket)
+    await opening
+
+    expect(socket.closed).toBe(1)
+    expect(socket.onmessage).toBeUndefined()
+  })
+})
+
 describe('connection lifecycle', () => {
-  it('reports connecting, connected, disconnected and reconnecting', () => {
+  it('reports connecting, connected, disconnected and reconnecting', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onopen()
     h.last().onerror(new Error('transport'))
     h.last().onclose()
-    h.fire()
+    await h.fire()
     expect(h.statuses).toEqual(['connecting', 'connected', 'disconnected', 'reconnecting'])
   })
 
-  it('asks for binary frames rather than text', () => {
+  it('asks for binary frames rather than text', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     expect(h.last().binaryType).toBe('arraybuffer')
   })
 
-  it('backs off further with each failed attempt', () => {
+  it('backs off further with each failed attempt', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onclose()
-    const first = h.fire().ms
+    const first = (await h.fire()).ms
     h.last().onclose()
-    const second = h.fire().ms
+    const second = (await h.fire()).ms
     expect(second).toBeGreaterThan(first)
   })
 
-  it('starts the backoff over after a successful connection', () => {
+  it('starts the backoff over after a successful connection', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onclose()
-    const first = h.fire().ms
+    const first = (await h.fire()).ms
     h.last().onopen()
     h.last().onclose()
-    expect(h.fire().ms).toBe(first)
+    expect((await h.fire()).ms).toBe(first)
   })
 
-  it('does not reconnect a session the viewer closed', () => {
+  it('does not reconnect a session the viewer closed', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     const socket = h.last()
     h.session.close()
     expect(socket.closed).toBe(1)
@@ -401,23 +517,23 @@ describe('connection lifecycle', () => {
     expect(h.sockets).toHaveLength(1)
   })
 
-  it('cancels a pending resize when the session closes', () => {
+  it('cancels a pending resize when the session closes', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.session.sendResize(80, 24)
     h.session.close()
     expect(h.timers[0].cancelled).toBe(true)
   })
 
-  it('closes cleanly when it never connected', () => {
+  it('closes cleanly when it never connected', async () => {
     const h = harness()
     h.session.close()
     expect(h.statuses).toEqual(['closed'])
   })
 
-  it('ignores a reconnect timer that fires after the viewer closed', () => {
+  it('ignores a reconnect timer that fires after the viewer closed', async () => {
     const h = harness()
-    h.session.open()
+    await h.session.open()
     h.last().onclose()
     h.session.close()
     h.timers.forEach((t) => t.fn())
@@ -428,7 +544,7 @@ describe('connection lifecycle', () => {
 describe('defaults', () => {
   // Every dependency has a default so a caller that only wants to watch output
     // does not have to supply the rest.
-  it('runs with only the required dependencies supplied', () => {
+  it('runs with only the required dependencies supplied', async () => {
     vi.useFakeTimers()
     const socket = new FakeSocket()
     const output = []
@@ -438,7 +554,7 @@ describe('defaults', () => {
       onOutput: (b) => output.push(b),
       onReplay: () => {},
     })
-    session.open()
+    await session.open()
     socket.onopen()
     socket.onmessage({ data: encodeFrame(FrameType.CONTROL, 1, '{}') })
     socket.onmessage({ data: encodeFrame(FrameType.OUTPUT, 1, 'hi') })

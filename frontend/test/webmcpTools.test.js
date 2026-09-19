@@ -179,6 +179,10 @@ describe('parity with the interface', () => {
     // decision somebody makes on purpose, not something acquired as a side
     // effect of a parity rule.
     terminalSocketUrl: 'raw keystrokes into a remote shell; a deliberate non-grant',
+    // The credential half of the same non-grant. A ticket opens exactly one
+    // terminal socket, so a tool that minted one would be the grant above
+    // wearing a different name.
+    terminalTicket: 'mints the credential for that same socket; the same non-grant',
     // Where the server is, for the two callers that have to address it from
     // outside the renderer. Not an action.
     serverOrigin: 'returns an address the page uses, not an action',

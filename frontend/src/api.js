@@ -373,6 +373,32 @@ export async function serverOrigin() {
 }
 
 /**
+ * A credential for one terminal socket, good for about a minute.
+ *
+ * The socket cannot use the `at` cookie in every build that has one, which is
+ * why this exists. Every other call in this module is a same-origin relative
+ * URL, and that is what lets the desktop app forward it through its `app://`
+ * handler with the cookie attached in the main process. A WebSocket cannot be
+ * forwarded that way — Electron's handler does not intercept upgrades — so the
+ * socket's URL is necessarily absolute, its upgrade is a cross-site request,
+ * and the browser withholds a SameSite=Lax cookie from it. The desktop
+ * terminal therefore never connected at all.
+ *
+ * This request *is* relative, so it is forwarded like everything else and the
+ * cookie is applied where it works. The ticket it returns is something the
+ * page can hand to the socket explicitly.
+ */
+export async function terminalTicket(sessionId) {
+  const res = await apiFetch(`${API_BASE_URL}/sessions/${sessionId}/terminal/ticket`, { method: 'POST' });
+  if (!res.ok) {
+    throw new Error('Could not get permission to watch that terminal');
+  }
+  const { ticket } = await res.json();
+  if (!ticket) throw new Error('Could not get permission to watch that terminal');
+  return ticket;
+}
+
+/**
  * The WebSocket a terminal session is watched over.
  *
  * This is one of the two **absolute** URLs in the frontend, and a deliberate
@@ -380,10 +406,16 @@ export async function serverOrigin() {
  * custom-protocol handler — which forwards every other API call to the
  * configured server — does not intercept WebSockets, so a relative URL would
  * resolve to `app://` and simply fail to open.
+ *
+ * Call this again for every connection attempt rather than keeping the answer.
+ * The ticket in it expires in about a minute, so a URL held across a reconnect
+ * an hour later is one the server will refuse — and the whole point of the
+ * short lifetime is that nothing reuses one.
  */
 export async function terminalSocketUrl(sessionId) {
   const url = new URL(`${API_BASE_URL}/sessions/${sessionId}/terminal`, await serverOrigin());
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('ticket', await terminalTicket(sessionId));
   return url.toString();
 }
 
