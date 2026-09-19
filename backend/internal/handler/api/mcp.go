@@ -54,6 +54,8 @@ type (
 		SendSetModelNotification(ctx context.Context, modelID string) error
 		SendSetConcurrencyNotification(ctx context.Context, limit int) error
 		SendChannelNotification(ctx context.Context, taskID int64, content string)
+		ClearContextForTask(ctx context.Context, taskID int64, clearContext bool)
+		MarkTaskPushed(taskID int64)
 		SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error
 		SendCancelNotification(ctx context.Context, taskID int64) mcpctrl.StopOutcome
 		RespondToElicitation(requestID, action string, content map[string]any) error

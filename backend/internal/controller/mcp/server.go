@@ -184,6 +184,16 @@ type WorkspaceServer struct {
 	lastUpdateCheckAt  time.Time
 	agentConnections   atomic.Int32
 
+	// pushedTaskIDs is which still-notstarted tasks have already had their
+	// "here is your task" notification sent — by the immediate REST push on
+	// create/reassign, or by this poller. Without it the poller rediscovers the
+	// same task on its next tick (nothing else marks a task as delivered) and
+	// pushes it again, clearing the agent's context a second time on a task it
+	// already started. Reconciled against notstarted tasks every tick so it
+	// never grows past what is currently pending.
+	pushedTaskIDsMu sync.Mutex
+	pushedTaskIDs   map[int64]struct{}
+
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
 	// removed workspace server does not leak them for the lifetime of the process.
 	done      chan struct{}
@@ -423,6 +433,7 @@ func NewWorkspaceServer(
 		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),
 		streaming:              make(map[string]int),
 		elicitations:           make(map[string]chan elicitationResponse),
+		pushedTaskIDs:          make(map[int64]struct{}),
 		icon:                   icon,
 		name:                   name,
 		description:            description,
@@ -985,6 +996,46 @@ func (ps *WorkspaceServer) clearContextFor(ctx context.Context, task model.Task)
 	}
 }
 
+// ClearContextForTask is clearContextFor for callers outside this package —
+// the REST handlers that push a newly-created or newly-reassigned task
+// immediately, rather than waiting for StartPoller. They hold an entity, not
+// a model.Task, and need nothing else off it than what clearContextFor reads.
+func (ps *WorkspaceServer) ClearContextForTask(ctx context.Context, taskID int64, clearContext bool) {
+	ps.clearContextFor(ctx, model.Task{ID: taskID, ClearContext: clearContext})
+}
+
+// MarkTaskPushed records that a task's initial notification has already gone
+// out, so StartPoller does not discover it as still pending on its next tick
+// and push — and, if it asked for one, clear — it a second time.
+func (ps *WorkspaceServer) MarkTaskPushed(taskID int64) {
+	ps.pushedTaskIDsMu.Lock()
+	defer ps.pushedTaskIDsMu.Unlock()
+	if ps.pushedTaskIDs == nil {
+		ps.pushedTaskIDs = make(map[int64]struct{})
+	}
+	ps.pushedTaskIDs[taskID] = struct{}{}
+}
+
+func (ps *WorkspaceServer) wasTaskPushed(taskID int64) bool {
+	ps.pushedTaskIDsMu.Lock()
+	defer ps.pushedTaskIDsMu.Unlock()
+	_, ok := ps.pushedTaskIDs[taskID]
+	return ok
+}
+
+// reconcilePushedTaskIDs drops anything no longer notstarted, so a task that
+// finishes, and one whose ID happens to be reused by neither, cannot pin an
+// entry here forever.
+func (ps *WorkspaceServer) reconcilePushedTaskIDs(stillNotStarted map[int64]struct{}) {
+	ps.pushedTaskIDsMu.Lock()
+	defer ps.pushedTaskIDsMu.Unlock()
+	for id := range ps.pushedTaskIDs {
+		if _, ok := stillNotStarted[id]; !ok {
+			delete(ps.pushedTaskIDs, id)
+		}
+	}
+}
+
 // StartPoller checks for pending tasks periodically and pushes them if no ongoing tasks exist.
 func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 	go func() {
@@ -1012,6 +1063,7 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 			hasOngoing := false
 			var ongoingTask model.Task
 			var pendingTasks []model.Task
+			notStartedIDs := make(map[int64]struct{})
 			for _, t := range tasks {
 				if t.Status == "ongoing" {
 					hasOngoing = true
@@ -1019,9 +1071,18 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 					break
 				}
 				if t.Status == "notstarted" && t.Assignee == "agent" {
+					notStartedIDs[t.ID] = struct{}{}
+					// Already delivered, either by this same push a tick ago or by
+					// the REST handler that creates/reassigns it — skip it rather
+					// than pushing (and, if it wants one, clearing) it again while
+					// the agent simply hasn't flipped its status yet.
+					if ps.wasTaskPushed(t.ID) {
+						continue
+					}
 					pendingTasks = append(pendingTasks, t)
 				}
 			}
+			ps.reconcilePushedTaskIDs(notStartedIDs)
 
 			if hasOngoing {
 				if time.Since(ps.lastUpdateCheckAt) > time.Hour {
@@ -1057,6 +1118,7 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 					msg += "\n" + atts
 				}
 				ps.SendChannelNotification(context.Background(), nextTask.ID, msg)
+				ps.MarkTaskPushed(nextTask.ID)
 			}
 		}
 	}()

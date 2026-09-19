@@ -97,3 +97,16 @@ doc checks — and all three stop seeing a tool if anything precedes its name.
 - Cron validation also lives here for the REST API path (same rules).
 - `isValidTaskStatus` — valid statuses: `notstarted`, `ongoing`, `completed`, `rejected`, `cron`, `blocked`.
 
+## `StartPoller` is not the only thing that pushes a task's first message
+
+`createTask` and `updateTaskAssignee` in `handler/api/task.go` push a new or
+reassigned task immediately when nothing else is running, rather than waiting
+for `StartPoller`'s next tick. Both must call `ClearContextForTask` before
+`SendChannelNotification` and `MarkTaskPushed` after, exactly like the poller
+does — skip either and a task that asked for a clean slate gets its `/clear`
+only from the poller rediscovering the still-`notstarted` task up to sixty
+seconds later, after the agent already acted on the un-cleared task text,
+wiping it and pushing the same task a second time. `wasTaskPushed`/
+`reconcilePushedTaskIDs` are what let the poller recognise a task it (or a
+handler) already delivered and leave it alone.
+

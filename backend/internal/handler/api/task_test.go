@@ -4,11 +4,17 @@
 package api
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -227,4 +233,188 @@ func TestReplyChannelContent(t *testing.T) {
 			t.Errorf("envelope branch: got %q", got)
 		}
 	})
+}
+
+// mockCrudCreateTask is a crud.Controller that answers exactly CreateTask and
+// ListTasks — everything createTask's immediate-notify branch needs — and
+// panics on anything else, which is the point of embedding the real interface
+// with nothing behind it.
+type mockCrudCreateTask struct {
+	crud.Controller
+	createTaskFunc func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
+	listTasksFunc  func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
+}
+
+func (m *mockCrudCreateTask) CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+	return m.createTaskFunc(ctx, req)
+}
+
+func (m *mockCrudCreateTask) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+	return m.listTasksFunc(ctx, req)
+}
+
+// A human creating a task for an idle agent is the common case, and the one
+// that used to skip clearing entirely: createTask pushed the task straight
+// over the MCP channel and left ClearContext for StartPoller's next tick,
+// up to sixty seconds later, to act on — which is a /clear arriving after the
+// task it was meant to precede. It must now clear before it notifies, exactly
+// like the poller does, and mark the task pushed so the poller does not
+// discover it as still notstarted and repeat both.
+func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:           42,
+		WorkspaceID:  1,
+		CreatedBy:    "human",
+		Assignee:     "agent",
+		Status:       "notstarted",
+		Title:        "Investigate the flake",
+		Body:         "It only reproduces on CI.",
+		ClearContext: true,
+	}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			// Nothing else ongoing or pending: the new task is the only row,
+			// so the immediate-push branch fires rather than deferring to
+			// the poller.
+			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Investigate the flake","body":"It only reproduces on CI.","createdBy":"human","assignee":"agent","clearContext":true}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
+	}
+	if srv.clearedTaskID != created.ID || !srv.clearContextWanted {
+		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, created.ID)
+	}
+	if srv.notifiedTaskID != created.ID {
+		t.Errorf("notified task %d, want %d", srv.notifiedTaskID, created.ID)
+	}
+	if srv.pushedTaskID != created.ID {
+		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, created.ID)
+	}
+}
+
+// A task that did not ask for a clean slate still gets pushed immediately —
+// it just skips the clear itself, same as clearContextFor's own rule.
+func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          43,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Small follow-up",
+	}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Small follow-up","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if srv.clearContextWanted {
+		t.Error("asked to clear a task that never requested one")
+	}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v (clearContextFor's own no-op branch decides whether to actually clear, not the handler)", srv.calls, wantCalls)
+	}
+}
+
+// mockCrudUpdateTaskAssignee answers exactly UpdateTaskAssignee.
+type mockCrudUpdateTaskAssignee struct {
+	crud.Controller
+	updateTaskAssigneeFunc func(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error)
+}
+
+func (m *mockCrudUpdateTaskAssignee) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
+	return m.updateTaskAssigneeFunc(ctx, req)
+}
+
+// Reassigning a task to the agent is the same kind of immediate push as
+// createTask's, on a task that may equally have asked for a clean slate, so
+// it has to clear first and mark the task pushed for the same reason.
+func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testing.T) {
+	app := fiber.New()
+	reassigned := entity.Task{ID: 44, WorkspaceID: 1, Title: "Pick this back up", ClearContext: true}
+	crudCtrl := &mockCrudUpdateTaskAssignee{
+		updateTaskAssigneeFunc: func(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
+			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.updateTaskAssignee()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(44).String()+"/assignee",
+		strings.NewReader(`{"assignee":{"value":"agent"}}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
+	}
+	if srv.clearedTaskID != reassigned.ID || !srv.clearContextWanted {
+		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, reassigned.ID)
+	}
+	if srv.pushedTaskID != reassigned.ID {
+		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, reassigned.ID)
+	}
 }
