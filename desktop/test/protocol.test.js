@@ -15,6 +15,8 @@ import {
   webSocketOrigin,
   mimeTypeFor,
   createAppProtocolHandler,
+  PROXY_TIMEOUT_MS,
+  UPLOAD_TIMEOUT_MS,
 } from '../src/main/protocol.js'
 import { DRAWER_CODE_PREFIX, DRAWER_FRAME_PATH } from '../src/main/extensions/drawer-frame.js'
 
@@ -38,8 +40,19 @@ function makeHandler(overrides = {}) {
       ...(overrides.attachments !== undefined ? { attachments: overrides.attachments } : {}),
       ...(overrides.drawerFor !== undefined ? { drawerFor: overrides.drawerFor } : {}),
       ...(overrides.onRequestProxied !== undefined ? { onRequestProxied: overrides.onRequestProxied } : {}),
+      ...(overrides.proxyTimeoutMs !== undefined ? { proxyTimeoutMs: overrides.proxyTimeoutMs } : {}),
+      ...(overrides.uploadTimeoutMs !== undefined ? { uploadTimeoutMs: overrides.uploadTimeoutMs } : {}),
     }),
   }
+}
+
+/**
+ * A fetch that never settles — what the network service leaves behind when it
+ * crashes. Deliberately ignores its abort signal, because that is the whole
+ * point: a request that answered an abort would never have frozen the app.
+ */
+function hangingFetch() {
+  return vi.fn(() => new Promise(() => {}))
 }
 
 const ATTACHMENT = 'app://x/api/v1/workspaces/ws1/tasks/t1/attachments/a1'
@@ -451,6 +464,84 @@ describe('createAppProtocolHandler — proxying', () => {
     expect(await res.json()).toMatchObject({ error: 'Cannot reach the AgentRQ server', detail: 'ECONNREFUSED' })
   })
 
+  it('answers 504 rather than hanging when the response never arrives', async () => {
+    // The freeze this guards against: Chromium's network service crashes and
+    // abandons the request instead of failing it. The handler's promise is
+    // what the renderer's fetch awaits, so a promise that never settles is a
+    // screen that never loads and never errors.
+    const netFetch = hangingFetch()
+    const { handler } = makeHandler({ netFetch, proxyTimeoutMs: 5 })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/auth/user'))
+    expect(res.status).toBe(504)
+    expect(await res.json()).toEqual({ error: 'The AgentRQ server did not respond in time' })
+  })
+
+  it('aborts the request it gave up on, so the socket is not held', async () => {
+    let signal
+    const netFetch = vi.fn((_url, init) => {
+      signal = init.signal
+      return new Promise(() => {})
+    })
+    const { handler } = makeHandler({ netFetch, proxyTimeoutMs: 5 })
+
+    await handler(makeRequest('app://agentrq/api/v1/auth/user'))
+    expect(signal.aborted).toBe(true)
+  })
+
+  it('does not cut off a body that streams for longer than the budget', async () => {
+    // The budget is time-to-first-byte only. The event stream holds a response
+    // open for days; a timeout that covered the body would kill it every time.
+    let push
+    const body = new ReadableStream({ start: (c) => { push = (text) => c.enqueue(new TextEncoder().encode(text)) } })
+    const netFetch = vi.fn(async () => new Response(body, { status: 200 }))
+    const { handler } = makeHandler({ netFetch, proxyTimeoutMs: 5 })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/events/stream'))
+    expect(res.status).toBe(200)
+
+    // Well past the budget, and the stream is still live.
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    push('data: still here\n\n')
+    const chunk = await res.body.getReader().read()
+    expect(new TextDecoder().decode(chunk.value)).toBe('data: still here\n\n')
+  })
+
+  it('bounds a forwarded request at thirty seconds by default', () => {
+    expect(PROXY_TIMEOUT_MS).toBe(30000)
+  })
+
+  it('gives a request carrying a body the longer upload budget', async () => {
+    // The server cannot send headers until it has read the upload, so the
+    // transfer is inside the window. Attachments are base64 in a JSON body and
+    // can be megabytes; timing one out at thirty seconds would fail a reply
+    // that was working perfectly well.
+    const netFetch = hangingFetch()
+    const { handler } = makeHandler({ netFetch, proxyTimeoutMs: 5, uploadTimeoutMs: 20000 })
+
+    const slow = handler(makeRequest('app://agentrq/api/v1/workspaces/ws1/tasks/t1/reply', {
+      method: 'POST',
+      body: 'a-large-base64-attachment',
+    }))
+    const settled = await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 40))])
+
+    expect(settled).toBe('waiting')
+  })
+
+  it('still bounds an upload, rather than waiting on it forever', async () => {
+    const { handler } = makeHandler({ netFetch: hangingFetch(), proxyTimeoutMs: 60000, uploadTimeoutMs: 5 })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/workspaces/ws1/tasks/t1/reply', {
+      method: 'POST',
+      body: 'a-large-base64-attachment',
+    }))
+    expect(res.status).toBe(504)
+  })
+
+  it('allows two minutes for an upload by default', () => {
+    expect(UPLOAD_TIMEOUT_MS).toBe(120000)
+  })
+
   it('survives a thrown value that is not an Error', async () => {
     const netFetch = vi.fn(async () => {
       throw 'socket hang up'
@@ -724,6 +815,40 @@ describe('createAppProtocolHandler — dev server mode', () => {
 
     await handler(makeRequest('app://agentrq/src/App.vue?vue&type=style'))
     expect(netFetch.mock.calls[0][0]).toBe('http://localhost:5174/src/App.vue?vue&type=style')
+  })
+
+  it('answers 502 rather than throwing when the dev server is down', async () => {
+    // Unhandled this rejects the handler, and a rejected handler leaves the
+    // renderer with a request that never completes — the dev-mode spelling of
+    // the same freeze.
+    const netFetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED')
+    })
+    const { handler } = makeHandler({ netFetch, devServerUrl: 'http://localhost:5174' })
+
+    const res = await handler(makeRequest('app://agentrq/index.html'))
+    expect(res.status).toBe(502)
+    expect(await res.text()).toContain('Cannot reach the dev server')
+  })
+
+  it('answers 502 rather than hanging when the dev server never replies', async () => {
+    const { handler } = makeHandler({
+      netFetch: hangingFetch(),
+      devServerUrl: 'http://localhost:5174',
+      proxyTimeoutMs: 5,
+    })
+
+    const res = await handler(makeRequest('app://agentrq/index.html'))
+    expect(res.status).toBe(502)
+  })
+
+  it('survives a dev server failure that is not an Error', async () => {
+    const netFetch = vi.fn(async () => {
+      throw 'socket hang up'
+    })
+    const { handler } = makeHandler({ netFetch, devServerUrl: 'http://localhost:5174' })
+
+    expect(await (await handler(makeRequest('app://agentrq/index.html'))).text()).toContain('socket hang up')
   })
 })
 

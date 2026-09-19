@@ -46,6 +46,7 @@ import {
   mapEventToNotification,
   taskIdFromSelfActionRequest,
 } from './notifications.js'
+import { createProcessGoneHandler } from './network-service.js'
 import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
@@ -1616,6 +1617,16 @@ if (!app.requestSingleInstanceLock()) {
   // Windows and Linux deliver a deep link as an argument to a second launch,
   // which the single-instance lock forwards here rather than opening a rival
   // window.
+  // Chromium's network service is a process of its own, and when it dies it
+  // abandons the requests it was carrying instead of failing them. Electron
+  // restarts it; nothing tells the held event stream that the socket it is
+  // reading is gone. See network-service.js.
+  const handleChildProcessGone = createProcessGoneHandler({
+    restartEventStream: () => eventStream?.restart(),
+    log: (message) => console.warn(`[agentrq] ${message}`),
+  })
+  app.on('child-process-gone', (_event, details) => handleChildProcessGone(details))
+
   app.on('second-instance', (_event, argv) => {
     const url = deepLinkFromArgv(argv)
     if (url) openDeepLink(url)

@@ -63,6 +63,43 @@ const STRIPPED_REQUEST_HEADERS = new Set([
 const BODYLESS_METHODS = new Set(['GET', 'HEAD'])
 
 /**
+ * How long a forwarded request may take to produce *response headers*.
+ *
+ * A request that never settles is worse than one that fails. The promise this
+ * handler returns is what the renderer's own fetch is waiting on, so a fetch
+ * that neither resolves nor rejects leaves every screen behind it waiting
+ * forever, with no error raised anywhere — the app is frozen, not broken. A
+ * crash of Chromium's network service does exactly that: it abandons the
+ * requests that were in flight rather than failing them.
+ *
+ * The budget covers headers only, and the timer is cleared the moment they
+ * arrive, so a long-lived body — the event stream — is never cut off.
+ */
+export const PROXY_TIMEOUT_MS = 30000
+
+/**
+ * The same budget for a request that carries a body.
+ *
+ * Longer, because the server cannot answer until it has read what is being
+ * sent, so the upload is inside the window. Attachments travel as base64 in a
+ * JSON body (`frontend/src/api.js`), which puts several megabytes on a link
+ * whose speed we do not get to choose — and a reply whose attachment was
+ * rejected for being slow is worse than one that took a while.
+ */
+export const UPLOAD_TIMEOUT_MS = 120000
+
+/** Raced against the fetch, so the handler settles whatever the fetch does. */
+const TIMED_OUT = Symbol('timed out')
+
+/** Thrown by `fetchUpstream` when the budget above is spent. */
+export class UpstreamTimeout extends Error {
+  constructor(ms) {
+    super(`no response headers after ${ms}ms`)
+    this.name = 'UpstreamTimeout'
+  }
+}
+
+/**
  * True when a path should be forwarded to the AgentRQ server rather than served
  * from the bundled renderer assets.
  */
@@ -302,11 +339,40 @@ export function createAppProtocolHandler({
    */
   drawerFor = async () => ({ ok: false, reason: 'Extensions are unavailable.' }),
   onRequestProxied = () => {},
+  proxyTimeoutMs = PROXY_TIMEOUT_MS,
+  uploadTimeoutMs = UPLOAD_TIMEOUT_MS,
 }) {
   const dev = Boolean(devServerUrl)
   // A function rather than a value: `serverUrl` is answered by the shell and
   // changes under a running app, and the policy names it.
   const csp = () => buildCSP({ dev, devServerUrl, serverUrl: serverUrl() })
+
+  /**
+   * `netFetch`, bounded by [PROXY_TIMEOUT_MS].
+   *
+   * Deliberately a race rather than an abort-and-await: aborting asks the fetch
+   * to fail, and a fetch whose network service has gone is exactly the one that
+   * may not answer. Racing settles this promise on our own timer, so the
+   * renderer always gets a reply. The abort still fires, as best-effort cleanup
+   * of a request nobody is waiting for any more.
+   */
+  async function fetchUpstream(target, init) {
+    const ms = init.body ? uploadTimeoutMs : proxyTimeoutMs
+    const controller = new AbortController()
+    let expire
+    const budget = new Promise((resolve) => {
+      expire = setTimeout(() => resolve(TIMED_OUT), ms)
+    })
+
+    try {
+      const result = await Promise.race([netFetch(target, { ...init, signal: controller.signal }), budget])
+      if (result !== TIMED_OUT) return result
+      controller.abort()
+      throw new UpstreamTimeout(ms)
+    } finally {
+      clearTimeout(expire)
+    }
+  }
 
   async function proxyToServer(request, url) {
     onRequestProxied(request.method, url.pathname)
@@ -332,8 +398,13 @@ export function createAppProtocolHandler({
 
     let upstream
     try {
-      upstream = await netFetch(target.toString(), init)
+      upstream = await fetchUpstream(target.toString(), init)
     } catch (err) {
+      // A timeout is its own answer: 502 says the server refused us, and the
+      // renderer's retry policy for the two is not the same.
+      if (err instanceof UpstreamTimeout) {
+        return Response.json({ error: 'The AgentRQ server did not respond in time' }, { status: 504 })
+      }
       // The server being unreachable is an ordinary state for a desktop client
       // — it is a normal response to the renderer, not a crashed handler.
       return Response.json(
@@ -353,7 +424,14 @@ export function createAppProtocolHandler({
 
   async function serveFromDevServer(pathname, search) {
     // The dev server has its own SPA fallback, so the plan is not applied here.
-    const res = await netFetch(new URL(pathname + search, devServerUrl).toString())
+    let res
+    try {
+      res = await fetchUpstream(new URL(pathname + search, devServerUrl).toString(), {})
+    } catch (err) {
+      // Same reasoning as the proxy above: unhandled, this rejects the handler
+      // and the renderer is left with a request that never completes.
+      return new Response(`Cannot reach the dev server: ${String(err?.message ?? err)}`, { status: 502 })
+    }
     const headers = filterResponseHeaders(res.headers)
     if ((headers.get('content-type') ?? '').includes('text/html')) {
       headers.set('content-security-policy', csp())

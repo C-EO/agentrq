@@ -34,6 +34,11 @@ Consequences worth knowing before changing anything here:
   That is the whole story of the desktop terminal never working; see
   [the daemon note](machines-and-daemon.md). Anything else the renderer needs
   to reach still belongs behind the proxy, not in the policy.
+- **Give every await in the main process a deadline, and make it a race.** The
+  handler's promise is what the renderer's `fetch` waits on, so an await that
+  never settles is a frozen app rather than an error — and a crashed network
+  service abandons its requests instead of failing them. An `AbortSignal` is not
+  enough: the request that hangs is the one that will not answer an abort.
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.
@@ -71,7 +76,7 @@ no account yet, and the sign-in happens on a web page the shell does not drive
 — so `duplicateOf` catches it once the account is known and the switcher says
 so, beside the action that fixes it.
 
-## Four traps that are invisible in source
+## Five traps that are invisible in source
 
 - **Tailwind scans from the build root.** The desktop build's Vite root is
   `desktop/src/renderer`, so a class used only in a file under `desktop/` is
@@ -90,6 +95,11 @@ so, beside the action that fixes it.
   `app.setAsDefaultProtocolClient()` is enough for Windows and Linux, but the
   `protocols` entry in `desktop/electron-builder.yml` is what makes
   `agentrq://` links work on a packaged macOS build.
+- **`sandbox_extension_issue_file failed ... Operation not permitted` is macOS
+  talking, not Electron.** It is libsandbox refusing the unpackaged dev bundle;
+  Chromium logs nothing here and carries on, and a packaged build never sees it.
+  `desktop/scripts/mac-sandbox-preflight.mjs` speaks up only for the two causes
+  that *are* ours — a quarantined or a gutted `node_modules/electron`.
 - **The Linux app icon is two mechanisms, and packaging supplies one.** The
   single `icon:` in `electron-builder.yml` is the whole story on Windows (it is
   compiled into the `.exe`) and macOS (it is the `.icns` in the bundle), which
