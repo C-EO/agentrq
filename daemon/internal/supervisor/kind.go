@@ -158,7 +158,7 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		// launch that looks like it worked for about a second.
 		return Command{
 			Argv: []string{
-				"npx", "@agentrq/acp-gateway@latest",
+				"npx", "-y", "@agentrq/acp-gateway@latest",
 				"--model", p.Model,
 				"--agent", p.Agent,
 			},

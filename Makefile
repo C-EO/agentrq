@@ -4,7 +4,7 @@ remote-claude:
 	claude --name agentrq-code --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
 
 remote-agy:
-	npx @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp
+	npx -y @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp
 
 # Default command to start everything in development mode
 dev:
