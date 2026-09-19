@@ -142,3 +142,27 @@ export function attachmentUrlsForWorkspace(urls, workspaceId) {
     (url) => String(url).includes(needle) && isAttachmentRequest(String(url))
   );
 }
+
+/**
+ * Re-insert a served entry so it becomes the newest one in the cache.
+ *
+ * A single `put` is the whole operation: Cache Storage removes the matching
+ * record and appends the new one, which is what keeps insertion order a recency
+ * list. The delete this used to do first bought nothing and could lose the
+ * bytes, because a `put` that fails on quota left no entry behind.
+ *
+ * The cache is opened from `cacheName` rather than taken from the caller:
+ * Workbox's `cachedResponseWillBeUsed` carries no cache, so reaching for one
+ * threw on every cache hit, and `CacheFirst` does not guard its cache read — an
+ * attachment that had loaded once then never loaded again. Failures are
+ * swallowed for the same reason: a recency hint must not cost a served file.
+ */
+export async function touchCacheEntry({ cacheName, request, response, storage = globalThis.caches }) {
+  try {
+    const cache = await storage.open(cacheName);
+    await cache.put(request, response);
+    return true;
+  } catch {
+    return false;
+  }
+}

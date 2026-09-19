@@ -1,7 +1,7 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 import {
   DESKTOP_BUDGET_BYTES,
@@ -14,6 +14,7 @@ import {
   isAttachmentRequest,
   isCacheableApiRead,
   isTaskRead,
+  touchCacheEntry,
   withinSizeCap,
 } from '../src/composables/useAttachmentCache'
 
@@ -200,5 +201,52 @@ describe('attachmentUrlsForWorkspace', () => {
     expect(attachmentUrlsForWorkspace(['x'], '')).toEqual([])
     expect(attachmentUrlsForWorkspace(null, 'ws1')).toEqual([])
     expect(attachmentUrlsForWorkspace(undefined, 'ws1')).toEqual([])
+  })
+})
+
+describe('touchCacheEntry', () => {
+  // The bug this replaced: Workbox's cachedResponseWillBeUsed carries a
+  // cacheName and no cache, so reaching for one threw on every cache hit --
+  // and CacheFirst does not guard its cache read, so an attachment that had
+  // loaded once never loaded again.
+  const fakeStorage = (cache) => ({ open: vi.fn().mockResolvedValue(cache) })
+
+  it('re-inserts the entry under the name it was given', async () => {
+    const cache = { put: vi.fn().mockResolvedValue(undefined), delete: vi.fn() }
+    const storage = fakeStorage(cache)
+    const request = new Request('https://x/api/v1/workspaces/ws1/tasks/t1/attachments/a1')
+    const response = new Response('bytes')
+
+    expect(await touchCacheEntry({ cacheName: 'attachment-cache', request, response, storage })).toBe(true)
+    expect(storage.open).toHaveBeenCalledWith('attachment-cache')
+    expect(cache.put).toHaveBeenCalledWith(request, response)
+    // A put already removes the matching record and appends the new one, so the
+    // delete that used to come first bought nothing and could lose the bytes.
+    expect(cache.delete).not.toHaveBeenCalled()
+  })
+
+  it('serves the attachment anyway when the cache cannot be opened', async () => {
+    const storage = { open: vi.fn().mockRejectedValue(new Error('no storage')) }
+    await expect(touchCacheEntry({ cacheName: 'attachment-cache', request: 'r', response: 'x', storage })).resolves.toBe(false)
+  })
+
+  it('serves the attachment anyway when the re-insert fails', async () => {
+    // Quota, most likely. A recency hint must never cost a served file.
+    const cache = { put: vi.fn().mockRejectedValue(new Error('QuotaExceededError')) }
+    await expect(
+      touchCacheEntry({ cacheName: 'attachment-cache', request: 'r', response: 'x', storage: fakeStorage(cache) })
+    ).resolves.toBe(false)
+  })
+
+  it('falls back to the worker\'s own caches when none is passed', async () => {
+    const cache = { put: vi.fn().mockResolvedValue(undefined) }
+    const caches = fakeStorage(cache)
+    vi.stubGlobal('caches', caches)
+    try {
+      expect(await touchCacheEntry({ cacheName: 'attachment-cache', request: 'r', response: 'x' })).toBe(true)
+      expect(caches.open).toHaveBeenCalledWith('attachment-cache')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
