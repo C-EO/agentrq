@@ -534,11 +534,10 @@ async function stopSession(id) {
           </div>
         </div>
 
-        <!-- Settings.
-             Laid out the way workspace settings is: a labelled field card per
-             thing that can be changed, and the one irreversible action in its
-             own danger zone rather than a row that looks like the harmless
-             one above it.
+        <!-- Settings: one row instead of a stack, with the danger zone kept
+             visually distinct (red, its own background) so sitting beside the
+             harmless setting does not make it read as just another neutral
+             option.
 
              The name is not one of them: it is set when the daemon enrols
              (`agentrqd enroll --name`, defaulting to the hostname), and a
@@ -547,49 +546,51 @@ async function stopSession(id) {
         <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-6">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Settings</h2>
 
-          <div class="space-y-2">
-            <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
-              Availability
-            </p>
-            <div
-              class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
-            >
-              <div class="min-w-0">
-                <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
-                  {{ machine.enabled ? 'Enabled' : 'Disabled' }}
-                </p>
-                <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
-                  Disabling closes this machine's connection immediately and refuses the next one.
-                </p>
-              </div>
-              <button
-                :disabled="busy"
-                @click="toggleEnabled"
-                class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-2">
+              <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
+                Availability
+              </p>
+              <div
+                class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
               >
-                {{ machine.enabled ? 'Disable' : 'Enable' }}
-              </button>
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+                    {{ machine.enabled ? 'Enabled' : 'Disabled' }}
+                  </p>
+                  <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                    Disabling closes this machine's connection immediately and refuses the next one.
+                  </p>
+                </div>
+                <button
+                  :disabled="busy"
+                  @click="toggleEnabled"
+                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {{ machine.enabled ? 'Disable' : 'Enable' }}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div class="space-y-2">
-            <p class="block text-[10px] font-black uppercase tracking-widest text-red-400 dark:text-red-500 ml-1">
-              Danger Zone
-            </p>
-            <div
-              class="flex items-center justify-between gap-4 p-4 bg-red-50/40 dark:bg-red-500/5 border border-red-100 dark:border-red-900/30 rounded-lg"
-            >
-              <div class="min-w-0">
-                <p class="text-sm font-bold text-red-600 dark:text-red-500">Delete this machine</p>
-                <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-0.5">{{ deleteText }}</p>
-              </div>
-              <button
-                :disabled="busy"
-                @click="showDelete = true"
-                class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-all active:scale-95 disabled:opacity-50"
+            <div class="space-y-2">
+              <p class="block text-[10px] font-black uppercase tracking-widest text-red-400 dark:text-red-500 ml-1">
+                Danger Zone
+              </p>
+              <div
+                class="flex items-center justify-between gap-4 p-4 bg-red-50/40 dark:bg-red-500/5 border border-red-100 dark:border-red-900/30 rounded-lg"
               >
-                Delete
-              </button>
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-red-600 dark:text-red-500">Delete this machine</p>
+                  <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-0.5">{{ deleteText }}</p>
+                </div>
+                <button
+                  :disabled="busy"
+                  @click="showDelete = true"
+                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
         </div>
