@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1179,12 +1180,38 @@ type sessionLookup struct {
 	tokens auth.TokenService
 }
 
-func (l sessionLookup) LookupSession(r *http.Request, sessionID uint64) (machine.Attachment, error) {
+// viewerClaims says who is asking, by whichever of the two credentials the
+// socket accepts.
+//
+// A ticket is preferred because it is the one that always works. The cookie
+// only reaches this endpoint from a page on the server's own origin: the
+// desktop app's page is served from app://, Electron's handler forwards HTTP
+// but not WebSocket upgrades, so the socket URL there is necessarily absolute
+// and its upgrade is cross-site — and a browser withholds a SameSite=Lax
+// cookie from a cross-site request. That is why the desktop terminal sat on
+// "connecting" and the browser's worked.
+//
+// The cookie stays accepted rather than being replaced. It is the same
+// authorisation either way, it costs nothing to keep, and dropping it would
+// mean a page loaded before a deploy loses its terminal on the next reconnect
+// for no reason anybody could see.
+func (l sessionLookup) viewerClaims(r *http.Request, sessionID uint64) (*auth.Claims, error) {
+	if ticket := r.URL.Query().Get("ticket"); ticket != "" {
+		// Bound to this session, not merely to this person. A ticket is a
+		// bearer credential in a URL, so the narrowest scope that still works
+		// is the right one.
+		return l.tokens.ValidateTerminalTicket(ticket, strconv.FormatUint(sessionID, 10))
+	}
+
 	cookie, err := r.Cookie("at")
 	if err != nil {
-		return machine.Attachment{}, err
+		return nil, err
 	}
-	claims, err := l.tokens.ValidateToken(cookie.Value)
+	return l.tokens.ValidateToken(cookie.Value)
+}
+
+func (l sessionLookup) LookupSession(r *http.Request, sessionID uint64) (machine.Attachment, error) {
+	claims, err := l.viewerClaims(r, sessionID)
 	if err != nil {
 		return machine.Attachment{}, err
 	}

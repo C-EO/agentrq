@@ -36,6 +36,12 @@ func (authorizeTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (
 func (authorizeTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
 	return "code-token", nil
 }
+func (authorizeTokenSvc) CreateTerminalTicket(userID, sessionID string) (string, error) {
+	return "", nil
+}
+func (authorizeTokenSvc) ValidateTerminalTicket(tokenStr, sessionID string) (*auth.Claims, error) {
+	return nil, nil
+}
 func (authorizeTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
 	return "", nil
 }

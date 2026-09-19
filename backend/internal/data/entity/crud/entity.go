@@ -1550,6 +1550,19 @@ type (
 		Restored bool
 	}
 
+	// TerminalTicketResponse is the credential a page presents when it opens
+	// a session's terminal socket.
+	//
+	// `expiresIn` is seconds, and is here so the caller does not have to know
+	// the server's policy to know whether what it is holding is still worth
+	// sending. Nothing caches a ticket today — every connection attempt asks
+	// for a new one — and that is what keeps the lifetime short enough to
+	// travel in a URL.
+	TerminalTicketResponse struct {
+		Ticket    string `json:"ticket"`
+		ExpiresIn int    `json:"expiresIn"`
+	}
+
 	ListSessionsRequest struct {
 		UserID    string
 		MachineID string

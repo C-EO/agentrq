@@ -44,6 +44,14 @@ func (m *mockTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string,
 	return m.validCode, nil
 }
 
+func (m *mockTokenSvc) CreateTerminalTicket(userID, sessionID string) (string, error) {
+	return "mocked-ticket-" + userID + "-" + sessionID, nil
+}
+
+func (m *mockTokenSvc) ValidateTerminalTicket(tokenStr, sessionID string) (*auth.Claims, error) {
+	return nil, jwt.ErrSignatureInvalid
+}
+
 func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	m.validToken = "mocked-mcp-" + userID + "-" + workspaceID + "-" + tokenType
 	return m.validToken, nil

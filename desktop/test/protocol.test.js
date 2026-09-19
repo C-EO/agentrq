@@ -12,6 +12,7 @@ import {
   filterRequestHeaders,
   filterResponseHeaders,
   buildCSP,
+  webSocketOrigin,
   mimeTypeFor,
   createAppProtocolHandler,
 } from '../src/main/protocol.js'
@@ -237,6 +238,70 @@ describe('buildCSP', () => {
     expect(csp).toContain('http://localhost:5174')
     expect(csp).toContain('ws://localhost:*')
   })
+
+  // The bug this was written for: the terminal is the one thing the renderer
+  // opens that is not proxied through this handler, because Electron does not
+  // intercept WebSocket upgrades. `connect-src 'self'` means the app:// origin
+  // and refused it, the constructor threw, and the panel sat on "Connecting"
+  // forever with nothing to show for it.
+  it('allows a WebSocket to the configured server', () => {
+    const connect = buildCSP({ serverUrl: 'https://agentrq.example' })
+      .split('; ')
+      .find((d) => d.startsWith('connect-src'))
+    expect(connect).toContain('wss://agentrq.example')
+  })
+
+  it('allows one in dev too, without dropping the Vite client', () => {
+    const connect = buildCSP({ dev: true, devServerUrl: 'http://localhost:5174', serverUrl: 'http://localhost:3000' })
+      .split('; ')
+      .find((d) => d.startsWith('connect-src'))
+    expect(connect).toContain('ws://localhost:3000')
+    expect(connect).toContain('ws://localhost:*')
+    expect(connect).toContain('http://localhost:5174')
+  })
+
+  // Only the socket, and only that host. The server's https origin has no
+  // business in connect-src: nothing in the renderer addresses it directly,
+  // and putting it there would quietly undo the same-origin illusion the
+  // app:// proxy exists to maintain.
+  it('does not also allow ordinary requests to the server', () => {
+    const connect = buildCSP({ serverUrl: 'https://agentrq.example' })
+      .split('; ')
+      .find((d) => d.startsWith('connect-src'))
+    expect(connect).not.toContain('https://agentrq.example')
+  })
+
+  // Before the connection screen is answered there is no server, and the
+  // policy still has to be a valid one.
+  it('is still a well-formed policy with no server configured', () => {
+    for (const serverUrl of ['', 'not a url', 'ftp://nope/']) {
+      const csp = buildCSP({ serverUrl })
+      expect(csp).toContain(`connect-src 'self'`)
+      // A trailing or doubled separator is what a naive concatenation leaves
+      // behind, and Chromium discards a directive it cannot parse.
+      expect(csp).not.toMatch(/;\s*;/)
+      expect(csp).not.toMatch(/;\s*$/)
+      expect(csp).not.toContain('  ')
+    }
+  })
+})
+
+describe('webSocketOrigin', () => {
+  it('is the ws form of the server origin, and nothing else from the URL', () => {
+    expect(webSocketOrigin('https://agentrq.example/base/path?q=1')).toBe('wss://agentrq.example')
+    expect(webSocketOrigin('http://localhost:3000/')).toBe('ws://localhost:3000')
+    // The port is part of the origin, and dropping it addresses a different
+    // server that is usually not there at all.
+    expect(webSocketOrigin('https://agentrq.example:8443')).toBe('wss://agentrq.example:8443')
+  })
+
+  it('answers nothing for anything that is not a server address', () => {
+    // Half-typed input from the connection screen reaches this, and a broken
+    // source makes Chromium reject the whole directive.
+    for (const bad of ['', null, undefined, 'not a url', 'ftp://files/', 'app://bundle/index.html']) {
+      expect(webSocketOrigin(bad)).toBe('')
+    }
+  })
 })
 
 describe('mimeTypeFor', () => {
@@ -254,6 +319,53 @@ describe('mimeTypeFor', () => {
     expect(mimeTypeFor('/noextension')).toBe('application/octet-stream')
     expect(mimeTypeFor('/v1.2/board')).toBe('application/octet-stream')
     expect(mimeTypeFor('/archive.zip')).toBe('application/octet-stream')
+  })
+})
+
+describe('createAppProtocolHandler — the served policy', () => {
+  /** The index page, with whatever server the shell currently reports. */
+  async function policyFor(serverUrl) {
+    const handler = createAppProtocolHandler({
+      serverUrl,
+      netFetch: vi.fn(async () => new Response('upstream', { status: 200 })),
+      fileExists: async () => false,
+      readFile: async () => new TextEncoder().encode('<html></html>'),
+    })
+    const res = await handler(makeRequest('app://agentrq/'))
+    return res.headers.get('content-security-policy')
+  }
+
+  it('names the configured server, so the terminal socket can be opened', async () => {
+    expect(await policyFor(() => 'https://agentrq.example')).toContain('wss://agentrq.example')
+  })
+
+  // Built per request rather than at startup, because the server is not fixed:
+  // switching profile or answering the connection screen changes it, and a
+  // policy captured once would still name the previous server — so the
+  // terminal would work until somebody switched, and then not, which is a far
+  // worse bug than it never working.
+  it('follows the server changing under a running app', async () => {
+    let server = 'https://first.example'
+    const handler = createAppProtocolHandler({
+      serverUrl: () => server,
+      netFetch: vi.fn(async () => new Response('upstream', { status: 200 })),
+      fileExists: async () => false,
+      readFile: async () => new TextEncoder().encode('<html></html>'),
+    })
+
+    const before = await handler(makeRequest('app://agentrq/'))
+    expect(before.headers.get('content-security-policy')).toContain('wss://first.example')
+
+    server = 'https://second.example'
+    const after = await handler(makeRequest('app://agentrq/'))
+    expect(after.headers.get('content-security-policy')).toContain('wss://second.example')
+    expect(after.headers.get('content-security-policy')).not.toContain('first.example')
+  })
+
+  it('serves a valid policy before any server is configured', async () => {
+    const csp = await policyFor(() => '')
+    expect(csp).toContain(`connect-src 'self'`)
+    expect(csp).not.toMatch(/;\s*;/)
   })
 })
 

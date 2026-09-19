@@ -21,6 +21,9 @@ pseudo-terminals, and streams them to the browser.
   oversight: Electron's custom-protocol handler forwards `/api` but does not
   intercept WebSockets, so a relative URL would resolve to `app://` and never
   open. Both ask the shell where the server is. Nothing else should.
+- **The socket authenticates with a ticket, not the `at` cookie**, and the
+  section below says why. A ticket lasts a minute, so it is fetched per
+  connection attempt and never cached.
 - **Terminal input is exempt from the WebMCP parity rule on purpose**, with the
   reason written into the exemption in `frontend/test/webmcpTools.test.js`:
   raw keystroke access to a remote shell is a materially different grant from
@@ -146,6 +149,59 @@ for the same reason, and `daemonInstall.test.js` still enforces it here.
 
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.
+
+## The terminal socket cannot use the cookie, and that is what broke the desktop app
+
+For its whole life before this was fixed, the desktop terminal said
+"Connecting" and stopped. The browser's worked. Two separate things made that
+happen, and neither of them is visible anywhere near the terminal code.
+
+**The policy refused the socket.** `buildCSP` in `desktop/src/main/protocol.js`
+emitted `connect-src 'self' <model hosts>`, and `'self'` is the `app://`
+origin. The socket is deliberately addressed absolutely, at the configured
+server — so Chromium refused it. The way it refuses is the part worth
+remembering: `new WebSocket()` **throws**, synchronously, rather than opening a
+socket that then fails. So the policy now carries the configured server's
+ws/wss origin, built per request because the server changes when somebody
+switches profile — a policy captured at startup would work until the first
+switch and then not, which is harder to diagnose than never working. Only the
+socket origin goes in, never the server's `https` origin: nothing in the
+renderer may address the server directly, and that is the whole point of the
+`app://` proxy.
+
+**Behind that, there was no credential.** The `at` cookie is `SameSite=Lax`, so
+a browser withholds it from a cross-site request — which is what a WebSocket
+from an `app://` page to the server is. Every other call escapes this by being
+relative and getting forwarded by the main process, where the cookie jar lives;
+this one cannot be forwarded at all. So the socket takes a **ticket**: a
+one-minute JWT from `POST /api/v1/sessions/:id/terminal/ticket`, a perfectly
+ordinary cookie-authenticated route that *is* forwarded like everything else.
+
+Three things about the ticket are decisions rather than details:
+
+- **Its audience carries the session id as well as a `terminal_ticket`
+  marker.** Without the marker the `at` token itself would satisfy the check,
+  and a credential that belongs in a cookie would also work in a URL — where
+  proxies log it. Without the id, one ticket would open every terminal its
+  holder can reach for as long as it lived.
+- **A ticket that is present and bad is refused, not retried as a cookie.**
+  Falling back would make every refusal above mean "try the other credential".
+- **The cookie is still accepted.** It is the same authorisation either way,
+  and dropping it would cost a page loaded before a deploy its terminal on the
+  next reconnect, for no reason anybody could see.
+
+The consequence for `useTerminalSession`: `connect` is **awaited**, and is
+called again for every attempt. A URL computed once and kept would be refused
+by every reconnect after the first minute — a terminal left open all afternoon
+that silently stops recovering, which is worse than the bug this replaced.
+
+**The general lesson, which cost more than either fix.** `open()` set the
+status to `connecting` and *then* called `connect()`. When that threw, no
+handler had been attached yet and nothing was left to set the status again — so
+the panel sat on "Connecting" forever and the real reason went on the floor
+inside an async `onMounted`. A state that is entered before the thing that
+could fail, with no handler for the failure, is a hang rather than an error.
+`connect` failing is now a reason on screen and a backed-off retry.
 
 ## A viewer names no session, and must not
 

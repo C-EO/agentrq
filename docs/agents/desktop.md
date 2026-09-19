@@ -26,6 +26,14 @@ Consequences worth knowing before changing anything here:
   with no cookie.
 - **Never relax backend CORS to accommodate the desktop app.** It does not need
   it, and doing so widens the attack surface of every deployment.
+- **The proxy does not carry WebSockets, and the CSP has to know.** Electron's
+  handler intercepts HTTP and not upgrades, so the one socket the app opens —
+  the terminal — is addressed absolutely and needs the server's ws/wss origin
+  in `connect-src`. `'self'` refuses it, and Chromium refuses it by making the
+  `WebSocket` constructor *throw*, so nothing connects and nothing reports why.
+  That is the whole story of the desktop terminal never working; see
+  [the daemon note](machines-and-daemon.md). Anything else the renderer needs
+  to reach still belongs behind the proxy, not in the policy.
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.

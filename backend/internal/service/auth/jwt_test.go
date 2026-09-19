@@ -298,3 +298,83 @@ func TestRefreshTokens(t *testing.T) {
 		}
 	})
 }
+
+// A terminal ticket is a bearer credential that travels in a URL query
+// string, so what it is *not* valid for is the whole design.
+func TestTerminalTicket(t *testing.T) {
+	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+
+	ticket, err := svc.CreateTerminalTicket("user-1", "500")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claims, err := svc.ValidateTerminalTicket(ticket, "500")
+	if err != nil {
+		t.Fatalf("a freshly minted ticket was refused: %v", err)
+	}
+	if claims.Subject != "user-1" {
+		t.Errorf("subject = %q, want the person it was minted for", claims.Subject)
+	}
+
+	t.Run("not for another session", func(t *testing.T) {
+		// Without this the ticket would be "any terminal this person can
+		// reach", for as long as it lives, rather than the one they asked for.
+		if _, err := svc.ValidateTerminalTicket(ticket, "501"); err == nil {
+			t.Fatal("a ticket minted for session 500 opened 501")
+		}
+	})
+
+	t.Run("no session named", func(t *testing.T) {
+		// A caller with no session id must not be able to skip the check by
+		// passing nothing. "" is in no audience, but relying on that would
+		// make this depend on how the audience list happens to be built.
+		if _, err := svc.ValidateTerminalTicket(ticket, ""); err == nil {
+			t.Fatal("a ticket validated against no session at all")
+		}
+	})
+
+	t.Run("an access token is not a ticket", func(t *testing.T) {
+		// The reason the marker audience exists. The `at` cookie is good for
+		// 24 hours and for everything; if it satisfied this check, a
+		// credential that belongs in a cookie would also work in a URL — and
+		// URLs are logged by proxies and kept in shell history.
+		at, err := svc.CreateToken("user-1", "a@b.c", "A", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ValidateTerminalTicket(at, "500"); err == nil {
+			t.Fatal("an access token was accepted as a terminal ticket")
+		}
+	})
+
+	t.Run("an MCP token for the session's number is not a ticket", func(t *testing.T) {
+		// Audiences are a flat list, and an MCP token's audience is an id. A
+		// check that only looked for the session id in the audience would
+		// accept this — the marker is what separates the two.
+		mcp, err := svc.CreateMCPToken("user-1", "500", "access")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ValidateTerminalTicket(mcp, "500"); err == nil {
+			t.Fatal("an MCP token was accepted as a terminal ticket")
+		}
+	})
+
+	t.Run("another server's ticket", func(t *testing.T) {
+		theirs, err := other.CreateTerminalTicket("user-1", "500")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ValidateTerminalTicket(theirs, "500"); err == nil {
+			t.Fatal("a ticket signed with another secret was accepted")
+		}
+	})
+
+	t.Run("nonsense", func(t *testing.T) {
+		if _, err := svc.ValidateTerminalTicket("not-a-token", "500"); err == nil {
+			t.Fatal("expected a refusal")
+		}
+	})
+}

@@ -23,7 +23,28 @@ const (
 	// for one workspace, this one stands for a signed-in person, and a token
 	// minted for either must never satisfy the other's check.
 	RefreshHumanAudience = "refresh:human"
+
+	// TerminalTicketAudience marks a credential minted for one terminal
+	// socket, and nothing else.
+	//
+	// The terminal WebSocket cannot authenticate the way the rest of the API
+	// does. Every other call is a same-origin relative URL carrying the `at`
+	// cookie; the socket is necessarily an absolute URL, because Electron's
+	// app:// handler forwards HTTP and not WebSocket upgrades — so on the
+	// desktop app it is a cross-site request, and a SameSite=Lax cookie is
+	// withheld from it by the browser. A ticket is a credential the page can
+	// hold and present explicitly, which works from either build.
+	TerminalTicketAudience = "terminal_ticket"
 )
+
+// TerminalTicketTTL is how long a terminal ticket is worth presenting.
+//
+// Short, because it travels in a URL query string: it is minted immediately
+// before a socket is opened and has no other use. A reconnect mints another
+// rather than replaying this one, which is what lets the lifetime be this
+// short — see `useTerminalSession.js`, where every connection attempt calls
+// back for a fresh URL.
+const TerminalTicketTTL = time.Minute
 
 // RefreshTokenTTL is how long a session survives without being used at all.
 //
@@ -69,6 +90,8 @@ type TokenService interface {
 	ValidateRefreshToken(tokenStr string) (*Claims, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
+	CreateTerminalTicket(userID, sessionID string) (string, error)
+	ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error)
 	CreateOAuthStateToken(redirectURL, provider string) (string, error)
 	CreateClientRegistrationToken(redirectURIs []string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
@@ -239,6 +262,51 @@ func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string,
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
+}
+
+// CreateTerminalTicket mints the credential a browser presents when it opens
+// a session's terminal socket.
+//
+// Scoped to one session as well as one person: the audience carries the
+// session id, so a ticket for a terminal somebody may watch cannot be replayed
+// against a different one. `sessionID` is the numeric form, because that is
+// what the socket handler has in its hand — it is given a uint64 by the router
+// and never sees the base62 spelling.
+func (s *tokenService) CreateTerminalTicket(userID, sessionID string) (string, error) {
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(TerminalTicketTTL)),
+			Audience:  jwt.ClaimStrings{sessionID, TerminalTicketAudience},
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// ValidateTerminalTicket accepts only a ticket minted by CreateTerminalTicket
+// for this exact session.
+//
+// Both audience checks are load-bearing and for different reasons. Without the
+// marker, the 24-hour `at` access token would satisfy this too, and a
+// credential that belongs in a cookie would become one that works in a URL —
+// so it could be logged by a proxy, land in somebody's shell history and still
+// open every terminal on the account. Without the session id, one ticket would
+// open any session its holder can reach, for a full minute after it was minted
+// for one of them.
+func (s *tokenService) ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if !HasAudience(claims, TerminalTicketAudience) {
+		return nil, errors.New("not a terminal ticket")
+	}
+	if sessionID == "" || !HasAudience(claims, sessionID) {
+		return nil, errors.New("terminal ticket is for another session")
+	}
+	return claims, nil
 }
 
 func (s *tokenService) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
