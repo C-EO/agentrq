@@ -173,3 +173,28 @@ describe('MachineDetailView: the session cards', () => {
     }
   })
 })
+
+// Two things the page's layout promises, both invisible to a unit test of the
+// composables: what it leads with, and what it no longer offers.
+describe('MachineDetailView: the shape of the page', () => {
+  it("offers no way to rename the machine: the name is the daemon's", async () => {
+    const { el } = await mount()
+    expect(el.querySelector('#machine-name')).toBe(null)
+    const labels = [...el.querySelectorAll('button')].map((b) => b.textContent.trim())
+    expect(labels).not.toContain('Rename')
+    // The settings card itself is still there, or this would pass by
+    // rendering nothing at all.
+    expect([...el.querySelectorAll('h2')].map((h) => h.textContent.trim())).toContain('Settings')
+  })
+
+  it('lists the sessions already running before the form that starts another', async () => {
+    const { el } = await mount()
+    const headings = [...el.querySelectorAll('h2')].map((h) => h.textContent.trim())
+    const sessions = headings.findIndex((t) => t.startsWith('Sessions'))
+    const launch = headings.indexOf('Run an agent here')
+
+    expect(sessions).toBeGreaterThanOrEqual(0)
+    expect(launch).toBeGreaterThanOrEqual(0)
+    expect(sessions).toBeLessThan(launch)
+  })
+})
