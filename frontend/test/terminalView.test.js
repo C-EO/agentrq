@@ -143,6 +143,45 @@ describe('loading the session', () => {
     expect(h.v.ended.value).toBe(true)
   })
 
+  // A refused launch is deleted the instant it fails, so this page's own read
+  // races a 404 against the event carrying the reason. The read used to win
+  // and replace "failed to start: <reason>" with the generic text.
+  it('keeps the reason the stream reported when its own read finds nothing', async () => {
+    let settle
+    const h = harness({
+      getSession: vi.fn().mockReturnValue(new Promise((_, reject) => (settle = reject))),
+    })
+    const loading = h.v.load()
+
+    h.v.handleEvent({
+      type: 'session.updated',
+      payload: { id: 's1', status: 'failed', error: 'too many sessions running' },
+    })
+    settle(new Error('404'))
+    await loading
+
+    expect(h.v.ended.value).toBe(true)
+    expect(endedReason(h.v.session.value)).toBe('This agent failed to start: too many sessions running')
+  })
+
+  // Same race, the other way the read can come back empty.
+  it('keeps it when the read resolves to no session at all', async () => {
+    let settle
+    const h = harness({
+      getSession: vi.fn().mockReturnValue(new Promise((resolve) => (settle = resolve))),
+    })
+    const loading = h.v.load()
+
+    h.v.handleEvent({
+      type: 'session.updated',
+      payload: { id: 's1', status: 'failed', error: 'no such directory: /srv/gone' },
+    })
+    settle(null)
+    await loading
+
+    expect(endedReason(h.v.session.value)).toBe('This agent failed to start: no such directory: /srv/gone')
+  })
+
   // Before the first load there is nothing to say, and claiming "ended" would
   // flash the wrong thing on every page open.
   it('says nothing has ended while it is still loading', () => {

@@ -739,7 +739,7 @@ func TestCapacityRefusalCountsOnlyLiveSessions(t *testing.T) {
 	if !errors.Is(err, ErrAtCapacity) {
 		t.Fatalf("error = %v, want ErrAtCapacity", err)
 	}
-	if want := "2 running for profile"; !strings.Contains(err.Error(), want) {
+	if want := `2 already running for profile "work", and the limit is 2`; !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to say %q", err, want)
 	}
 }

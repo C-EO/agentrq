@@ -39,7 +39,12 @@ machine with its keystrokes and output travelling both ways.
 ```sh
 agentrqd serve            # every enrolled profile
 agentrqd serve --profile work --verbose
+agentrqd serve --max-per-profile 4 --max-per-machine 8
 ```
+
+The caps default to 8 agents per account and 16 on the machine, and `0` means
+no limit. They count what is *running*: a session that has finished does not
+hold a slot.
 
 It connects each profile and stays connected, retrying with a jittered backoff
 that starts at half a second and caps at a minute. Two things it deliberately

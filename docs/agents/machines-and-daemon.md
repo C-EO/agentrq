@@ -34,7 +34,13 @@ pseudo-terminals, and streams them to the browser.
   finished session stays in the supervisor's map so its exit can still be
   reported and `Forget` is never called, so counting the map refused new agents
   on a machine running none. Skip terminal states, as `Running`, `Live` and
-  `Dirs` already do.
+  `Dirs` already do. The numbers themselves are `--max-per-profile` and
+  `--max-per-machine`, defaulting to the constants in `serve.go`.
+- **A refused launch is only ever explained by the event.** The session row is
+  deleted the instant it fails, so `session.updated` carries the reason and
+  nothing else does — the terminal page it navigated to has nothing left to
+  read. `useStreamToasts` is what puts it on screen; drop `payload.error` there
+  and the reason exists only in that machine's daemon log.
 - Machine and session events ride the **user's global** stream
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.

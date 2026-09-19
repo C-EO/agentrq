@@ -266,11 +266,16 @@ func (s *Supervisor) checkCapacityLocked(profile string) error {
 			forProfile++
 		}
 	}
+	// The limit is named as well as the count. The reason reaches a person, in
+	// a toast that is the only place they will see it, and "8 running" without
+	// "the limit is 8" reads as a fact rather than as something to act on.
 	if s.wholeMachine > 0 && machine >= s.wholeMachine {
-		return fmt.Errorf("%w: %d running on this machine", ErrAtCapacity, machine)
+		return fmt.Errorf("%w: %d already running on this machine, and the limit is %d",
+			ErrAtCapacity, machine, s.wholeMachine)
 	}
 	if s.perProfile > 0 && forProfile >= s.perProfile {
-		return fmt.Errorf("%w: %d running for profile %q", ErrAtCapacity, forProfile, profile)
+		return fmt.Errorf("%w: %d already running for profile %q, and the limit is %d",
+			ErrAtCapacity, forProfile, profile, s.perProfile)
 	}
 	return nil
 }
