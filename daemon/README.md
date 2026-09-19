@@ -61,6 +61,20 @@ One profile that cannot start — an unreadable token, an unusable server URL �
 is skipped with an error rather than taken as a reason to refuse the others. A
 machine enrolled with two accounts should still serve the one that still works.
 
+## Stopping it
+
+Ctrl-C, `SIGTERM`, and closing the terminal it was started in all stop every
+agent on the machine first — the last of those because `agentrqd serve` is
+something people run at a terminal, and an unhandled `SIGHUP` would end the
+process with the agents still running and nothing able to reach them. Run it
+under `nohup` and the hang-up is ignored as you asked, not taken over.
+
+It logs `shutting down` with the signal that caused it before doing any of that.
+So a log that simply stops, with no such line, was **not** a stop the daemon was
+asked for: the process was destroyed outright, which on Linux usually means the
+OOM killer and otherwise means a `kill -9`. `agentrqd status` still shows what
+was running, and says the report is stale.
+
 ## Updating itself
 
 The daemon never updates on its own initiative. It reads the release feed,
