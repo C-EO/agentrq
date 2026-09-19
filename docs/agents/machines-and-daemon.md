@@ -30,6 +30,11 @@ pseudo-terminals, and streams them to the browser.
   "anything the interface can do".
 - **The attach is audited; the keystrokes are not.** A test types a password
   into a terminal and asserts it appears nowhere in the log.
+- **The session caps count what is running, not what is remembered.** A
+  finished session stays in the supervisor's map so its exit can still be
+  reported and `Forget` is never called, so counting the map refused new agents
+  on a machine running none. Skip terminal states, as `Running`, `Live` and
+  `Dirs` already do.
 - Machine and session events ride the **user's global** stream
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.

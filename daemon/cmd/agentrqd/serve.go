@@ -31,8 +31,8 @@ import (
 // cap is what stops the machine falling over. Either alone leaves the other
 // case open.
 const (
-	sessionsPerProfile = 4
-	sessionsPerMachine = 8
+	sessionsPerProfile = 8
+	sessionsPerMachine = 16
 )
 
 // dialTimeout bounds one connection attempt.
