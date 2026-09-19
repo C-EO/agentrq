@@ -17,7 +17,13 @@
  * the report that prompted them.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { useTerminalFit, usableProposal, FIT_ATTEMPTS, MIN_BOX } from '../src/composables/useTerminalFit.js'
+import {
+  useTerminalFit,
+  usableProposal,
+  refitWhenFontsLoad,
+  FIT_ATTEMPTS,
+  MIN_BOX,
+} from '../src/composables/useTerminalFit.js'
 
 /**
  * A terminal that behaves the way xterm does.
@@ -326,5 +332,107 @@ describe('the defaults', () => {
       schedule: () => 0,
     })
     expect(fitter.settle()).toBe(true)
+  })
+})
+
+/**
+ * The font-loading race.
+ *
+ * The terminal ships a webfont now, so the cell xterm measures when it opens
+ * can be the fallback's. These cover the one rule that is easy to get wrong:
+ * the faces are `load()`ed *before* `ready` is awaited, because `ready` does
+ * not wait for a font nothing has asked for.
+ */
+describe('refitWhenFontsLoad', () => {
+  /** A FontFaceSet whose `load` and `ready` are settled by the test. */
+  function fakeFonts() {
+    const asked = []
+    let release
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    return {
+      asked,
+      release: () => release(),
+      set: {
+        load: (spec) => {
+          asked.push(spec)
+          return gate
+        },
+        ready: gate,
+      },
+    }
+  }
+
+  it('asks for every face, then re-fits once they are there', async () => {
+    const fonts = fakeFonts()
+    const refit = vi.fn()
+    const remeasure = vi.fn()
+
+    const watch = refitWhenFontsLoad({
+      fonts: fonts.set,
+      specs: ['13px "JetBrains Mono"', 'bold 13px "JetBrains Mono"'],
+      refit,
+      remeasure,
+    })
+
+    // Nothing yet: the font has not arrived, so the measurement taken at open
+    // is still the best one available.
+    expect(fonts.asked).toEqual(['13px "JetBrains Mono"', 'bold 13px "JetBrains Mono"'])
+    expect(refit).not.toHaveBeenCalled()
+
+    fonts.release()
+    expect(await watch.done).toBe(true)
+    // The re-measure first, because the fit is what reads the cell it produces.
+    // The other order fits to the old cell and this file does nothing at all.
+    expect(remeasure).toHaveBeenCalledOnce()
+    expect(refit).toHaveBeenCalledOnce()
+    expect(remeasure.mock.invocationCallOrder[0]).toBeLessThan(refit.mock.invocationCallOrder[0])
+  })
+
+  it('re-fits anyway when a face fails to load', async () => {
+    const refit = vi.fn()
+    const watch = refitWhenFontsLoad({
+      fonts: { load: () => Promise.reject(new Error('offline')), ready: Promise.resolve() },
+      specs: ['13px "JetBrains Mono"'],
+      refit,
+    })
+
+    // A refused font leaves the fallback in the cell, which is what was
+    // measured at open — so the re-fit is a no-op rather than a mistake, and
+    // swallowing the rejection is cheaper than deciding which kind it was.
+    expect(await watch.done).toBe(true)
+    expect(refit).toHaveBeenCalledOnce()
+  })
+
+  it('does nothing after the terminal is gone', async () => {
+    const fonts = fakeFonts()
+    const refit = vi.fn()
+    const remeasure = vi.fn()
+
+    const watch = refitWhenFontsLoad({
+      fonts: fonts.set,
+      specs: ['13px "JetBrains Mono"'],
+      refit,
+      remeasure,
+    })
+    watch.cancel()
+    fonts.release()
+
+    // The promise outlives the component on purpose. Touching a disposed
+    // terminal throws, which is why this is a cancel and not a hope.
+    expect(await watch.done).toBe(false)
+    expect(remeasure).not.toHaveBeenCalled()
+    expect(refit).not.toHaveBeenCalled()
+  })
+
+  it('is inert where there is no font loading API', async () => {
+    const refit = vi.fn()
+    const watch = refitWhenFontsLoad({ fonts: undefined, specs: ['13px "X"'], refit })
+
+    expect(await watch.done).toBe(false)
+    expect(refit).not.toHaveBeenCalled()
+    // Cancelling one that never started is a caller's unmount, not an error.
+    expect(() => watch.cancel()).not.toThrow()
   })
 })

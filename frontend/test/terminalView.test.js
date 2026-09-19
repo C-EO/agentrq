@@ -11,6 +11,10 @@ import {
   terminalPath,
   TERMINAL_THEME,
   TERMINAL_OPTIONS,
+  TERMINAL_FONT,
+  TERMINAL_FONT_SPECS,
+  TERMINAL_FALLBACK_FAMILY,
+  remeasureCell,
 } from '../src/composables/useTerminalView.js'
 
 const RUNNING = { id: 's1', machineId: 'm1', kind: 'claude-code', status: 'running' }
@@ -344,6 +348,101 @@ describe('the terminal itself', () => {
   // like a readability setting rather than the rendering bug it was.
   it('gives a row exactly the height of its glyphs, so box drawing joins up', () => {
     expect(TERMINAL_OPTIONS.lineHeight).toBe(1)
+  })
+
+  // The point of shipping a font is that two people see the same terminal.
+  // A family named here and loaded nowhere undoes that on its own: it is used
+  // by whoever happens to have it installed and by nobody else, so a rendering
+  // report stops being reproducible. Everything after the shipped face is a
+  // generic or a platform font that needs no loading.
+  it('names no font it does not ship', () => {
+    const named = TERMINAL_OPTIONS.fontFamily
+      .split(',')
+      .map((f) => f.trim().replace(/^"|"$/g, ''))
+    expect(named[0]).toBe(TERMINAL_FONT)
+    expect(named.slice(1)).toEqual([
+      'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace',
+    ])
+  })
+
+  // Asked for by `refitWhenFontsLoad`, which is what closes the race between
+  // the cell xterm measures at open and the face that arrives after it. A spec
+  // for a size the terminal does not use would wait on the wrong face.
+  it('asks for both faces at the size the terminal renders', () => {
+    expect(TERMINAL_FONT_SPECS).toEqual([
+      `${TERMINAL_OPTIONS.fontSize}px "${TERMINAL_FONT}"`,
+      `bold ${TERMINAL_OPTIONS.fontSize}px "${TERMINAL_FONT}"`,
+    ])
+  })
+})
+
+/**
+ * The bit that looks unnecessary and is the whole fix.
+ *
+ * xterm caches the character cell it measured when the terminal opened and
+ * re-measures for nothing less than a *changed* `fontFamily` or `fontSize`. Its
+ * options service drops an assignment equal to the current value, so the
+ * obvious `term.options.fontFamily = term.options.fontFamily` is silently
+ * nothing, the fit that follows divides the box by the stale cell, and the
+ * terminal keeps the columns it measured against the fallback.
+ */
+describe('remeasureCell', () => {
+  /** A terminal whose options behave the way xterm's really do. */
+  function fakeTerm(fontFamily = TERMINAL_OPTIONS.fontFamily) {
+    const seen = []
+    return {
+      cleared: 0,
+      options: {
+        get fontFamily() {
+          return fontFamily
+        },
+        set fontFamily(v) {
+          // The rule this function exists to work around.
+          if (v === fontFamily) return
+          fontFamily = v
+          seen.push(v)
+        },
+      },
+      clearTextureAtlas() {
+        this.cleared += 1
+      },
+      seen,
+    }
+  }
+
+  it('moves the stack off the shipped face and back, so the cell is measured again', () => {
+    const term = fakeTerm()
+
+    expect(remeasureCell(term)).toBe(true)
+    expect(term.seen).toEqual([TERMINAL_FALLBACK_FAMILY, TERMINAL_OPTIONS.fontFamily])
+    // Ends where it started: the poke is a means, not a change.
+    expect(term.options.fontFamily).toBe(TERMINAL_OPTIONS.fontFamily)
+    expect(term.cleared).toBe(1)
+  })
+
+  it('says so when there is nothing to move it off', () => {
+    const term = fakeTerm(TERMINAL_FALLBACK_FAMILY)
+
+    // Both assignments would equal the current value, so xterm would drop both
+    // and no cell would be measured. Reporting that beats pretending.
+    expect(remeasureCell(term)).toBe(false)
+    expect(term.seen).toEqual([])
+    expect(term.cleared).toBe(0)
+  })
+
+  it('does nothing to a terminal that is not there', () => {
+    // The font can land after unmount; this is the second guard behind that.
+    expect(remeasureCell(null)).toBe(false)
+  })
+
+  it('does not need a renderer that has an atlas', () => {
+    // No renderer addon is loaded today, so this is xterm's own no-op — but a
+    // fake terminal without it must not take the re-measure down with it.
+    const term = fakeTerm()
+    delete term.clearTextureAtlas
+
+    expect(remeasureCell(term)).toBe(true)
+    expect(term.seen).toEqual([TERMINAL_FALLBACK_FAMILY, TERMINAL_OPTIONS.fontFamily])
   })
 })
 

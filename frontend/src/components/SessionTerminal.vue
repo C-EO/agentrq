@@ -44,8 +44,13 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalSession, VIEWER_SESSION } from '../composables/useTerminalSession'
-import { useTerminalFit } from '../composables/useTerminalFit'
-import { TERMINAL_OPTIONS, TERMINAL_THEME } from '../composables/useTerminalView'
+import { useTerminalFit, refitWhenFontsLoad } from '../composables/useTerminalFit'
+import {
+  TERMINAL_OPTIONS,
+  TERMINAL_THEME,
+  TERMINAL_FONT_SPECS,
+  remeasureCell,
+} from '../composables/useTerminalView'
 import { terminalSocketUrl } from '../api'
 
 const props = defineProps({
@@ -63,6 +68,7 @@ let fit = null
 let session = null
 let observer = null
 let fitter = null
+let fontWatch = null
 
 /** Ask for a fit. Safe before the fitter exists, which the observer can be. */
 const refit = () => fitter?.request()
@@ -96,6 +102,19 @@ onMounted(async () => {
   // Synchronously where it can be, so the size sent below is a measurement
   // rather than xterm's default.
   fitter.settle()
+
+  // ...but that measurement is of whatever face was resolved *now*, and the
+  // terminal's own font is a webfont that may still be in flight. One re-fit
+  // when it lands; see `refitWhenFontsLoad` for why `document.fonts.ready` on
+  // its own does not do this.
+  fontWatch = refitWhenFontsLoad({
+    fonts: document.fonts,
+    specs: TERMINAL_FONT_SPECS,
+    // A fit alone would return the columns it already had: xterm keeps the cell
+    // it measured above and re-measures for nothing less than a changed option.
+    remeasure: () => remeasureCell(term),
+    refit,
+  })
 
   session = useTerminalSession({
     // Not props.sessionId: that is a base62 string, and the frame header wants
@@ -135,6 +154,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', refit)
+  fontWatch?.cancel()
   fitter?.stop()
   observer?.disconnect()
   session?.close()

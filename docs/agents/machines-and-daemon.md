@@ -272,7 +272,7 @@ Verified by rendering the same agent output at both values and looking at it,
 which is the only way this shows up — nothing throws, nothing is measured
 wrongly, and the sizing maths is identical either way.
 
-Two related facts about how this surface renders, worth knowing before
+Four related facts about how this surface renders, worth knowing before
 debugging something that looks like a font problem:
 
 - **No renderer addon is loaded**, so xterm falls back to its DOM renderer.
@@ -280,11 +280,17 @@ debugging something that looks like a font problem:
   glyphs — because the canvas and WebGL renderers draw box characters
   themselves instead of asking the font for them. `@xterm/addon-webgl` or
   `@xterm/addon-canvas` is the upgrade if this comes up again.
-- **`fontFamily` asks for `"JetBrains Mono"` and `"Fira Code"`, and neither is
-  ever loaded** — there is no `@font-face` and no font link anywhere in the
-  frontend. Whoever has one installed locally sees a different terminal from
-  whoever does not, which makes "it looks wrong on my machine" hard to
-  reproduce. Ship the font or stop naming it.
+- **Name no font in `fontFamily` that the app does not ship.** One that is
+  named and never loaded is used by whoever happens to have it installed and by
+  nobody else, which is how a rendering report stops being reproducible.
+- **A webfont has to be re-measured, not just re-fitted.** xterm keeps the cell
+  it measured at open and re-measures only for a *changed* `fontFamily` or
+  `fontSize` — the same value assigned back is dropped — so `fit()` after the
+  font lands returns the columns it already had. That is what `remeasureCell`
+  is for.
+- **Google's subsets stop short of box drawing (U+2500-257F)**, so those glyphs
+  still come from the system fallback. Shipping a font fixes the cell, not the
+  box characters.
 
 ## ...and a fit that did nothing looks exactly like one that worked
 
