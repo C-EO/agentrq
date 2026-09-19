@@ -259,7 +259,7 @@ A **session** is one agent process and the PTY it runs in.
 | Kind | Launched as | Baseline |
 |---|---|---|
 | `claude-code` | `claude --name <n> server:<workspace>` | the `remote-claude` Make target |
-| `acp-gateway` | `npx @agentrq/acp-gateway@latest --model <m> --agent <a>` | the `remote-agy` Make target |
+| `acp-gateway` | `npx -y @agentrq/acp-gateway@latest --model <m> --agent <a>` | the `remote-agy` Make target |
 
 Those two Make targets are the v1 specification: the daemon automates exactly
 what a person does by hand today, which keeps the first version honest and

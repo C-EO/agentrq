@@ -29,7 +29,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want = "npx @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp"
+	want = "npx -y @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp"
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}

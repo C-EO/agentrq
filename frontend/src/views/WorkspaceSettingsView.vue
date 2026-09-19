@@ -1252,7 +1252,7 @@ const startCommand = computed(() => `claude --dangerously-load-development-chann
 // and the gateway refuses to install an unverifiable download unless told to —
 // so the flag is part of the command rather than a footnote someone hits as an
 // error.
-const ACP_GATEWAY = 'npx @agentrq/acp-gateway@latest';
+const ACP_GATEWAY = 'npx -y @agentrq/acp-gateway@latest';
 const acpStartCommand = `${ACP_GATEWAY} --agent harn`;
 const acpListAgentsCommand = `${ACP_GATEWAY} --list-agents`;
 const acpLoginCommand = `${ACP_GATEWAY} --login --agent harn`;
