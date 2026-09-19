@@ -2,8 +2,9 @@
 
 > Read before adding a function to `frontend/src/api.js` — the WebMCP catalogue mirrors it function for function, and a test fails if it does not.
 
-The interface offers itself to a browser agent as WebMCP tools — 53 of them,
-registered on sign-in and withdrawn on sign-out.
+The interface offers itself to a browser agent as WebMCP tools — 71 of them,
+registered on sign-in and withdrawn on sign-out. That count drifts every time a
+tool is added; don't trust it, count `createToolCatalogue(...)`'s length.
 
 - `modelContext.js` is the browser seam (finds `document.modelContext`, falling
   back to the deprecated `navigator.modelContext`); `tools.js` is the pure

@@ -98,6 +98,16 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 			reconcile(ctx, rec, s.Identity.MachineID, hb.Sessions)
 			announceMachine(notify, s.Identity, hb)
 			return nil
+		case wire.OpAcpAgents, wire.OpAcpModels:
+			// A reply to an on-demand acp-gateway lookup, correlated by id
+			// with whatever REST request sent it — never something this
+			// dispatcher itself acts on. A reply nothing is waiting for is a
+			// stray, not a bug: the request could have already timed out.
+			if !relay.Deliver(c) {
+				zlog.Debug().Str("op", string(c.Op)).Int64("machine_id", s.Identity.MachineID).
+					Msg("[machine] an acp-gateway reply arrived with nothing waiting for it")
+			}
+			return nil
 		default:
 			// An op from a newer daemon. Ignored, not fatal.
 			return nil

@@ -1,8 +1,8 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
 
-import { describe, it, expect, vi } from 'vitest'
-import { ref } from 'vue'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 import {
   useAgentLaunch,
   workspaceEligibility,
@@ -10,6 +10,8 @@ import {
   machineEligibility,
   sessionEligibility,
   paramsEligibility,
+  lastAcpGatewayChoice,
+  rememberAcpGatewayChoice,
   KINDS,
   GATEWAY_DEFAULTS,
 } from '../src/composables/useAgentLaunch.js'
@@ -37,9 +39,21 @@ function harness(over = {}) {
     fetchWorkspaces: vi.fn().mockResolvedValue({ workspaces: [{ ...READY_WORKSPACE }] }),
     launchAgent: vi.fn().mockResolvedValue({ session: { id: 's1', status: 'starting' } }),
     measureTerminalSize: vi.fn().mockResolvedValue(MEASURED_SIZE),
+    // Real network otherwise: kind defaults to claude-code, so most tests
+    // never call these, but a few flip to acp-gateway and would hit the real
+    // api.js functions without a stand-in.
+    fetchAcpAgents: vi.fn().mockResolvedValue({ agents: [] }),
+    fetchAcpModels: vi.fn().mockResolvedValue({ agent: '', models: [] }),
     ...over.deps,
   }
   return { deps, machine, sessions, l: useAgentLaunch(deps) }
+}
+
+// Two ticks: one for the watcher itself to run and call the (mocked, already
+// resolved) fetch, one for its `.then` continuation to land.
+async function flush() {
+  await nextTick()
+  await nextTick()
 }
 
 // The reason is the useful half: "cannot launch" says somebody is stuck,
@@ -292,6 +306,106 @@ describe('what stops a launch', () => {
     const h = harness()
     await h.l.load()
     expect(h.l.canLaunch.value).toBe(false)
+  })
+})
+
+describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
+  afterEach(() => localStorage.clear())
+
+  it('has nothing to remember at first', () => {
+    expect(lastAcpGatewayChoice()).toBeNull()
+  })
+
+  it('round-trips what was remembered', () => {
+    rememberAcpGatewayChoice({ agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+  })
+
+  it('ignores a stored value missing either field, the same as nothing stored', () => {
+    localStorage.setItem('agentrq:lastAcpGateway', JSON.stringify({ agent: 'codex-acp' }))
+    expect(lastAcpGatewayChoice()).toBeNull()
+  })
+
+  it('fails open on unreadable storage rather than throwing', () => {
+    localStorage.setItem('agentrq:lastAcpGateway', 'not json')
+    expect(lastAcpGatewayChoice()).toBeNull()
+  })
+
+  it('opens the form on the remembered choice instead of GATEWAY_DEFAULTS', async () => {
+    rememberAcpGatewayChoice({ agent: 'codex-acp', model: 'gpt-5.5' })
+    const h = harness()
+    expect(h.l.params.value).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+  })
+
+  it('remembers the gateway choice after a successful launch, not before', async () => {
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { model: 'gpt-5.5', agent: 'codex-acp' }
+    expect(lastAcpGatewayChoice()).toBeNull()
+
+    await h.l.launch()
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+  })
+
+  it('does not remember a claude-code launch', async () => {
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    await h.l.launch()
+    expect(lastAcpGatewayChoice()).toBeNull()
+  })
+})
+
+describe('acp-gateway suggestions', () => {
+  it('asks for agent suggestions once the kind is acp-gateway and a machine is present', async () => {
+    const h = harness({
+      deps: { fetchAcpAgents: vi.fn().mockResolvedValue({ agents: [{ id: 'codex-acp', name: 'Codex' }] }) },
+    })
+    h.l.kind.value = 'acp-gateway'
+    await flush()
+
+    expect(h.deps.fetchAcpAgents).toHaveBeenCalledWith('m1')
+    expect(h.l.acpAgents.value).toEqual([{ id: 'codex-acp', name: 'Codex' }])
+  })
+
+  it('never asks while the kind is claude-code', async () => {
+    const h = harness()
+    await flush()
+    expect(h.deps.fetchAcpAgents).not.toHaveBeenCalled()
+  })
+
+  it('asks for model suggestions once an agent is typed, with the workspace and machine', async () => {
+    const h = harness({
+      deps: {
+        fetchAcpModels: vi
+          .fn()
+          .mockResolvedValue({ agent: 'codex-acp', models: [{ id: 'gpt-5.5', current: true }] }),
+      },
+    })
+    h.l.workspaceId.value = 'ws1'
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { ...h.l.params.value, agent: 'codex-acp' }
+    await flush()
+
+    expect(h.deps.fetchAcpModels).toHaveBeenCalledWith('ws1', 'm1', 'codex-acp')
+    expect(h.l.acpModels.value).toEqual([{ id: 'gpt-5.5', current: true }])
+  })
+
+  it('does not ask for models before a workspace is picked', async () => {
+    const h = harness()
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { ...h.l.params.value, agent: 'codex-acp' }
+    await flush()
+    expect(h.deps.fetchAcpModels).not.toHaveBeenCalled()
+  })
+
+  it('fails open: a rejected lookup leaves the suggestions empty rather than throwing', async () => {
+    const h = harness({ deps: { fetchAcpAgents: vi.fn().mockRejectedValue(new Error('offline')) } })
+    h.l.kind.value = 'acp-gateway'
+    await flush()
+    expect(h.l.acpAgents.value).toEqual([])
   })
 })
 

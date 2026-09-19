@@ -23,7 +23,10 @@ import * as api from '../api'
 import {
   GATEWAY_DEFAULTS,
   KINDS,
+  lastAcpGatewayChoice,
   paramsEligibility,
+  rememberAcpGatewayChoice,
+  useAcpGatewaySuggestions,
   workspaceEligibility,
 } from './useAgentLaunch'
 import { launchTerminalSize } from './useLaunchTerminalSize'
@@ -78,6 +81,8 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     fetchMachines = api.fetchMachines,
     launchAgent = api.launchAgent,
     measureTerminalSize = launchTerminalSize,
+    fetchAcpAgents,
+    fetchAcpModels,
   } = deps
 
   const machines = ref([])
@@ -88,7 +93,16 @@ export function useWorkspaceAgentLaunch(deps = {}) {
 
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = ref({ ...GATEWAY_DEFAULTS })
+  const params = ref(lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS })
+
+  const { acpAgents, acpModels } = useAcpGatewaySuggestions({
+    kind,
+    params,
+    getMachineId: () => machineId.value,
+    getWorkspaceId: () => workspace?.value?.id,
+    ...(fetchAcpAgents ? { fetchAcpAgents } : {}),
+    ...(fetchAcpModels ? { fetchAcpModels } : {}),
+  })
 
   const available = computed(() => launchableMachines(machines.value))
   const selected = computed(() => available.value.find((m) => m.id === machineId.value) ?? null)
@@ -173,6 +187,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
         rows,
         ...extra,
       })
+      if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'
@@ -196,6 +211,8 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     offered,
     blockers,
     canLaunch,
+    acpAgents,
+    acpModels,
     load,
     launch,
   }

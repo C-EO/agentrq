@@ -471,6 +471,112 @@ func TestARefusedStartIsReported(t *testing.T) {
 	}, "the refusal never reached the backend, or did not name the path")
 }
 
+// The one-shot acp-gateway lookups shell out and can take tens of seconds on
+// a cold npx cache, so they run on their own goroutine — this proves it: an
+// unrelated control message sent while one is still blocked must still be
+// answered, or every session on the machine would wait behind one autocomplete
+// request.
+func TestListAcpAgentsDoesNotBlockTheSocket(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	release := make(chan struct{})
+	h.link.ListAcpAgents = func(context.Context) []wire.AcpAgent {
+		<-release
+		return []wire.AcpAgent{{ID: "codex-acp", Name: "Codex", Runtimes: []string{"npx"}}}
+	}
+
+	f, err := wire.ControlFrame(wire.Control{ID: "req-1", Op: wire.OpListAcpAgents})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.send(t, f)
+
+	// killSession always answers, even for a session that does not exist —
+	// which is what makes it a good probe here: it must come back while the
+	// lookup above is still blocked on release.
+	b.send(t, controlFrame(t, wire.OpKillSession, wire.KillSession{SessionID: 999}))
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpSessionState)) > 0 },
+		"an unrelated control message was stuck behind the acp-gateway lookup")
+
+	close(release)
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpAcpAgents)) > 0 }, "no reply to listAcpAgents")
+
+	replies := b.controls(t, wire.OpAcpAgents)
+	if replies[0].ID != "req-1" {
+		t.Errorf("reply id = %q, want %q", replies[0].ID, "req-1")
+	}
+	var got wire.AcpAgentsList
+	if err := json.Unmarshal(replies[0].Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Agents) != 1 || got.Agents[0].ID != "codex-acp" {
+		t.Errorf("agents = %+v", got.Agents)
+	}
+}
+
+// The models lookup carries the agent and the workspace directory both ways —
+// the daemon needs both to ask, and the reply names which agent it answered
+// for, since a client can have more than one outstanding.
+func TestListAcpModelsRepliesWithTheAgentAndModels(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	var gotDir, gotAgent string
+	h.link.ListAcpModels = func(_ context.Context, dir, agent string) []wire.AcpModel {
+		gotDir, gotAgent = dir, agent
+		return []wire.AcpModel{{ID: "gpt-5.5", Name: "5.5", Current: true}}
+	}
+
+	f, err := wire.ControlFrame(wire.Control{
+		ID: "req-2", Op: wire.OpListAcpModels,
+		Body: mustJSON(wire.ListAcpModels{Agent: "codex-acp", Dir: "/work/ws"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.send(t, f)
+
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpAcpModels)) > 0 }, "no reply to listAcpModels")
+
+	if gotDir != "/work/ws" || gotAgent != "codex-acp" {
+		t.Errorf("ListAcpModels called with dir=%q agent=%q", gotDir, gotAgent)
+	}
+	replies := b.controls(t, wire.OpAcpModels)
+	if replies[0].ID != "req-2" {
+		t.Errorf("reply id = %q, want %q", replies[0].ID, "req-2")
+	}
+	var got wire.AcpModelsList
+	if err := json.Unmarshal(replies[0].Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Agent != "codex-acp" || len(got.Models) != 1 || got.Models[0].ID != "gpt-5.5" {
+		t.Errorf("AcpModelsList = %+v", got)
+	}
+}
+
+// An unreadable request must still be answered — a caller waiting on the
+// correlated reply must not wait out its whole timeout for what was, on this
+// end, an instant decode failure.
+func TestListAcpModelsAnswersAnUnreadableRequest(t *testing.T) {
+	b := newBackend(t)
+	start(t, b)
+
+	// Valid JSON, wrong shape: a string where the request wants an object —
+	// the envelope must still marshal, only the daemon's decode of the body
+	// should fail.
+	f, err := wire.ControlFrame(wire.Control{ID: "req-3", Op: wire.OpListAcpModels, Body: []byte(`"not the right shape"`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.send(t, f)
+
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpAcpModels)) > 0 }, "no reply to an unreadable listAcpModels")
+	if got := b.controls(t, wire.OpAcpModels)[0].ID; got != "req-3" {
+		t.Errorf("reply id = %q, want %q", got, "req-3")
+	}
+}
+
 // A full send queue is backpressure, not a wait: blocking here would stall the
 // terminal read loop, and a slow network would become a slow machine.
 func TestAFullQueueIsBackpressure(t *testing.T) {

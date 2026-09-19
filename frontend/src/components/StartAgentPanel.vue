@@ -36,8 +36,20 @@ const router = useRouter()
 const workspace = computed(() => props.workspace)
 const launcher = useWorkspaceAgentLaunch({ workspace })
 
-const { available, selected, error, launching, machineId, kind, params, offered, blockers, canLaunch } =
-  launcher
+const {
+  available,
+  selected,
+  error,
+  launching,
+  machineId,
+  kind,
+  params,
+  offered,
+  blockers,
+  canLaunch,
+  acpAgents,
+  acpModels,
+} = launcher
 
 const open = ref(props.variant === 'card')
 const started = ref(null)
@@ -135,24 +147,10 @@ async function start() {
         <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
       </div>
 
-      <!-- Only the gateway needs these, and it needs both. -->
+      <!-- Only the gateway needs these, and it needs both. Agent first: the
+           model list is per-agent, so there is nothing to suggest for the
+           second field until the first is answered. -->
       <div v-if="kind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
-        <div>
-          <label
-            for="start-agent-model"
-            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >Model</label
-          >
-          <input
-            id="start-agent-model"
-            v-model="params.model"
-            type="text"
-            spellcheck="false"
-            autocapitalize="off"
-            autocorrect="off"
-            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-          />
-        </div>
         <div>
           <label
             for="start-agent-agent"
@@ -163,11 +161,37 @@ async function start() {
             id="start-agent-agent"
             v-model="params.agent"
             type="text"
+            list="start-agent-agent-options"
             spellcheck="false"
             autocapitalize="off"
             autocorrect="off"
             class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
           />
+          <!-- A datalist only ever suggests: typing anything else, including
+               while the list is empty or never arrives, is still accepted. -->
+          <datalist id="start-agent-agent-options">
+            <option v-for="a in acpAgents" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </datalist>
+        </div>
+        <div>
+          <label
+            for="start-agent-model"
+            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+            >Model</label
+          >
+          <input
+            id="start-agent-model"
+            v-model="params.model"
+            type="text"
+            list="start-agent-model-options"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+          />
+          <datalist id="start-agent-model-options">
+            <option v-for="m in acpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </datalist>
         </div>
       </div>
 

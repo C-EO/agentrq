@@ -577,6 +577,31 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: () => api.createEnrolmentCode(),
     }),
     tool({
+      name: 'listAcpAgents',
+      description:
+        'The acp-gateway agents a machine can run, for choosing an agent before launchAgent. Comes back empty ' +
+        'rather than failing when the machine is offline or cannot be asked in time — free text still works either way.',
+      properties: { machineId: MACHINE_ID },
+      required: ['machineId'],
+      readOnly: true,
+      run: ({ machineId }) => api.fetchAcpAgents(machineId),
+    }),
+    tool({
+      name: 'listAcpModels',
+      description:
+        'The models one acp-gateway agent supports, once an agent is chosen. Needs the workspace: the gateway has ' +
+        'to find a real .mcp.json in its folder to answer this at all, so a workspace with no folder set, or one ' +
+        'nothing has launched from yet, comes back with an empty list rather than an error.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        machineId: MACHINE_ID,
+        agent: str('The acp-gateway agent id, from listAcpAgents.'),
+      },
+      required: ['workspaceId', 'machineId', 'agent'],
+      readOnly: true,
+      run: ({ workspaceId, machineId, agent }) => api.fetchAcpModels(workspaceId, machineId, agent),
+    }),
+    tool({
       name: 'launchAgent',
       description:
         'Start an agent for a workspace on a chosen machine. Answers before it has started: the session reports its own state.',

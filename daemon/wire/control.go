@@ -25,6 +25,10 @@ const (
 	OpUpdateNow       Op = "updateNow"       // backend → daemon, the user approved
 	OpPresence        Op = "presence"        // backend → viewer, who else is watching
 	OpError           Op = "error"           // either way, always correlated
+	OpListAcpAgents   Op = "listAcpAgents"   // backend → daemon, correlated by ID
+	OpAcpAgents       Op = "acpAgents"       // daemon → backend, reply
+	OpListAcpModels   Op = "listAcpModels"   // backend → daemon, correlated by ID
+	OpAcpModels       Op = "acpModels"       // daemon → backend, reply
 )
 
 // Control is the envelope every control message shares.
@@ -250,6 +254,56 @@ func (s StartSession) Redacted() StartSession {
 // KillSession asks the daemon to end one.
 type KillSession struct {
 	SessionID uint64 `json:"sessionId"`
+}
+
+// AcpAgent is one entry from `acp-gateway --list-agents --json`: an id the
+// launch form's Agent field accepts as-is, a display name, and how it runs on
+// this machine (npx, binary, uvx — an agent can publish more than one, and
+// this is empty rather than absent for one with no build for this platform).
+type AcpAgent struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name,omitempty"`
+	Runtimes []string `json:"runtimes,omitempty"`
+}
+
+// AcpAgentsList answers [OpListAcpAgents].
+//
+// Agents is empty rather than the request failing outright when the gateway
+// could not be asked — no npx on the machine, no network, output this
+// daemon's parser does not recognise. This backs an autocomplete with a
+// free-text field behind it, and an error would have nothing more useful to
+// say than an empty list already does.
+type AcpAgentsList struct {
+	Agents []AcpAgent `json:"agents,omitempty"`
+}
+
+// ListAcpModels asks the gateway what one agent supports.
+//
+// Dir is the workspace's own working directory on this machine — the same
+// one a launch would use. --list-models opens a real agent session, and the
+// gateway loads .mcp.json from its working directory before it gets that
+// far, refusing without one; Dir's *content* does not matter to this call
+// (the listing session carries no MCP servers), only that a real .mcp.json is
+// findable there. A workspace nothing has launched from yet has none, which
+// is answered the same way any other failure here is: an empty list.
+type ListAcpModels struct {
+	Agent string `json:"agent"`
+	Dir   string `json:"dir,omitempty"`
+}
+
+// AcpModel is one entry from `acp-gateway --list-models --agent <a> --json`.
+type AcpModel struct {
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Current     bool   `json:"current,omitempty"`
+}
+
+// AcpModelsList answers [OpListAcpModels], empty for the same reasons
+// [AcpAgentsList] is.
+type AcpModelsList struct {
+	Agent  string     `json:"agent"`
+	Models []AcpModel `json:"models,omitempty"`
 }
 
 // SessionState reports a session's lifecycle to the backend.

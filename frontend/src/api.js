@@ -337,6 +337,40 @@ export async function launchAgent(workspaceId, { machineId, kind, model = '', ag
 }
 
 /**
+ * The acp-gateway agents a machine can run, for the launch form's
+ * autocomplete.
+ *
+ * Always resolves — a machine that is offline, not yours, or a daemon that
+ * could not be asked all come back as `{ agents: [] }` rather than a thrown
+ * error, because this only ever backs a suggestion behind a free-text field.
+ * `fetchWorkspaces`-style throwing would make every caller handle a failure
+ * that means nothing more than "nothing to suggest".
+ */
+export async function fetchAcpAgents(machineId) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/acp-agents`);
+  if (!res.ok) return { agents: [] };
+  return res.json();
+}
+
+/**
+ * The models one acp-gateway agent supports, for the same autocomplete once
+ * an agent has been chosen.
+ *
+ * Needs a workspace because the gateway needs a real `.mcp.json` to find in
+ * its working directory — a workspace with no folder set, or one nothing has
+ * ever launched from yet, answers `{ agent, models: [] }` the same as any
+ * other reason this could come back empty. This call alone can take a while:
+ * the gateway fetches the agent's own package on a cold cache before it can
+ * report anything.
+ */
+export async function fetchAcpModels(workspaceId, machineId, agent) {
+  const params = new URLSearchParams({ machineId, agent });
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/acp-models?${params}`);
+  if (!res.ok) return { agent, models: [] };
+  return res.json();
+}
+
+/**
  * Ask the daemon to end a session.
  *
  * Answers 202 for the same reason as launching: the daemon reports what

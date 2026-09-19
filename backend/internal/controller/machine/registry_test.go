@@ -4,6 +4,7 @@
 package machine
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -236,6 +237,97 @@ func (c *fakeConn) lastFrame() wire.Frame {
 		return wire.Frame{}
 	}
 	return c.sent[len(c.sent)-1]
+}
+
+// Ask has no daemon on the other end here, so the reply is delivered by hand
+// — the point of the test is that Ask wakes up and returns it, not that a
+// real socket round-trips it.
+func TestAskReturnsTheCorrelatedReply(t *testing.T) {
+	r := NewRegistry("pod-a")
+	c := &fakeConn{}
+	r.Add(1, c)
+
+	done := make(chan struct{})
+	var reply wire.Control
+	var askErr error
+	go func() {
+		reply, askErr = r.Ask(context.Background(), 1, wire.Control{Op: wire.OpListAcpAgents}, time.Second)
+		close(done)
+	}()
+
+	// The frame Ask actually sent names the id it is waiting on — a fixed id
+	// in the test would pass even if Ask ignored what it generated.
+	waitFor(t, func() bool { return c.count() > 0 }, "Ask never sent a request")
+	sent, err := wire.ParseControl(c.lastFrame())
+	if err != nil {
+		t.Fatalf("ParseControl: %v", err)
+	}
+	if sent.ID == "" {
+		t.Fatal("Ask sent a request with no id to correlate a reply against")
+	}
+
+	if !r.Deliver(wire.Control{ID: sent.ID, Op: wire.OpAcpAgents, Body: []byte(`{"agents":[]}`)}) {
+		t.Fatal("Deliver reported nothing was waiting")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Ask did not return once its reply was delivered")
+	}
+	if askErr != nil {
+		t.Fatalf("Ask: %v", askErr)
+	}
+	if reply.ID != sent.ID || reply.Op != wire.OpAcpAgents {
+		t.Errorf("Ask returned %+v, want the delivered reply", reply)
+	}
+}
+
+// The wait is bounded: a daemon that never answers must not hold the caller
+// open forever.
+func TestAskTimesOutWhenNothingReplies(t *testing.T) {
+	r := NewRegistry("pod-a")
+	r.Add(1, &fakeConn{})
+
+	_, err := r.Ask(context.Background(), 1, wire.Control{Op: wire.OpListAcpAgents}, 10*time.Millisecond)
+	if !errors.Is(err, ErrRequestTimeout) {
+		t.Errorf("Ask error = %v, want ErrRequestTimeout", err)
+	}
+}
+
+// A send failure is reported immediately rather than waiting out the timeout
+// for a reply that was never going to arrive.
+func TestAskPropagatesASendFailure(t *testing.T) {
+	r := NewRegistry("pod-a")
+	boom := errors.New("socket gone")
+	r.Add(1, &fakeConn{sendErr: boom})
+
+	_, err := r.Ask(context.Background(), 1, wire.Control{Op: wire.OpListAcpAgents}, time.Second)
+	if !errors.Is(err, boom) {
+		t.Errorf("Ask error = %v, want the underlying send failure", err)
+	}
+}
+
+// Asking a machine nothing here holds is the same ErrNotConnected as Send's,
+// not a timeout — there is nobody to ever answer.
+func TestAskRefusesAnUnconnectedMachine(t *testing.T) {
+	r := NewRegistry("pod-a")
+	_, err := r.Ask(context.Background(), 42, wire.Control{Op: wire.OpListAcpAgents}, time.Second)
+	if !errors.Is(err, ErrNotConnected) {
+		t.Errorf("Ask error = %v, want ErrNotConnected", err)
+	}
+}
+
+// A reply with nobody waiting on its id — arriving late, after Ask's own
+// timeout already gave up and stopped listening — is a stray, not a bug.
+func TestDeliverReportsWhetherAnythingWasWaiting(t *testing.T) {
+	r := NewRegistry("pod-a")
+	if r.Deliver(wire.Control{ID: "nobody-asked", Op: wire.OpAcpAgents}) {
+		t.Error("Deliver reported success for an id nothing was waiting on")
+	}
+	if r.Deliver(wire.Control{Op: wire.OpAcpAgents}) {
+		t.Error("Deliver reported success for a reply with no id at all")
+	}
 }
 
 // waitFor polls until cond holds, for the tests that drive real sockets.

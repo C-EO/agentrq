@@ -39,6 +39,8 @@ vi.mock('../src/api', () => ({
   fetchMachineSessions: () => Promise.resolve({ sessions: [] }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [] }),
   launchAgent: vi.fn(),
+  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   updateMachine: vi.fn(),
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
