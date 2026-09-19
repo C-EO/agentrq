@@ -27,6 +27,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
@@ -485,36 +486,47 @@ func NewWorkspaceServer(
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "createTask",
 		Description: "Create a task for the human user. Returns the task ID.",
+		Annotations: mcphint.Write("Create a task for the human"),
 	}, ps.handleCreateTask)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "updateTaskStatus",
 		Description: "Update the status of a task: 'ongoing' when you start, 'completed' when you finish, or 'blocked' when you need something from the human.",
+		Annotations: mcphint.Update("Update this task's status"),
 	}, ps.handleUpdateTaskStatus)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "reply",
 		Description: "Send a message to the current ongoing task. You can optionally include attachments.",
+		Annotations: mcphint.Write("Reply to the human"),
 	}, ps.handleReply)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "downloadAttachment",
 		Description: "Download the content of an attachment by its ID",
+		Annotations: mcphint.Read("Download an attachment"),
 	}, ps.handleDownloadAttachment)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "getWorkspace",
 		Description: "Returns the workspace title and mission description.",
+		Annotations: mcphint.Read("Get this workspace"),
 	}, ps.handleGetWorkspace)
 
+	// Read-only despite the "dequeues" in its description: the next task is a
+	// SELECT, nothing is marked started, and the only effect is a session-local
+	// association used to route permission prompts. If it ever writes to the
+	// task, this hint has to go with it.
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "getTask",
 		Description: "Fetch a task. With no taskId, returns the next available \"not started\" task assigned to the agent (dequeues the work queue). With a taskId, returns that specific task. Set includeConversation=true to also include the task's chat history (oldest to newest, with cursor-based pagination).",
+		Annotations: mcphint.Read("Get a task"),
 	}, ps.handleGetTask)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "publishEvent",
 		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When the task you are completing includes a publishEvent instruction, copy the name and taskId from it exactly as written — taskId is what identifies the workflow run being continued. Write the payload yourself, plus an optional faq.",
+		Annotations: mcphint.Write("Publish an event"),
 	}, ps.handlePublishEvent)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
@@ -523,6 +535,7 @@ func NewWorkspaceServer(
 			"With no name it reads " + DefaultMemoryName + ", the index — start there, and it will tell you which other memories are worth loading, " +
 			"as links to memory://<name>. Load the ones that look relevant. " +
 			"A name that has never been written is not an error; it just means nothing has been remembered under it yet.",
+		Annotations: mcphint.Read("Read a memory"),
 	}, ps.handleLoadMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
@@ -534,6 +547,7 @@ func NewWorkspaceServer(
 			"Names are lowercase words joined by single hyphens and ending in .md, like release-notes.md; anything else is refused. " +
 			"One memory holds at most 16 KiB; a larger one is refused rather than truncated, so split it and index the parts. " +
 			"The memory belongs to the workspace, not to you — other agents working here read the same notes.",
+		Annotations: mcphint.Overwrite("Write a memory"),
 	}, ps.handleSaveMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
@@ -541,11 +555,13 @@ func NewWorkspaceServer(
 		Description: "Delete one of the workspace's memories. " +
 			"With no name it deletes " + DefaultMemoryName + " itself — think before doing that, since it is the index the other memories link from. " +
 			"Deleting a name nobody wrote under (or one already deleted) is not an error; it just says there was nothing to remove.",
+		Annotations: mcphint.Overwrite("Delete a memory"),
 	}, ps.handleDeleteMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "elicit",
 		Description: "Ask the human a question and wait for their answer, mirroring the MCP protocol's client-side elicitation/create capability. Use mode='form' with a flat requestedSchema (primitive-typed properties only) to collect structured input, or mode='url' to point the human at a link and wait for them to confirm they're done. Blocks until the human responds or the timeout elapses. Returns {action, content} — action is 'accept' (content has the form values, if mode='form'), 'decline', or 'cancel'.",
+		Annotations: mcphint.Write("Ask the human"),
 	}, ps.handleElicit)
 
 	// Add middleware to handle incoming notifications (like permission_request)

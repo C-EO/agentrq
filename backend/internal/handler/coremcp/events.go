@@ -8,6 +8,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -89,46 +90,57 @@ func (s *WorkspaceServer) registerEventTools() {
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listEvents",
 		Description: "List the events defined for this account. An event is a named signal a workspace publishes when something happens",
+		Annotations: mcphint.Read("List events"),
 	}, s.handleListEvents)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "createEvent",
 		Description: "Define a named signal that workspaces can publish and triggers can react to",
+		Annotations: mcphint.Write("Define an event"),
 	}, s.handleCreateEvent)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "getEvent",
 		Description: "Get an event by ID",
+		Annotations: mcphint.Read("Get an event"),
 	}, s.handleGetEvent)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "updateEvent",
 		Description: "Revise an event's payload guidelines. Its name is fixed once created",
+		Annotations: mcphint.Update("Revise an event"),
 	}, s.handleUpdateEvent)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "deleteEvent",
 		Description: "Delete an event. Its triggers stop firing",
+		Annotations: mcphint.Overwrite("Delete an event"),
 	}, s.handleDeleteEvent)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "createEventTrigger",
 		Description: "React to an event: when it fires, create a task in a workspace. The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}, and emitEventId chains a second event to the task's completion",
+		Annotations: mcphint.Write("Add an event trigger"),
 	}, s.handleCreateEventTrigger)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listEventTriggers",
 		Description: "List the triggers attached to an event — everything that happens when it fires",
+		Annotations: mcphint.Read("List an event's triggers"),
 	}, s.handleListEventTriggers)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "getEventTrigger",
 		Description: "Get an event trigger by ID",
+		Annotations: mcphint.Read("Get an event trigger"),
 	}, s.handleGetEventTrigger)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "updateEventTrigger",
 		Description: "Rewrite an event trigger. Every field is written as given, so send the ones to keep as well",
+		Annotations: mcphint.Overwrite("Rewrite an event trigger"),
 	}, s.handleUpdateEventTrigger)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "deleteEventTrigger",
 		Description: "Delete an event trigger, leaving its event in place",
+		Annotations: mcphint.Overwrite("Delete an event trigger"),
 	}, s.handleDeleteEventTrigger)
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name:        "listEventTasks",
 		Description: "List the tasks an event has spawned, to see whether a system that was wired up is running",
+		Annotations: mcphint.Read("List an event's tasks"),
 	}, s.handleListEventTasks)
 }
 
