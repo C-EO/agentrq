@@ -298,6 +298,14 @@ describe('the terminal itself', () => {
     expect(TERMINAL_OPTIONS.scrollback).toBeGreaterThan(1000)
     expect(TERMINAL_OPTIONS.scrollback).toBeLessThanOrEqual(10000)
   })
+
+  // Anything above 1 puts a gap between rows, and a vertical box-drawing
+  // character cannot reach the row above it across a gap — so an agent's
+  // framed interface renders as loose fragments. This was 1.2, and it looked
+  // like a readability setting rather than the rendering bug it was.
+  it('gives a row exactly the height of its glyphs, so box drawing joins up', () => {
+    expect(TERMINAL_OPTIONS.lineHeight).toBe(1)
+  })
 })
 
 describe('defaults', () => {

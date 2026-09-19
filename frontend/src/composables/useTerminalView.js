@@ -58,7 +58,14 @@ export const TERMINAL_OPTIONS = {
   cursorStyle: 'bar',
   fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   fontSize: 13,
-  lineHeight: 1.2,
+  // Exactly 1, and this is not a style preference. A row taller than its
+  // glyphs cannot join the row above it, so every vertical box-drawing
+  // character — │ ├ └ ╰ — is left hanging in space and an agent's framed
+  // interface renders as loose fragments. It was 1.2, which is comfortable
+  // for prose and wrong for a terminal, where most of what arrives is drawn
+  // rather than written. Verified by rendering the same output at both
+  // values; see the note in docs/agents/machines-and-daemon.md.
+  lineHeight: 1,
   letterSpacing: 0,
   // Enough that scrolling back through a build is useful, bounded so a
   // runaway process cannot fill the tab's memory.
