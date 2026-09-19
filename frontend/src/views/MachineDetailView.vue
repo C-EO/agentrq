@@ -447,14 +447,19 @@ async function stopSession(id) {
                   </span>
                   <!-- A ready workspace shows its folder, which is what tells
                        two similarly named ones apart; one that is not shows
-                       why in the same place. -->
+                       why in the same place. Green for one already running an
+                       agent elsewhere — that is not a problem, only a reason
+                       this launch cannot start a second one — amber for
+                       anything that actually needs fixing. -->
                   <span
                     v-if="w.note"
                     class="block text-[10px] truncate"
                     :class="
                       w.ready
                         ? 'font-mono text-gray-400 dark:text-zinc-500'
-                        : 'font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400'
+                        : w.tone === 'good'
+                          ? 'font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400'
+                          : 'font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400'
                     "
                   >
                     {{ w.note }}

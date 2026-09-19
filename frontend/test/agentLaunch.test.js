@@ -49,10 +49,12 @@ describe('workspaceEligibility', () => {
     expect(workspaceEligibility(READY_WORKSPACE).ok).toBe(true)
   })
 
-  it('refuses one that already has an agent', () => {
+  it('refuses one that already has an agent, with a green rather than a warning tone', () => {
     const e = workspaceEligibility({ ...READY_WORKSPACE, agentConnected: true })
     expect(e.ok).toBe(false)
     expect(e.reason).toContain('already has an agent')
+    expect(e.note).toBe('agent running')
+    expect(e.tone).toBe('good')
   })
 
   // The one refusal that is fixable from the interface, so it says where.
@@ -61,6 +63,8 @@ describe('workspaceEligibility', () => {
     expect(e.ok).toBe(false)
     expect(e.reason).toContain('working directory')
     expect(e.fix.to).toBe('/workspaces/ws1/settings')
+    expect(e.note).toBe('no folder set')
+    expect(e.tone).toBe('warn')
   })
 
   it('refuses nothing at all', () => {
@@ -215,7 +219,7 @@ describe('loading workspaces', () => {
 describe('workspaceOptions', () => {
   it('notes a ready workspace with its folder, which is what tells two apart', () => {
     expect(workspaceOptions([READY_WORKSPACE])).toEqual([
-      { id: 'ws1', name: 'Ops', ready: true, note: '/srv/app' },
+      { id: 'ws1', name: 'Ops', ready: true, note: '/srv/app', tone: null },
     ])
   })
 
@@ -224,8 +228,10 @@ describe('workspaceOptions', () => {
       { ...READY_WORKSPACE, agentConnected: true },
       { ...READY_WORKSPACE, id: 'ws2', workingDirectory: '' },
     ])
-    expect(busy).toMatchObject({ ready: false, note: 'agent connected' })
-    expect(homeless).toMatchObject({ ready: false, note: 'no folder set' })
+    // Green: a workspace already running an agent elsewhere is not a problem,
+    // only a reason this launch cannot start a second one.
+    expect(busy).toMatchObject({ ready: false, note: 'agent running', tone: 'good' })
+    expect(homeless).toMatchObject({ ready: false, note: 'no folder set', tone: 'warn' })
   })
 
   it('has nothing to list before the workspaces have loaded', () => {
@@ -235,7 +241,9 @@ describe('workspaceOptions', () => {
   it('is what the launcher hands the page', async () => {
     const h = harness()
     await h.l.load()
-    expect(h.l.choices.value).toEqual([{ id: 'ws1', name: 'Ops', ready: true, note: '/srv/app' }])
+    expect(h.l.choices.value).toEqual([
+      { id: 'ws1', name: 'Ops', ready: true, note: '/srv/app', tone: null },
+    ])
   })
 })
 
