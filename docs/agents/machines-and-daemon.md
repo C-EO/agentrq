@@ -244,6 +244,33 @@ xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
 a dark background, and leaving the palette to a default that has never seen
 this surface is where unreadable output comes from.
 
+## `lineHeight` is 1 because a terminal is drawn, not typeset
+
+It reads like a comfort setting, and it is the one value in `TERMINAL_OPTIONS`
+that cannot be raised. Above 1 there is space between rows, and a vertical
+box-drawing character cannot cross that space to reach the row above — so `│`,
+`├`, `└` and `╰` hang unattached and an agent's framed interface renders as
+loose fragments rather than a box. It was 1.2 for exactly that reason: 1.2 is
+right for prose, and most of what arrives here is *drawn*.
+
+Verified by rendering the same agent output at both values and looking at it,
+which is the only way this shows up — nothing throws, nothing is measured
+wrongly, and the sizing maths is identical either way.
+
+Two related facts about how this surface renders, worth knowing before
+debugging something that looks like a font problem:
+
+- **No renderer addon is loaded**, so xterm falls back to its DOM renderer.
+  That is the weakest of the three at exactly this — box drawing and wide
+  glyphs — because the canvas and WebGL renderers draw box characters
+  themselves instead of asking the font for them. `@xterm/addon-webgl` or
+  `@xterm/addon-canvas` is the upgrade if this comes up again.
+- **`fontFamily` asks for `"JetBrains Mono"` and `"Fira Code"`, and neither is
+  ever loaded** — there is no `@font-face` and no font link anywhere in the
+  frontend. Whoever has one installed locally sees a different terminal from
+  whoever does not, which makes "it looks wrong on my machine" hard to
+  reproduce. Ship the font or stop naming it.
+
 ## ...and a fit that did nothing looks exactly like one that worked
 
 The opposite hazard: `FitAddon.fit()` is a **no-op that reports nothing** until
