@@ -45,8 +45,6 @@ const { machine, sessions, liveSessions, loading, error, busy } = detail
 
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
-const renaming = ref(false)
-const draftName = ref('')
 const showDelete = ref(false)
 const showUpdate = ref(false)
 
@@ -92,18 +90,6 @@ onMounted(() => {
   connect()
 })
 onUnmounted(disconnect)
-
-function startRename() {
-  draftName.value = machine.value?.name ?? ''
-  renaming.value = true
-}
-
-async function saveName() {
-  const changed = await detail.rename(draftName.value)
-  renaming.value = false
-  if (changed) notifySuccess('Machine renamed')
-  else if (error.value) notifyError(error.value)
-}
 
 async function toggleEnabled() {
   const next = !machine.value?.enabled
@@ -224,6 +210,108 @@ async function stopSession(id) {
           </button>
         </div>
 
+        <!-- Sessions, and above the launch form: what is already running here
+             is what the page is opened to check, and starting another agent is
+             the rarer errand.
+
+             A card each rather than a full-width row: a busy machine runs
+             several at once and the interesting part of one is three short
+             lines, so rows spend the page's height on empty space and push
+             the fourth session below the fold. -->
+        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
+          <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200 mb-4">
+            Sessions
+            <span class="text-gray-400 dark:text-zinc-500 font-medium">({{ liveCount }} running)</span>
+          </h2>
+
+          <p v-if="sessions.length === 0" class="text-xs text-gray-400 dark:text-zinc-500">
+            No agents have run on this machine yet.
+          </p>
+
+          <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="s in sessions"
+              :key="s.id"
+              class="border border-gray-100 dark:border-zinc-800 rounded-lg p-3 bg-gray-50/60 dark:bg-zinc-800/30 flex items-start gap-2"
+            >
+              <!-- The status as a dot: it is the thing being scanned for, and
+                   a word in the corner of every card is not scannable. -->
+              <span
+                class="w-2 h-2 rounded-full shrink-0 mt-1.5"
+                :class="DOTS[sessionTone(s.status)]"
+                :title="s.status"
+              />
+              <div class="min-w-0 flex-1">
+                <!-- The workspace is the heading, because it is what tells one
+                     card from the next: the kind is the same on most of them.
+                     And it is the way back to that workspace — this page says
+                     what is running, and "what is it working on" is one click
+                     away rather than a name to go and search for.
+
+                     A link only where the session names a workspace id. The
+                     name alone is not enough: naming is best-effort, so a card
+                     can be headed "claude-code" and still belong somewhere
+                     worth going. -->
+                <button
+                  v-if="s.workspaceId"
+                  @click="router.push(`/workspaces/${s.workspaceId}`)"
+                  class="block max-w-full text-xs font-bold text-gray-900 dark:text-zinc-100 truncate text-left hover:underline decoration-gray-300 dark:decoration-zinc-600 underline-offset-2"
+                  title="Open this workspace"
+                >
+                  {{ sessionLabel(s) }}
+                </button>
+                <p v-else class="text-xs font-bold text-gray-900 dark:text-zinc-100 truncate">
+                  {{ sessionLabel(s) }}
+                </p>
+                <p
+                  class="text-[10px] mt-0.5 tabular-nums truncate"
+                  :class="TONES[sessionTone(s.status)]"
+                >
+                  {{ sessionSummary(s) }}
+                </p>
+                <p v-if="s.error" class="text-[10px] text-red-500 mt-0.5">{{ s.error }}</p>
+              </div>
+              <!-- On the heading row rather than under it, and icons rather
+                   than words: two more lines per card is what a list of five
+                   costs, and these two actions are the same on every card, so
+                   the words are read once and skipped after that. Named for a
+                   screen reader and on hover, which a bare glyph is not. -->
+              <div v-if="isSessionLive(s.status)" class="flex items-center gap-1 shrink-0">
+                <button
+                  @click="router.push(terminalPath(s))"
+                  title="Open the terminal"
+                  aria-label="Open the terminal"
+                  class="w-7 h-7 flex items-center justify-center bg-black dark:bg-white text-white dark:text-black rounded-md hover:opacity-80 transition-all active:scale-95"
+                >
+                  <svg
+                    class="w-3.5 h-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                </button>
+                <button
+                  :disabled="busy"
+                  @click="stopSession(s.id)"
+                  title="Stop this session"
+                  aria-label="Stop this session"
+                  class="w-7 h-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 rounded-md hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/50 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="5" y="5" width="14" height="14" rx="2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Run an agent here.
              Every reason a launch would be refused is worked out before
              anything is sent and shown next to the button: the backend has
@@ -259,10 +347,15 @@ async function stopSession(id) {
               aria-labelledby="launch-workspace-label"
               class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-56 overflow-y-auto custom-scrollbar"
             >
+              <!-- `min-w-0` on the card itself, not just on the text inside
+                   it: a grid item's minimum width is its content, so without
+                   it a folder path too long for one column widens the card
+                   past the panel instead of being truncated — visible on a
+                   phone, where there is one column and paths are long. -->
               <label
                 v-for="w in launchChoices"
                 :key="w.id"
-                class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all"
+                class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all min-w-0"
                 :class="
                   launchWorkspace === w.id
                     ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-zinc-800'
@@ -373,105 +466,6 @@ async function stopSession(id) {
           </button>
         </div>
 
-        <!-- Sessions.
-             A card each rather than a full-width row: a busy machine runs
-             several at once and the interesting part of one is three short
-             lines, so rows spend the page's height on empty space and push
-             the fourth session below the fold. -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
-          <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200 mb-4">
-            Sessions
-            <span class="text-gray-400 dark:text-zinc-500 font-medium">({{ liveCount }} running)</span>
-          </h2>
-
-          <p v-if="sessions.length === 0" class="text-xs text-gray-400 dark:text-zinc-500">
-            No agents have run on this machine yet.
-          </p>
-
-          <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            <div
-              v-for="s in sessions"
-              :key="s.id"
-              class="border border-gray-100 dark:border-zinc-800 rounded-lg p-3 bg-gray-50/60 dark:bg-zinc-800/30 flex items-start gap-2"
-            >
-              <!-- The status as a dot: it is the thing being scanned for, and
-                   a word in the corner of every card is not scannable. -->
-              <span
-                class="w-2 h-2 rounded-full shrink-0 mt-1.5"
-                :class="DOTS[sessionTone(s.status)]"
-                :title="s.status"
-              />
-              <div class="min-w-0 flex-1">
-                <!-- The workspace is the heading, because it is what tells one
-                     card from the next: the kind is the same on most of them.
-                     And it is the way back to that workspace — this page says
-                     what is running, and "what is it working on" is one click
-                     away rather than a name to go and search for.
-
-                     A link only where the session names a workspace id. The
-                     name alone is not enough: naming is best-effort, so a card
-                     can be headed "claude-code" and still belong somewhere
-                     worth going. -->
-                <button
-                  v-if="s.workspaceId"
-                  @click="router.push(`/workspaces/${s.workspaceId}`)"
-                  class="block max-w-full text-xs font-bold text-gray-900 dark:text-zinc-100 truncate text-left hover:underline decoration-gray-300 dark:decoration-zinc-600 underline-offset-2"
-                  title="Open this workspace"
-                >
-                  {{ sessionLabel(s) }}
-                </button>
-                <p v-else class="text-xs font-bold text-gray-900 dark:text-zinc-100 truncate">
-                  {{ sessionLabel(s) }}
-                </p>
-                <p
-                  class="text-[10px] mt-0.5 tabular-nums truncate"
-                  :class="TONES[sessionTone(s.status)]"
-                >
-                  {{ sessionSummary(s) }}
-                </p>
-                <p v-if="s.error" class="text-[10px] text-red-500 mt-0.5">{{ s.error }}</p>
-              </div>
-              <!-- On the heading row rather than under it, and icons rather
-                   than words: two more lines per card is what a list of five
-                   costs, and these two actions are the same on every card, so
-                   the words are read once and skipped after that. Named for a
-                   screen reader and on hover, which a bare glyph is not. -->
-              <div v-if="isSessionLive(s.status)" class="flex items-center gap-1 shrink-0">
-                <button
-                  @click="router.push(terminalPath(s))"
-                  title="Open the terminal"
-                  aria-label="Open the terminal"
-                  class="w-7 h-7 flex items-center justify-center bg-black dark:bg-white text-white dark:text-black rounded-md hover:opacity-80 transition-all active:scale-95"
-                >
-                  <svg
-                    class="w-3.5 h-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <polyline points="4 17 10 11 4 5" />
-                    <line x1="12" y1="19" x2="20" y2="19" />
-                  </svg>
-                </button>
-                <button
-                  :disabled="busy"
-                  @click="stopSession(s.id)"
-                  title="Stop this session"
-                  aria-label="Stop this session"
-                  class="w-7 h-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 rounded-md hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/50 transition-all active:scale-95 disabled:opacity-50"
-                >
-                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="5" y="5" width="14" height="14" rx="2" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- What the machine has left -->
         <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
           <div class="flex items-baseline justify-between gap-3 mb-4">
@@ -543,44 +537,15 @@ async function stopSession(id) {
         <!-- Settings.
              Laid out the way workspace settings is: a labelled field card per
              thing that can be changed, and the one irreversible action in its
-             own danger zone rather than a third row that looks like the two
-             harmless ones above it. -->
+             own danger zone rather than a row that looks like the harmless
+             one above it.
+
+             The name is not one of them: it is set when the daemon enrols
+             (`agentrqd enroll --name`, defaulting to the hostname), and a
+             name editable here as well is one that can disagree with the box
+             it belongs to. -->
         <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-6">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Settings</h2>
-
-          <div class="space-y-2">
-            <label
-              for="machine-name"
-              class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1"
-              >Name</label
-            >
-            <div class="flex items-stretch gap-2">
-              <input
-                v-if="renaming"
-                id="machine-name"
-                v-model="draftName"
-                @keyup.enter="saveName"
-                type="text"
-                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-zinc-100 focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none transition-all"
-              />
-              <p
-                v-else
-                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-zinc-100 truncate"
-              >
-                {{ machine.name || '—' }}
-              </p>
-              <button
-                :disabled="busy"
-                @click="renaming ? saveName() : startRename()"
-                class="shrink-0 px-5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
-              >
-                {{ renaming ? 'Save' : 'Rename' }}
-              </button>
-            </div>
-            <p class="text-[10px] text-gray-400 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1">
-              What this machine is called everywhere else in AgentRQ.
-            </p>
-          </div>
 
           <div class="space-y-2">
             <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
