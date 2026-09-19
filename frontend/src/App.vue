@@ -418,7 +418,11 @@
     <!-- App Content View -->
     <main v-else class="grow min-w-0 p-0 md:p-4 h-full min-h-0 flex flex-col relative bg-zinc-100 dark:bg-zinc-950">
       <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth bg-white dark:bg-zinc-900 md:border border-gray-200 dark:border-zinc-800 no-scrollbar">
-        <div class="px-4 py-6 md:px-8 md:py-8 h-full flex flex-col">
+        <!-- Never unmounted by a route change — router-view is swapped inside
+             it — so its size is also the size a page navigated to next is
+             about to get. useLaunchTerminalSize.js reads it before a launch
+             navigates to the terminal that has not been created yet. -->
+        <div data-terminal-launch-area class="px-4 py-6 md:px-8 md:py-8 h-full flex flex-col">
           <router-view class="grow flex flex-col min-h-0 min-w-0" />
         </div>
       </div>

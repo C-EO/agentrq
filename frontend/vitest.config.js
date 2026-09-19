@@ -95,6 +95,7 @@ export default defineConfig({
         'src/composables/useDaemonInstall.js',
         'src/composables/useAgentLaunch.js',
         'src/composables/useWorkspaceAgentLaunch.js',
+        'src/composables/useLaunchTerminalSize.js',
         'src/composables/useWorkspaceTerminal.js',
         'src/composables/useTerminalView.js',
         'src/utils/markdown.js',

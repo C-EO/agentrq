@@ -18,6 +18,7 @@
 
 import { ref, computed } from 'vue'
 import * as api from '../api'
+import { launchTerminalSize } from './useLaunchTerminalSize'
 
 /** The two things a daemon will run, and nothing else. */
 export const KINDS = [
@@ -41,16 +42,6 @@ export const KINDS = [
  * required fields.
  */
 export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
-
-/**
- * The terminal a session starts with.
- *
- * Large enough that an agent's first output is not immediately wrapped, and
- * corrected by the real terminal the moment somebody attaches — the browser
- * sends its actual size on every connection.
- */
-export const INITIAL_COLS = 120
-export const INITIAL_ROWS = 40
 
 /**
  * What the daemon accepts as a model or agent name.
@@ -184,6 +175,7 @@ export function useAgentLaunch(deps = {}) {
     sessions,
     fetchWorkspaces = api.fetchWorkspaces,
     launchAgent = api.launchAgent,
+    measureTerminalSize = launchTerminalSize,
   } = deps
 
   const workspaces = ref([])
@@ -248,11 +240,12 @@ export function useAgentLaunch(deps = {}) {
       const extra = {}
       for (const field of spec.needs) extra[field] = params.value[field].trim()
 
+      const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspaceId.value, {
         machineId: machine.value.id,
         kind: kind.value,
-        cols: INITIAL_COLS,
-        rows: INITIAL_ROWS,
+        cols,
+        rows,
         ...extra,
       })
       return created?.session ?? null

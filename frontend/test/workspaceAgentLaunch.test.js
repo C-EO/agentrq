@@ -8,7 +8,7 @@ import {
   machineChoiceEligibility,
   useWorkspaceAgentLaunch,
 } from '../src/composables/useWorkspaceAgentLaunch.js'
-import { INITIAL_COLS, INITIAL_ROWS, KINDS } from '../src/composables/useAgentLaunch.js'
+import { KINDS } from '../src/composables/useAgentLaunch.js'
 
 const OFFLINE_WORKSPACE = {
   id: 'ws1',
@@ -19,6 +19,11 @@ const OFFLINE_WORKSPACE = {
 const READY_MACHINE = { id: 'm1', name: 'rpi', enabled: true, online: true }
 const SECOND_MACHINE = { id: 'm2', name: 'laptop', enabled: true, online: true }
 
+// What a real measurement would answer, standing in for the one this
+// composable no longer hardcodes. The measurement itself is
+// `launchTerminalSize`'s own test.
+const MEASURED_SIZE = { cols: 164, rows: 52 }
+
 function harness(over = {}) {
   const workspace = ref(
     over.workspace === undefined ? { ...OFFLINE_WORKSPACE } : over.workspace
@@ -28,6 +33,7 @@ function harness(over = {}) {
     fetchMachines: vi.fn().mockResolvedValue({
       machines: over.machines ?? [{ ...READY_MACHINE }],
     }),
+    measureTerminalSize: vi.fn().mockResolvedValue(MEASURED_SIZE),
     launchAgent: vi.fn().mockResolvedValue({ session: { id: 's1', status: 'starting' } }),
     ...over.deps,
   }
@@ -234,6 +240,9 @@ describe('useWorkspaceAgentLaunch: blockers', () => {
     const pending = l.launch()
     expect(l.launching.value).toBe(true)
     expect(l.canLaunch.value).toBe(false)
+    // `launch` awaits the terminal size before it awaits `launchAgent`, so
+    // `release` is not assigned until that measurement has resolved.
+    await vi.waitFor(() => expect(release).toBeInstanceOf(Function))
     release()
     await pending
     expect(l.launching.value).toBe(false)
@@ -249,8 +258,8 @@ describe('useWorkspaceAgentLaunch: launching', () => {
     expect(deps.launchAgent).toHaveBeenCalledWith('ws1', {
       machineId: 'm1',
       kind: KINDS[0].id,
-      cols: INITIAL_COLS,
-      rows: INITIAL_ROWS,
+      cols: MEASURED_SIZE.cols,
+      rows: MEASURED_SIZE.rows,
     })
     expect(session).toEqual({ id: 's1', status: 'starting' })
   })
@@ -265,8 +274,8 @@ describe('useWorkspaceAgentLaunch: launching', () => {
     expect(deps.launchAgent).toHaveBeenCalledWith('ws1', {
       machineId: 'm1',
       kind: 'acp-gateway',
-      cols: INITIAL_COLS,
-      rows: INITIAL_ROWS,
+      cols: MEASURED_SIZE.cols,
+      rows: MEASURED_SIZE.rows,
       model: 'gemini-3.8-flash-high',
       agent: 'antigravity-acp',
     })

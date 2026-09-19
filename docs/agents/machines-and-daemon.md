@@ -223,6 +223,14 @@ inside an async `onMounted`. A state that is entered before the thing that
 could fail, with no handler for the failure, is a hang rather than an error.
 `connect` failing is now a reason on screen and a backed-off retry.
 
+## A launch sends the real terminal size, not a constant
+
+`useLaunchTerminalSize.js` measures `App.vue`'s content box — never unmounted
+by the route change a launch is about to make — and fits a hidden `Terminal`
+to it before the pty is created. A bigger hardcoded default is not a fix: no
+single constant is right for both a phone and an ultrawide monitor, and this
+is the one place in the launch path where guessing at cols/rows *is* the bug.
+
 ## A viewer names no session, and must not
 
 A browser holds base62 ids; the frame header wants a 64-bit number. It has no
