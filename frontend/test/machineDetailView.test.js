@@ -100,7 +100,13 @@ async function mount() {
     await settle()
   }
 
-  return { el, choose, clickStart }
+  const clickTab = async (label) => {
+    const button = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === label)
+    button.click()
+    await settle()
+  }
+
+  return { el, choose, clickStart, clickTab }
 }
 
 describe('MachineDetailView: starting an agent', () => {
@@ -111,7 +117,8 @@ describe('MachineDetailView: starting an agent', () => {
   })
 
   it('opens the terminal of the Claude Code session it just started', async () => {
-    const { choose, clickStart } = await mount()
+    const { choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
     await choose('launch-workspace-ws1')
     await clickStart()
 
@@ -121,7 +128,8 @@ describe('MachineDetailView: starting an agent', () => {
 
   it('does the same for a gateway, which asks its own questions on the way up', async () => {
     launchResult = { session: { id: 'sess-10', kind: 'acp-gateway', status: 'starting' } }
-    const { choose, clickStart } = await mount()
+    const { choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
     await choose('launch-workspace-ws1')
     await choose('launch-kind-acp-gateway')
     await clickStart()
@@ -132,7 +140,8 @@ describe('MachineDetailView: starting an agent', () => {
 
   it('stays put when the launch was refused', async () => {
     launchAgent.mockRejectedValueOnce(new Error('that workspace already has an agent'))
-    const { choose, clickStart } = await mount()
+    const { choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
     await choose('launch-workspace-ws1')
     await clickStart()
 
@@ -149,7 +158,8 @@ describe('MachineDetailView: starting an agent', () => {
     // `/sessions/undefined` resolves, loads, finds nothing and reports that
     // the agent has ended — which is a lie, and worse than staying here.
     launchResult = { session: {} }
-    const { choose, clickStart } = await mount()
+    const { choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
     await choose('launch-workspace-ws1')
     await clickStart()
 
@@ -178,23 +188,30 @@ describe('MachineDetailView: the session cards', () => {
 // composables: what it leads with, and what it no longer offers.
 describe('MachineDetailView: the shape of the page', () => {
   it("offers no way to rename the machine: the name is the daemon's", async () => {
-    const { el } = await mount()
+    const { el, clickTab } = await mount()
     expect(el.querySelector('#machine-name')).toBe(null)
     const labels = [...el.querySelectorAll('button')].map((b) => b.textContent.trim())
     expect(labels).not.toContain('Rename')
+
     // The settings card itself is still there, or this would pass by
     // rendering nothing at all.
+    await clickTab('Settings')
     expect([...el.querySelectorAll('h2')].map((h) => h.textContent.trim())).toContain('Settings')
   })
 
-  it('lists the sessions already running before the form that starts another', async () => {
+  it('leads with the Sessions tab, before the one that starts another', async () => {
+    const { el } = await mount()
+    const tabLabels = [...el.querySelectorAll('button')]
+      .map((b) => b.textContent.trim())
+      .filter((t) => ['Sessions', 'New Session', 'Machine Info', 'Settings'].includes(t))
+
+    expect(tabLabels).toEqual(['Sessions', 'New Session', 'Machine Info', 'Settings'])
+  })
+
+  it('opens on the Sessions tab when the machine already has sessions', async () => {
     const { el } = await mount()
     const headings = [...el.querySelectorAll('h2')].map((h) => h.textContent.trim())
-    const sessions = headings.findIndex((t) => t.startsWith('Sessions'))
-    const launch = headings.indexOf('Run an agent here')
-
-    expect(sessions).toBeGreaterThanOrEqual(0)
-    expect(launch).toBeGreaterThanOrEqual(0)
-    expect(sessions).toBeLessThan(launch)
+    expect(headings.some((t) => t.startsWith('Sessions'))).toBe(true)
+    expect(headings).not.toContain('Run an agent here')
   })
 })
