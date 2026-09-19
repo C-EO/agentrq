@@ -13,6 +13,7 @@ import {
   evictionPlan,
   isAttachmentRequest,
   isCacheableApiRead,
+  touchCacheEntry,
   withinSizeCap,
 } from './composables/useAttachmentCache'
 
@@ -55,11 +56,10 @@ registerRoute(
         cacheWillUpdate: async ({ response }) => (withinSizeCap(response) ? response : null),
         // Serving an entry makes it the newest, which is what turns Cache
         // Storage's insertion order into a recency list with nothing else to
-        // keep in step.
-        cachedResponseWillBeUsed: async ({ cache, request, cachedResponse }) => {
+        // keep in step. Workbox hands this callback a cacheName, never a cache.
+        cachedResponseWillBeUsed: async ({ cacheName, request, cachedResponse }) => {
           if (cachedResponse) {
-            await cache.delete(request)
-            await cache.put(request, cachedResponse.clone())
+            await touchCacheEntry({ cacheName, request, response: cachedResponse.clone() })
           }
           return cachedResponse
         },
