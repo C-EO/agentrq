@@ -11,6 +11,11 @@ index: the detail lives in `docs/agents/`, one note per subsystem.
 > *invisible* in the source: the change that looks like an obvious improvement
 > and is a regression, usually on a platform nobody is running right now. They
 > exist because somebody already made that mistake here.
+>
+> **Keep them short — a line or two.** State the rule and what goes wrong
+> without it, then stop. Evidence, measurements and rejected alternatives
+> belong in the pull request, which is read once; a note is read every time
+> somebody opens the area. The same goes for code comments.
 
 ## Project layout
 
