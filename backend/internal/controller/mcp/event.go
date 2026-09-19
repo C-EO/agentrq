@@ -14,6 +14,10 @@ const (
 	ActionMCPMethodCall
 	ActionMCPNotification
 	ActionMCPConnect
+	// The backend asking the agent's session for a clean context ahead of a
+	// task push. Emitted once per successful /clear, never per attempt — a
+	// failed one changed nothing worth counting.
+	ActionMCPClearContext
 )
 
 func (a Action) String() string {
@@ -26,6 +30,8 @@ func (a Action) String() string {
 		return "notification"
 	case ActionMCPConnect:
 		return "connect"
+	case ActionMCPClearContext:
+		return "clear_context"
 	}
 	return "unknown"
 }

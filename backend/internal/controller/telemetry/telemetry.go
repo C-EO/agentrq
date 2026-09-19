@@ -226,6 +226,8 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		action = model.ActionIDMCPToolCall
 	case mcp.ActionMCPConnect:
 		action = model.ActionIDMCPConnect
+	case mcp.ActionMCPClearContext:
+		action = model.ActionIDMCPClearContext
 	case mcp.ActionMCPNotification:
 		switch event.Method {
 		case "permission_manual_allow":
