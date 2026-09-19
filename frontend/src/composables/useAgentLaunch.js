@@ -73,17 +73,43 @@ export function workspaceEligibility(workspace) {
   if (workspace.agentConnected) {
     return {
       ok: false,
+      note: 'agent connected',
       reason: 'This workspace already has an agent connected.',
     }
   }
   if (!workspace.workingDirectory) {
     return {
       ok: false,
+      note: 'no folder set',
       reason: 'This workspace has no working directory, so there is nowhere on the machine to run.',
       fix: { label: 'Set one in workspace settings', to: `/workspaces/${workspace.id}/settings` },
     }
   }
   return { ok: true }
+}
+
+/**
+ * The workspaces to offer, each with the one word that decides whether it is
+ * worth picking.
+ *
+ * The page lists them rather than hiding them behind a dropdown, which means
+ * the reason one of them will not work is visible before it is chosen instead
+ * of after. The judgement is `workspaceEligibility`'s, not a second one: two
+ * answers that disagreed would be worse than one.
+ *
+ * A ready workspace is noted with its folder, because that is the thing that
+ * tells two similarly named workspaces apart on a machine.
+ */
+export function workspaceOptions(workspaces) {
+  return (workspaces ?? []).map((w) => {
+    const eligibility = workspaceEligibility(w)
+    return {
+      id: w.id,
+      name: w.name,
+      ready: eligibility.ok,
+      note: eligibility.ok ? w.workingDirectory : eligibility.note,
+    }
+  })
 }
 
 /**
@@ -171,6 +197,9 @@ export function useAgentLaunch(deps = {}) {
 
   const selected = computed(() => workspaces.value.find((w) => w.id === workspaceId.value) ?? null)
 
+  /** The same workspaces, as the page lists them. */
+  const choices = computed(() => workspaceOptions(workspaces.value))
+
   /**
    * Every reason this launch would be refused, in the order they are worth
    * reading: the machine first, because nothing can run on a machine that is
@@ -237,6 +266,7 @@ export function useAgentLaunch(deps = {}) {
 
   return {
     workspaces,
+    choices,
     loading,
     error,
     launching,

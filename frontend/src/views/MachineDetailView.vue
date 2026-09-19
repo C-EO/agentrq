@@ -31,7 +31,8 @@ import {
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import DeleteModal from '../components/DeleteModal.vue'
-import { useAgentLaunch, KINDS } from '../composables/useAgentLaunch'
+import AgentKindPicker from '../components/AgentKindPicker.vue'
+import { useAgentLaunch } from '../composables/useAgentLaunch'
 import { terminalPath } from '../composables/useTerminalView'
 
 const route = useRoute()
@@ -54,7 +55,7 @@ const showUpdate = ref(false)
 // where a missing `.value` hides.
 const launcher = useAgentLaunch({ machine, sessions })
 const {
-  workspaces: launchWorkspaces,
+  choices: launchChoices,
   workspaceId: launchWorkspace,
   kind: launchKind,
   params: launchParams,
@@ -73,6 +74,15 @@ const TONES = {
   pending: 'text-amber-600 dark:text-amber-400',
   bad: 'text-red-600 dark:text-red-400',
   muted: 'text-gray-400 dark:text-zinc-500',
+}
+
+// The same tokens as a filled dot. Text colours, which is what TONES holds,
+// are chosen to be readable as words and read as grey at eight pixels across.
+const DOTS = {
+  good: 'bg-emerald-500',
+  pending: 'bg-amber-500',
+  bad: 'bg-red-500',
+  muted: 'bg-gray-300 dark:bg-zinc-600',
 }
 
 onMounted(() => {
@@ -228,40 +238,83 @@ async function stopSession(id) {
             </p>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
+          <!-- The workspaces are listed, not folded into a dropdown.
+               Which one to run in is the only real decision on this page, and
+               a list is also the only place there is room to say, before it is
+               picked, why one of them cannot take an agent. Real radios behind
+               the card, so it is reachable from the keyboard. -->
+          <div>
+            <p
+              id="launch-workspace-label"
+              class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+            >
+              Workspace
+            </p>
+            <p v-if="!launchChoices.length" class="text-[11px] text-gray-500 dark:text-zinc-400">
+              No workspaces yet.
+            </p>
+            <div
+              v-else
+              role="radiogroup"
+              aria-labelledby="launch-workspace-label"
+              class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-56 overflow-y-auto custom-scrollbar"
+            >
               <label
-                for="launch-workspace"
-                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-                >Workspace</label
+                v-for="w in launchChoices"
+                :key="w.id"
+                class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all"
+                :class="
+                  launchWorkspace === w.id
+                    ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-zinc-800'
+                    : 'border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600'
+                "
               >
-              <select
-                id="launch-workspace"
-                v-model="launchWorkspace"
-                class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-              >
-                <option value="">Choose a workspace…</option>
-                <option v-for="w in launchWorkspaces" :key="w.id" :value="w.id">
-                  {{ w.name }}
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                for="launch-kind"
-                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-                >What to run</label
-              >
-              <select
-                id="launch-kind"
-                v-model="launchKind"
-                class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-              >
-                <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}</option>
-              </select>
+                <input
+                  :id="`launch-workspace-${w.id}`"
+                  type="radio"
+                  name="launch-workspace"
+                  class="sr-only"
+                  :value="w.id"
+                  :checked="launchWorkspace === w.id"
+                  @change="launchWorkspace = w.id"
+                />
+                <span
+                  class="w-3 h-3 rounded-full border flex items-center justify-center shrink-0"
+                  :class="
+                    launchWorkspace === w.id
+                      ? 'border-gray-900 dark:border-white'
+                      : 'border-gray-300 dark:border-zinc-600'
+                  "
+                >
+                  <span
+                    v-if="launchWorkspace === w.id"
+                    class="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white"
+                  />
+                </span>
+                <span class="min-w-0">
+                  <span class="block text-xs font-bold text-gray-900 dark:text-zinc-100 truncate">
+                    {{ w.name }}
+                  </span>
+                  <!-- A ready workspace shows its folder, which is what tells
+                       two similarly named ones apart; one that is not shows
+                       why in the same place. -->
+                  <span
+                    v-if="w.note"
+                    class="block text-[10px] truncate"
+                    :class="
+                      w.ready
+                        ? 'font-mono text-gray-400 dark:text-zinc-500'
+                        : 'font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400'
+                    "
+                  >
+                    {{ w.note }}
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
+
+          <AgentKindPicker id-prefix="launch-kind" v-model="launchKind" />
 
           <!-- Only the gateway needs these, and it needs both. -->
           <div v-if="launchKind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
@@ -320,7 +373,11 @@ async function stopSession(id) {
           </button>
         </div>
 
-        <!-- Sessions -->
+        <!-- Sessions.
+             A card each rather than a full-width row: a busy machine runs
+             several at once and the interesting part of one is three short
+             lines, so rows spend the page's height on empty space and push
+             the fourth session below the fold. -->
         <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200 mb-4">
             Sessions
@@ -331,50 +388,84 @@ async function stopSession(id) {
             No agents have run on this machine yet.
           </p>
 
-          <div v-else class="divide-y divide-gray-100 dark:divide-zinc-800">
-            <div v-for="s in sessions" :key="s.id" class="py-3 flex items-center justify-between gap-3">
-              <div class="min-w-0">
+          <div v-else class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-for="s in sessions"
+              :key="s.id"
+              class="border border-gray-100 dark:border-zinc-800 rounded-lg p-3 bg-gray-50/60 dark:bg-zinc-800/30 flex items-start gap-2"
+            >
+              <!-- The status as a dot: it is the thing being scanned for, and
+                   a word in the corner of every card is not scannable. -->
+              <span
+                class="w-2 h-2 rounded-full shrink-0 mt-1.5"
+                :class="DOTS[sessionTone(s.status)]"
+                :title="s.status"
+              />
+              <div class="min-w-0 flex-1">
                 <!-- The workspace is the heading, because it is what tells one
-                     row from the next: the kind is the same on most of them.
+                     card from the next: the kind is the same on most of them.
                      And it is the way back to that workspace — this page says
                      what is running, and "what is it working on" is one click
                      away rather than a name to go and search for.
 
                      A link only where the session names a workspace id. The
-                     name alone is not enough: naming is best-effort, so a row
+                     name alone is not enough: naming is best-effort, so a card
                      can be headed "claude-code" and still belong somewhere
                      worth going. -->
                 <button
                   v-if="s.workspaceId"
                   @click="router.push(`/workspaces/${s.workspaceId}`)"
-                  class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate max-w-full hover:underline decoration-gray-300 dark:decoration-zinc-600 underline-offset-2"
+                  class="block max-w-full text-xs font-bold text-gray-900 dark:text-zinc-100 truncate text-left hover:underline decoration-gray-300 dark:decoration-zinc-600 underline-offset-2"
                   title="Open this workspace"
                 >
                   {{ sessionLabel(s) }}
                 </button>
-                <p v-else class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">
+                <p v-else class="text-xs font-bold text-gray-900 dark:text-zinc-100 truncate">
                   {{ sessionLabel(s) }}
                 </p>
-                <p class="text-[11px] mt-0.5 tabular-nums" :class="TONES[sessionTone(s.status)]">
+                <p
+                  class="text-[10px] mt-0.5 tabular-nums truncate"
+                  :class="TONES[sessionTone(s.status)]"
+                >
                   {{ sessionSummary(s) }}
                 </p>
-                <p v-if="s.error" class="text-[11px] text-red-500 mt-0.5">{{ s.error }}</p>
+                <p v-if="s.error" class="text-[10px] text-red-500 mt-0.5">{{ s.error }}</p>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
+              <!-- On the heading row rather than under it, and icons rather
+                   than words: two more lines per card is what a list of five
+                   costs, and these two actions are the same on every card, so
+                   the words are read once and skipped after that. Named for a
+                   screen reader and on hover, which a bare glyph is not. -->
+              <div v-if="isSessionLive(s.status)" class="flex items-center gap-1 shrink-0">
                 <button
-                  v-if="isSessionLive(s.status)"
                   @click="router.push(terminalPath(s))"
-                  class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
+                  title="Open the terminal"
+                  aria-label="Open the terminal"
+                  class="w-7 h-7 flex items-center justify-center bg-black dark:bg-white text-white dark:text-black rounded-md hover:opacity-80 transition-all active:scale-95"
                 >
-                  Terminal
+                  <svg
+                    class="w-3.5 h-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
                 </button>
                 <button
-                  v-if="isSessionLive(s.status)"
                   :disabled="busy"
                   @click="stopSession(s.id)"
-                  class="px-3 py-1.5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50"
+                  title="Stop this session"
+                  aria-label="Stop this session"
+                  class="w-7 h-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 rounded-md hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/50 transition-all active:scale-95 disabled:opacity-50"
                 >
-                  Stop
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="5" y="5" width="14" height="14" rx="2" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -449,61 +540,92 @@ async function stopSession(id) {
           </div>
         </div>
 
-        <!-- Settings -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4">
+        <!-- Settings.
+             Laid out the way workspace settings is: a labelled field card per
+             thing that can be changed, and the one irreversible action in its
+             own danger zone rather than a third row that looks like the two
+             harmless ones above it. -->
+        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-6">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Settings</h2>
 
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Name</p>
+          <div class="space-y-2">
+            <label
+              for="machine-name"
+              class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1"
+              >Name</label
+            >
+            <div class="flex items-stretch gap-2">
               <input
                 v-if="renaming"
+                id="machine-name"
                 v-model="draftName"
                 @keyup.enter="saveName"
                 type="text"
-                class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-zinc-100 focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none transition-all"
               />
-              <p v-else class="text-sm text-gray-900 dark:text-zinc-100">{{ machine.name || '—' }}</p>
+              <p
+                v-else
+                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-bold text-gray-900 dark:text-zinc-100 truncate"
+              >
+                {{ machine.name || '—' }}
+              </p>
+              <button
+                :disabled="busy"
+                @click="renaming ? saveName() : startRename()"
+                class="shrink-0 px-5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+              >
+                {{ renaming ? 'Save' : 'Rename' }}
+              </button>
             </div>
-            <button
-              :disabled="busy"
-              @click="renaming ? saveName() : startRename()"
-              class="shrink-0 px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50"
-            >
-              {{ renaming ? 'Save' : 'Rename' }}
-            </button>
+            <p class="text-[10px] text-gray-400 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1">
+              What this machine is called everywhere else in AgentRQ.
+            </p>
           </div>
 
-          <div class="flex items-center justify-between gap-3 pt-4 border-t border-gray-100 dark:border-zinc-800">
-            <div class="min-w-0">
-              <p class="text-sm text-gray-900 dark:text-zinc-100">
-                {{ machine.enabled ? 'Enabled' : 'Disabled' }}
-              </p>
-              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
-                Disabling closes this machine's connection immediately and refuses the next one.
-              </p>
-            </div>
-            <button
-              :disabled="busy"
-              @click="toggleEnabled"
-              class="shrink-0 px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50"
+          <div class="space-y-2">
+            <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
+              Availability
+            </p>
+            <div
+              class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
             >
-              {{ machine.enabled ? 'Disable' : 'Enable' }}
-            </button>
+              <div class="min-w-0">
+                <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+                  {{ machine.enabled ? 'Enabled' : 'Disabled' }}
+                </p>
+                <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                  Disabling closes this machine's connection immediately and refuses the next one.
+                </p>
+              </div>
+              <button
+                :disabled="busy"
+                @click="toggleEnabled"
+                class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+              >
+                {{ machine.enabled ? 'Disable' : 'Enable' }}
+              </button>
+            </div>
           </div>
 
-          <div class="flex items-center justify-between gap-3 pt-4 border-t border-gray-100 dark:border-zinc-800">
-            <div class="min-w-0">
-              <p class="text-sm text-gray-900 dark:text-zinc-100">Delete this machine</p>
-              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">{{ deleteText }}</p>
-            </div>
-            <button
-              :disabled="busy"
-              @click="showDelete = true"
-              class="shrink-0 px-4 py-2 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-all active:scale-95 disabled:opacity-50"
+          <div class="space-y-2">
+            <p class="block text-[10px] font-black uppercase tracking-widest text-red-400 dark:text-red-500 ml-1">
+              Danger Zone
+            </p>
+            <div
+              class="flex items-center justify-between gap-4 p-4 bg-red-50/40 dark:bg-red-500/5 border border-red-100 dark:border-red-900/30 rounded-lg"
             >
-              Delete
-            </button>
+              <div class="min-w-0">
+                <p class="text-sm font-bold text-red-600 dark:text-red-500">Delete this machine</p>
+                <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-0.5">{{ deleteText }}</p>
+              </div>
+              <button
+                :disabled="busy"
+                @click="showDelete = true"
+                class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       </template>

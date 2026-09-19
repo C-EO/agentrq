@@ -41,13 +41,18 @@ const MACHINE = {
   version: '0.7.1',
 }
 const WORKSPACE = { id: 'ws1', name: 'Ops', agentConnected: false, workingDirectory: '/srv/app' }
+// One live session, so the card's two actions are rendered — for another
+// workspace, or its presence would block the launches tested below.
+const SESSIONS = [
+  { id: 'sess-1', kind: 'claude-code', status: 'running', workspaceId: 'ws9', workspaceName: 'Billing' },
+]
 
 let launchResult = { session: { id: 'sess-9', kind: 'claude-code', status: 'starting' } }
 const launchAgent = vi.fn(() => Promise.resolve(launchResult))
 
 vi.mock('../src/api', () => ({
   getMachine: () => Promise.resolve({ machine: MACHINE }),
-  fetchMachineSessions: () => Promise.resolve({ sessions: [] }),
+  fetchMachineSessions: () => Promise.resolve({ sessions: SESSIONS }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [WORKSPACE] }),
   launchAgent: (...args) => launchAgent(...args),
   updateMachine: vi.fn(),
@@ -78,11 +83,12 @@ async function mount() {
   app.mount(el)
   await settle()
 
-  /** Pick a value in a `<select>` the way a person would. */
-  const choose = async (id, value) => {
-    const select = el.querySelector(`#${id}`)
-    select.value = value
-    select.dispatchEvent(new Event('change'))
+  // Neither choice is a dropdown any more: the workspaces are listed as
+  // cards over a hidden radio each, and the kind is a segmented control. So
+  // both are picked by clicking the option itself, which is also what a
+  // person now does.
+  const choose = async (id) => {
+    el.querySelector(`#${id}`).click()
     await settle()
   }
 
@@ -106,7 +112,7 @@ describe('MachineDetailView: starting an agent', () => {
 
   it('opens the terminal of the Claude Code session it just started', async () => {
     const { choose, clickStart } = await mount()
-    await choose('launch-workspace', 'ws1')
+    await choose('launch-workspace-ws1')
     await clickStart()
 
     expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code' }))
@@ -116,8 +122,8 @@ describe('MachineDetailView: starting an agent', () => {
   it('does the same for a gateway, which asks its own questions on the way up', async () => {
     launchResult = { session: { id: 'sess-10', kind: 'acp-gateway', status: 'starting' } }
     const { choose, clickStart } = await mount()
-    await choose('launch-workspace', 'ws1')
-    await choose('launch-kind', 'acp-gateway')
+    await choose('launch-workspace-ws1')
+    await choose('launch-kind-acp-gateway')
     await clickStart()
 
     expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway' }))
@@ -127,7 +133,7 @@ describe('MachineDetailView: starting an agent', () => {
   it('stays put when the launch was refused', async () => {
     launchAgent.mockRejectedValueOnce(new Error('that workspace already has an agent'))
     const { choose, clickStart } = await mount()
-    await choose('launch-workspace', 'ws1')
+    await choose('launch-workspace-ws1')
     await clickStart()
 
     expect(push).not.toHaveBeenCalled()
@@ -144,10 +150,26 @@ describe('MachineDetailView: starting an agent', () => {
     // the agent has ended — which is a lie, and worse than staying here.
     launchResult = { session: {} }
     const { choose, clickStart } = await mount()
-    await choose('launch-workspace', 'ws1')
+    await choose('launch-workspace-ws1')
     await clickStart()
 
     expect(launchAgent).toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
+  })
+})
+
+// The two actions on a live session card are icons, which say nothing on their
+// own: a control that cannot be read out or hovered is not a control for
+// everybody, and the label is the first thing a redraw loses.
+describe('MachineDetailView: the session cards', () => {
+  it('names its icon-only actions', async () => {
+    const { el } = await mount()
+    const labels = [...el.querySelectorAll('button[aria-label]')].map((b) => b.getAttribute('aria-label'))
+    expect(labels).toContain('Open the terminal')
+    expect(labels).toContain('Stop this session')
+    // And each one says the same thing on hover.
+    for (const b of el.querySelectorAll('button[aria-label]')) {
+      expect(b.getAttribute('title')).toBe(b.getAttribute('aria-label'))
+    }
   })
 })
