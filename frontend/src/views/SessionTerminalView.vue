@@ -30,7 +30,7 @@ const { notifySuccess, notifyError } = useToasts()
 
 const sessionId = String(route.params.id ?? '')
 const view = useTerminalView({ sessionId })
-const { session, loading, others, ended, shownStatus, title, subtitle } = view
+const { session, loading, others, ended, shownStatus, title, subtitle, titleIsWorkspaceName } = view
 
 // An explicit setter rather than an inline assignment in the template: `status`
 // here is a ref destructured out of a composable, and the compiler cannot know
@@ -98,7 +98,11 @@ async function stop() {
           >
             ← Machine
           </button>
-          <template v-if="workspaceHref">
+          <!-- Only when the heading cannot carry the link itself. A session
+               can have a workspace id while its heading is the kind — naming
+               is best-effort on the server — and dropping this outright would
+               lose the way out in exactly that case. -->
+          <template v-if="workspaceHref && !titleIsWorkspaceName">
             <span class="text-gray-300 dark:text-zinc-700 text-[11px]">·</span>
             <button
               @click="router.push(workspaceHref)"
@@ -108,10 +112,21 @@ async function stop() {
             </button>
           </template>
         </div>
+        <!-- The heading is the link when it is the workspace's own name: the
+             name is already on screen, and a second control saying "Workspace"
+             beside it was two things for one destination. -->
         <h1
           class="text-lg md:text-xl font-black tracking-tight text-gray-900 dark:text-zinc-100 truncate"
         >
-          {{ title }}
+          <button
+            v-if="workspaceHref && titleIsWorkspaceName"
+            @click="router.push(workspaceHref)"
+            class="max-w-full truncate hover:underline underline-offset-4 decoration-2 decoration-gray-300 dark:decoration-zinc-600 transition-all"
+            :title="`Open ${title}`"
+          >
+            {{ title }}
+          </button>
+          <template v-else>{{ title }}</template>
         </h1>
         <p v-if="subtitle" class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
           {{ subtitle }}

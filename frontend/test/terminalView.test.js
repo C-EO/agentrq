@@ -253,6 +253,60 @@ describe('loading the session', () => {
   })
 })
 
+/**
+ * Whether the heading may carry the link to the workspace.
+ *
+ * The page used to offer a separate "Workspace" breadcrumb beside the heading,
+ * which was two controls for one destination while the heading was already the
+ * workspace's name. The heading takes the link over — but only when it *is*
+ * that name, and the two questions genuinely come apart: naming is best-effort
+ * on the server, so a session can carry a workspace id while its heading falls
+ * back to the kind. Linking a heading that reads "claude-code" to a workspace
+ * would be a link whose text is not what it opens.
+ */
+describe('whether the heading is the workspace name', () => {
+  it('is, when the server named the workspace', async () => {
+    const h = harness({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ session: { id: 's1', kind: 'claude-code', workspaceName: 'Q3 migration' } }),
+    })
+    await h.v.load()
+    expect(h.v.titleIsWorkspaceName.value).toBe(true)
+  })
+
+  // The case the separate breadcrumb still exists for: there is somewhere to
+  // go, and the heading is not it.
+  it('is not, when the heading fell back to the kind', async () => {
+    const h = harness({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ session: { id: 's1', kind: 'claude-code', workspaceId: 'w1' } }),
+    })
+    await h.v.load()
+    expect(h.v.title.value).toBe('claude-code')
+    expect(h.v.titleIsWorkspaceName.value).toBe(false)
+  })
+
+  it('is not, when a name of only spaces leaves the heading on the kind', async () => {
+    const h = harness({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ session: { id: 's1', kind: 'acp-gateway', workspaceName: '  ' } }),
+    })
+    await h.v.load()
+    expect(h.v.titleIsWorkspaceName.value).toBe(false)
+  })
+
+  // Before anything has loaded the heading is the placeholder, which is not a
+  // workspace and must not be dressed as a link to one.
+  it('is not, before the session has loaded', () => {
+    const h = harness()
+    expect(h.v.title.value).toBe('Terminal')
+    expect(h.v.titleIsWorkspaceName.value).toBe(false)
+  })
+})
+
 describe('live updates', () => {
   it('folds a state change into the session', async () => {
     const h = harness()
