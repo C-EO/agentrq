@@ -285,6 +285,23 @@ export function useTerminalView(deps = {}) {
     return session.value.kind || ''
   })
 
+  /**
+   * Whether the heading is the workspace's own name.
+   *
+   * Asked because the heading is what links to the workspace, and it may only
+   * do that when it is actually naming one. `title` falls back to the kind and
+   * then to "Terminal", and **a session can have a workspace id while its
+   * heading is the kind** — naming is best-effort on the server, so the two
+   * questions genuinely come apart. Linking a heading that reads "claude-code"
+   * to a workspace would be a link whose text is not what it opens.
+   *
+   * Written as the comparison rather than as `!!workspaceName` so that it
+   * stays true to `title` if the fallbacks above ever change.
+   */
+  const titleIsWorkspaceName = computed(
+    () => !!workspaceName.value && title.value === workspaceName.value
+  )
+
   async function load() {
     loading.value = true
     try {
@@ -337,6 +354,7 @@ export function useTerminalView(deps = {}) {
     shownStatus,
     title,
     subtitle,
+    titleIsWorkspaceName,
     load,
     handleEvent,
     handleControl,
