@@ -30,10 +30,32 @@ import (
 // per-profile cap stops one account filling a shared machine, and the machine
 // cap is what stops the machine falling over. Either alone leaves the other
 // case open.
+//
+// Defaults, not fixed limits: --max-per-profile and --max-per-machine override
+// them, because the right numbers are a property of the machine — a laptop and
+// a 64-core box are not the same question — and rebuilding the daemon is not a
+// reasonable way to answer it.
 const (
-	sessionsPerProfile = 4
-	sessionsPerMachine = 8
+	sessionsPerProfile = 8
+	sessionsPerMachine = 16
 )
+
+// sessionCaps validates what was asked for on the command line.
+//
+// Zero is allowed and means no cap, which is what the supervisor already does
+// with it. It is a real answer for a machine somebody owns outright, and
+// refusing it here would leave no way to say so. A negative is not an answer
+// to anything, and silently reading as "unlimited" is the wrong way to find
+// that out.
+func sessionCaps(perProfile, perMachine int) (int, int, error) {
+	if perProfile < 0 {
+		return 0, 0, fmt.Errorf("--max-per-profile cannot be negative: %d", perProfile)
+	}
+	if perMachine < 0 {
+		return 0, 0, fmt.Errorf("--max-per-machine cannot be negative: %d", perMachine)
+	}
+	return perProfile, perMachine, nil
+}
 
 // dialTimeout bounds one connection attempt.
 const dialTimeout = 30 * time.Second
@@ -57,7 +79,14 @@ func cmdServe(ctx context.Context, args []string) error {
 	only := fs.String("profile", "", "connect only this profile (default: all of them)")
 	verbose := fs.Bool("verbose", false, "log every frame decision")
 	manifestURL := fs.String("release-feed", DefaultManifestURL, "where to look for newer releases")
+	maxPerProfile := fs.Int("max-per-profile", sessionsPerProfile, "most agents one account may run here (0 for no limit)")
+	maxPerMachine := fs.Int("max-per-machine", sessionsPerMachine, "most agents this machine will run at once (0 for no limit)")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	perProfile, perMachine, err := sessionCaps(*maxPerProfile, *maxPerMachine)
+	if err != nil {
 		return err
 	}
 
@@ -88,7 +117,7 @@ func cmdServe(ctx context.Context, args []string) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	sup := supervisor.New(pty.Start, sessionsPerProfile, sessionsPerMachine)
+	sup := supervisor.New(pty.Start, perProfile, perMachine)
 
 	// One collector for the machine, shared by every profile. The numbers are
 	// the same hardware whichever account is asking, and measuring once per

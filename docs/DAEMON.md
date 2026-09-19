@@ -309,11 +309,16 @@ pasted into a bug report. The tokens directory is.
 ```sh
 agentrqd enroll --server <url> --code <code> [--profile <id>]
 agentrqd serve  [--profile <id>] [--verbose]
+                [--max-per-profile <n>] [--max-per-machine <n>]
 agentrqd status
 agentrqd disable --profile <id>
 agentrqd rollback
 agentrqd version
 ```
+
+`--max-per-profile` and `--max-per-machine` bound how many agents may run here
+at once, and default to 8 and 16. Pass `0` for no limit. A refused launch says
+why in the panel and in this daemon's log.
 
 Installation is at the top of this page; the archive carries the same steps as
 `INSTALL.md`, plus the systemd unit and the macOS LaunchAgent themselves.

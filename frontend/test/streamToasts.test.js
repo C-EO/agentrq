@@ -142,3 +142,50 @@ describe('toastFor', () => {
     expect(toastFor(reply(undefined))).toBeNull();
   });
 });
+
+// The reason a launch was refused reaches the browser on this event and used
+// to stop there. The row is deleted the instant it fails, so the page the
+// launch navigated to has nothing left to read — a toast is the only place
+// this is ever said, and without it the reason lives in the daemon's log on
+// the machine it was refused on.
+describe('a launch that was refused', () => {
+  const session = (payload) => ({ type: 'session.updated', payload });
+
+  it('says why', () => {
+    const refused = session({
+      id: 's1',
+      status: 'failed',
+      error: 'supervisor: too many sessions running: 8 already running for profile "default", and the limit is 8',
+    });
+
+    expect(toastFor(refused)).toEqual({
+      tone: 'error',
+      title: 'Agent could not start',
+      message:
+        'supervisor: too many sessions running: 8 already running for profile "default", and the limit is 8',
+    });
+  });
+
+  // It says it on the desktop too. The shell's own notifier handles task
+  // events and knows nothing about sessions, so skipping this there would
+  // leave the desktop with no way to hear it at all.
+  it('says it on the desktop as well', () => {
+    const refused = session({ id: 's1', status: 'failed', error: 'no such directory: /srv/gone' });
+
+    expect(toastFor(refused, { platform: 'desktop' })?.message).toBe('no such directory: /srv/gone');
+  });
+
+  // An agent that started and later died reports `failed` as well, with an
+  // exit code rather than a sentence. That belongs in the terminal it died
+  // in, not in a toast over whatever the person has since moved on to.
+  it('stays quiet about a failure with no reason to give', () => {
+    expect(toastFor(session({ id: 's1', status: 'failed' }))).toBeNull();
+    expect(toastFor(session({ id: 's1', status: 'failed', error: '' }))).toBeNull();
+  });
+
+  it('stays quiet about the ordinary life of a session', () => {
+    expect(toastFor(session({ id: 's1', status: 'running' }))).toBeNull();
+    expect(toastFor(session({ id: 's1', status: 'exited', exitCode: 0 }))).toBeNull();
+    expect(toastFor(session({ id: 's1', status: 'killed' }))).toBeNull();
+  });
+});

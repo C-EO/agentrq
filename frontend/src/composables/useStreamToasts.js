@@ -44,8 +44,26 @@ export function isOpenPermissionRequest(message) {
  * @returns {{ tone: 'success'|'info'|'error', message: string, title?: string }|null}
  */
 export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
-  const task = event?.payload;
-  if (!task) return null;
+  const payload = event?.payload;
+  if (!payload) return null;
+
+  // A launch that was refused, which is the only place the reason is ever
+  // said. The session row is deleted the moment it fails, so the event is the
+  // whole record — and the page the launch sent you to has nothing left to
+  // read and reports the generic "no longer on the machine". Without this the
+  // reason exists only in the daemon's log, on the machine it was refused on.
+  //
+  // Gated on there being a reason, not on the status alone: an agent that
+  // starts and later dies also reports `failed`, and it carries an exit code
+  // rather than a sentence. That is the terminal's news, not a toast's.
+  if (event.type === 'session.updated') {
+    if (payload.status !== 'failed' || !payload.error) return null;
+    return { tone: 'error', title: 'Agent could not start', message: payload.error };
+  }
+
+  // Everything below is about a task, which is what the rest of this stream
+  // carries.
+  const task = payload;
 
   // An agent starting work on its own initiative is worth saying; a task the
   // person in front of the screen just created is not.

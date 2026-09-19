@@ -6,6 +6,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -131,6 +132,14 @@ func (r *recordingStarter) last() (pty.Spec, *fakePTY) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.specs[len(r.specs)-1], r.ptys[len(r.ptys)-1]
+}
+
+// nth is the terminal of the n'th session started, so a test can end one that
+// is not the most recent.
+func (r *recordingStarter) nth(n int) *fakePTY {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ptys[n]
 }
 
 func claudeRequest(t *testing.T, id uint64) Request {
@@ -644,5 +653,141 @@ func TestTheStartContextKeepsItsValues(t *testing.T) {
 	}
 	if got := st.lastCtx().Value(key{}); got != "carried" {
 		t.Errorf("the process context carries %v, want the caller's value", got)
+	}
+}
+
+// endAndWait ends a session's process and blocks until the supervisor has
+// recorded the outcome — the capacity check reads the recorded state, so a
+// test that raced it would pass for the wrong reason.
+func endAndWait(t *testing.T, s *Supervisor, p *fakePTY, id uint64) {
+	t.Helper()
+	p.exit(0, nil)
+	waitFor(t, func() bool {
+		sess, err := s.Get(id)
+		if err != nil {
+			return false
+		}
+		state, _, _ := sess.State()
+		return state.Terminal()
+	}, "session never finished")
+}
+
+// The bug this is here for: a finished session stays in the map so its exit
+// can still be reported, and the caps counted it. A machine that had run four
+// agents refused the next one for ever, saying four were running when none
+// were, and only a restart of the daemon cleared it.
+func TestAFinishedSessionGivesItsSlotBack(t *testing.T) {
+	t.Run("per profile", func(t *testing.T) {
+		st := &recordingStarter{}
+		s := New(st.start, 2, 0)
+		for i := uint64(1); i <= 2; i++ {
+			if _, err := s.Start(t.Context(), "work", claudeRequest(t, i)); err != nil {
+				t.Fatalf("Start %d: %v", i, err)
+			}
+		}
+		if _, err := s.Start(t.Context(), "work", claudeRequest(t, 3)); !errors.Is(err, ErrAtCapacity) {
+			t.Fatalf("error = %v, want ErrAtCapacity", err)
+		}
+
+		endAndWait(t, s, st.nth(0), 1)
+
+		if _, err := s.Start(t.Context(), "work", claudeRequest(t, 3)); err != nil {
+			t.Errorf("a finished session still held its slot: %v", err)
+		}
+	})
+
+	t.Run("whole machine", func(t *testing.T) {
+		st := &recordingStarter{}
+		s := New(st.start, 0, 2)
+		if _, err := s.Start(t.Context(), "work", claudeRequest(t, 1)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Start(t.Context(), "other", claudeRequest(t, 2)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Start(t.Context(), "third", claudeRequest(t, 3)); !errors.Is(err, ErrAtCapacity) {
+			t.Fatalf("error = %v, want ErrAtCapacity", err)
+		}
+
+		// The slot is freed for any profile, not only the one that used it.
+		endAndWait(t, s, st.nth(0), 1)
+
+		if _, err := s.Start(t.Context(), "third", claudeRequest(t, 3)); err != nil {
+			t.Errorf("a finished session still held its slot: %v", err)
+		}
+	})
+}
+
+// A refusal has to say how many are really running, or the log sends whoever
+// reads it looking for agents that are not there.
+func TestCapacityRefusalCountsOnlyLiveSessions(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 2, 0)
+	for i := uint64(1); i <= 2; i++ {
+		if _, err := s.Start(t.Context(), "work", claudeRequest(t, i)); err != nil {
+			t.Fatalf("Start %d: %v", i, err)
+		}
+	}
+	endAndWait(t, s, st.nth(0), 1)
+	// Fill the freed slot so the cap is reached again, this time with a
+	// finished session also in the map.
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 3)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := s.Start(t.Context(), "work", claudeRequest(t, 4))
+	if !errors.Is(err, ErrAtCapacity) {
+		t.Fatalf("error = %v, want ErrAtCapacity", err)
+	}
+	if want := `2 already running for profile "work", and the limit is 2`; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to say %q", err, want)
+	}
+}
+
+// Nothing in the daemon calls Forget, so without a window the map is where
+// every session a machine has ever run accumulates for the life of the
+// process.
+func TestFinishedSessionsAreDroppedAfterTheirWindow(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.finishedRetention = 0
+
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	endAndWait(t, s, st.nth(0), 1)
+
+	// The next start is what prunes.
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(1); !errors.Is(err, ErrNoSuchSession) {
+		t.Errorf("a finished session outlived its window: %v", err)
+	}
+	// The running one is untouched, whatever the window says.
+	if _, err := s.Get(2); err != nil {
+		t.Errorf("a running session was pruned: %v", err)
+	}
+}
+
+// Inside the window it must still answer, or "what happened to the agent I was
+// just watching" becomes "no such session".
+func TestAJustFinishedSessionCanStillBeAskedAbout(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	endAndWait(t, s, st.nth(0), 1)
+
+	if _, err := s.Start(t.Context(), "work", claudeRequest(t, 2)); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.Get(1)
+	if err != nil {
+		t.Fatalf("a session that finished a moment ago was dropped: %v", err)
+	}
+	if state, _, _ := sess.State(); state != StateExited {
+		t.Errorf("state = %q, want exited", state)
 	}
 }

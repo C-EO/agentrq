@@ -77,6 +77,10 @@ type Session struct {
 	state    State
 	exitCode int
 	err      error
+	// endedAt is when this session reached a terminal state, and is zero
+	// until it does. Kept so a finished session can be dropped once nobody
+	// is going to ask about it.
+	endedAt time.Time
 
 	// ended closes once the session has reached a terminal state *and* that
 	// state has been recorded.
@@ -111,6 +115,15 @@ var (
 // that a person killing a runaway session sees something happen.
 const KillGrace = 5 * time.Second
 
+// FinishedRetention is how long a finished session can still be asked about.
+//
+// It stays in the map after it exits so that "what happened to it" has an
+// answer — but nothing in the daemon calls Forget, so without a window the
+// map is where every session a machine has ever run accumulates for the life
+// of the process. Long enough to cover the exit report and a viewer still
+// looking at the terminal it happened in.
+const FinishedRetention = 5 * time.Minute
+
 // Supervisor owns every session on this machine.
 type Supervisor struct {
 	start Starter
@@ -123,6 +136,10 @@ type Supervisor struct {
 	perProfile   int
 	wholeMachine int
 
+	// finishedRetention is how long a finished session stays answerable.
+	// A field rather than a constant so a test need not wait out the window.
+	finishedRetention time.Duration
+
 	mu       sync.Mutex
 	sessions map[uint64]*Session
 	profiles map[uint64]string // session id → profile
@@ -131,11 +148,12 @@ type Supervisor struct {
 // New makes a supervisor.
 func New(start Starter, perProfile, wholeMachine int) *Supervisor {
 	return &Supervisor{
-		start:        start,
-		perProfile:   perProfile,
-		wholeMachine: wholeMachine,
-		sessions:     map[uint64]*Session{},
-		profiles:     map[uint64]string{},
+		start:             start,
+		perProfile:        perProfile,
+		wholeMachine:      wholeMachine,
+		finishedRetention: FinishedRetention,
+		sessions:          map[uint64]*Session{},
+		profiles:          map[uint64]string{},
 	}
 }
 
@@ -151,6 +169,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 
 	s.mu.Lock()
+	s.pruneFinishedLocked(time.Now())
 	if _, taken := s.sessions[req.ID]; taken {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("%w: %d", ErrAlreadyExists, req.ID)
@@ -230,30 +249,62 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 }
 
 // checkCapacityLocked refuses a start that would exceed either cap.
+//
+// Only live sessions count, and that is the whole point of the loop. A
+// finished session stays in the map so its exit can still be reported, and
+// counting those meant every agent a machine had ever run held a slot until
+// the daemon restarted: four that had exited, and the next launch was refused
+// as "4 running". Running, Live and Dirs already skip them for the same reason.
 func (s *Supervisor) checkCapacityLocked(profile string) error {
-	if s.wholeMachine > 0 && len(s.sessions) >= s.wholeMachine {
-		return fmt.Errorf("%w: %d running on this machine", ErrAtCapacity, len(s.sessions))
+	machine, forProfile := 0, 0
+	for id, sess := range s.sessions {
+		if state, _, _ := sess.State(); state.Terminal() {
+			continue
+		}
+		machine++
+		if s.profiles[id] == profile {
+			forProfile++
+		}
 	}
-	if s.perProfile > 0 {
-		n := 0
-		for _, p := range s.profiles {
-			if p == profile {
-				n++
-			}
-		}
-		if n >= s.perProfile {
-			return fmt.Errorf("%w: %d running for profile %q", ErrAtCapacity, n, profile)
-		}
+	// The limit is named as well as the count. The reason reaches a person, in
+	// a toast that is the only place they will see it, and "8 running" without
+	// "the limit is 8" reads as a fact rather than as something to act on.
+	if s.wholeMachine > 0 && machine >= s.wholeMachine {
+		return fmt.Errorf("%w: %d already running on this machine, and the limit is %d",
+			ErrAtCapacity, machine, s.wholeMachine)
+	}
+	if s.perProfile > 0 && forProfile >= s.perProfile {
+		return fmt.Errorf("%w: %d already running for profile %q, and the limit is %d",
+			ErrAtCapacity, forProfile, profile, s.perProfile)
 	}
 	return nil
 }
 
+// pruneFinishedLocked drops finished sessions nobody is going to ask about.
+func (s *Supervisor) pruneFinishedLocked(now time.Time) {
+	cutoff := now.Add(-s.finishedRetention)
+	for id, sess := range s.sessions {
+		if sess.finishedBefore(cutoff) {
+			delete(s.sessions, id)
+			delete(s.profiles, id)
+		}
+	}
+}
+
+// finishedBefore reports whether this session ended before t. A session that
+// has not ended is never before anything.
+func (sess *Session) finishedBefore(t time.Time) bool {
+	sess.mu.RLock()
+	defer sess.mu.RUnlock()
+	return !sess.endedAt.IsZero() && sess.endedAt.Before(t)
+}
+
 // reap waits for a session to end and records how.
 //
-// The session stays in the map after it exits. A caller asking about a session
-// that has just died should be told it died and with what code, not that it
-// never existed — "no such session" for something somebody was watching a
-// moment ago is a confusing answer.
+// The session stays in the map after it exits, for FinishedRetention. A caller
+// asking about a session that has just died should be told it died and with
+// what code, not that it never existed — "no such session" for something
+// somebody was watching a moment ago is a confusing answer.
 func (s *Supervisor) reap(sess *Session) {
 	code, err := sess.tty.Wait()
 
@@ -269,6 +320,7 @@ func (s *Supervisor) reap(sess *Session) {
 			sess.state = StateExited
 		}
 	}
+	sess.endedAt = time.Now()
 	sess.mu.Unlock()
 
 	// Announced only now, with the state written. Anyone waiting on the end of

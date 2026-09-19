@@ -206,12 +206,18 @@ export function useTerminalView(deps = {}) {
     loading.value = true
     try {
       const data = await getSession(sessionId)
-      session.value = data?.session ?? null
+      session.value = data?.session ?? session.value
     } catch {
-      // A session that cannot be read is treated as one that is not there:
-      // the page says it has ended rather than showing a terminal that will
-      // never receive anything.
-      session.value = null
+      // Deliberately nothing. A session that cannot be read is one that is not
+      // there, which is already what `session` says — and if the stream got
+      // here first, what it reported is the better answer.
+      //
+      // That second case is the one this is written for. A launch the daemon
+      // refuses is deleted the instant it fails, so this read races a 404
+      // against the `session.updated` event carrying the reason. Clearing the
+      // session here replaced "this agent failed to start: <reason>" with the
+      // generic "no longer on the machine", and the reason was then only in
+      // the daemon's log.
     } finally {
       loading.value = false
     }
