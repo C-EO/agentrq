@@ -67,6 +67,33 @@ const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
 const deleteText = computed(() => deleteConsequence(machine.value, liveCount.value))
 
+const TABS = [
+  { id: 'sessions', label: 'Sessions', icon: 'M4 6h16M4 12h16M4 18h7' },
+  { id: 'new-session', label: 'New Session', icon: 'M12 4v16m8-8H4' },
+  {
+    id: 'info',
+    label: 'Machine Info',
+    icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+  },
+]
+
+// Tracks an explicit click only. Until somebody clicks a tab, it follows
+// whether this machine has ever run a session — so a machine with none opens
+// straight on the form that starts one, and a machine that already has some
+// opens on the list of them.
+const chosenTab = ref('')
+const activeTab = computed({
+  get: () => chosenTab.value || (sessions.value.length === 0 ? 'new-session' : 'sessions'),
+  set: (id) => {
+    chosenTab.value = id
+  },
+})
+
 const TONES = {
   good: 'text-emerald-600 dark:text-emerald-400',
   pending: 'text-amber-600 dark:text-amber-400',
@@ -210,15 +237,45 @@ async function stopSession(id) {
           </button>
         </div>
 
-        <!-- Sessions, and above the launch form: what is already running here
-             is what the page is opened to check, and starting another agent is
-             the rarer errand.
+        <!-- Tabs, vertical: the same sidebar-nav shape as workspace settings.
+             Sessions leads because it is what the page is opened to check;
+             New Session defaults to active on a machine that has never run
+             one, since the list it would otherwise lead on is empty. -->
+        <div class="w-full min-w-0 flex flex-col md:flex-row gap-6">
+          <div class="w-full md:w-48 shrink-0">
+            <nav class="flex flex-col gap-1 sticky top-0">
+              <button
+                v-for="tab in TABS"
+                :key="tab.id"
+                type="button"
+                @click="activeTab = tab.id"
+                :class="[
+                  activeTab === tab.id
+                    ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900 shadow-lg shadow-black/5'
+                    : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800',
+                ]"
+                class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left"
+              >
+                <span class="w-4 h-4 flex items-center justify-center shrink-0">
+                  <svg class="w-full h-full" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" :d="tab.icon" />
+                  </svg>
+                </span>
+                {{ tab.label }}
+              </button>
+            </nav>
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+              <div class="p-6 md:p-8">
+        <!-- Sessions: what is already running here.
 
              A card each rather than a full-width row: a busy machine runs
              several at once and the interesting part of one is three short
              lines, so rows spend the page's height on empty space and push
              the fourth session below the fold. -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
+        <div v-if="activeTab === 'sessions'">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200 mb-4">
             Sessions
             <span class="text-gray-400 dark:text-zinc-500 font-medium">({{ liveCount }} running)</span>
@@ -312,13 +369,13 @@ async function stopSession(id) {
           </div>
         </div>
 
-        <!-- Run an agent here.
+        <!-- New Session.
              Every reason a launch would be refused is worked out before
              anything is sent and shown next to the button: the backend has
              five of them, and a form that fired and reported whichever it hit
              would make you press the button to find out whether you could
              press the button. -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4">
+        <div v-if="activeTab === 'new-session'" class="space-y-4">
           <div>
             <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Run an agent here</h2>
             <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
@@ -466,8 +523,8 @@ async function stopSession(id) {
           </button>
         </div>
 
-        <!-- What the machine has left -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
+        <!-- Machine Info: what the machine has left -->
+        <div v-if="activeTab === 'info'">
           <div class="flex items-baseline justify-between gap-3 mb-4">
             <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Resources</h2>
             <p v-if="machine.metrics" class="text-[11px] text-gray-400 dark:text-zinc-500">
@@ -543,7 +600,7 @@ async function stopSession(id) {
              (`agentrqd enroll --name`, defaulting to the hostname), and a
              name editable here as well is one that can disagree with the box
              it belongs to. -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-6">
+        <div v-if="activeTab === 'settings'" class="space-y-6">
           <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Settings</h2>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -590,6 +647,10 @@ async function stopSession(id) {
                 >
                   Delete
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
               </div>
             </div>
           </div>
