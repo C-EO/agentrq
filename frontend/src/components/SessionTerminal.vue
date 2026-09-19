@@ -19,14 +19,35 @@
  * this page did.
  *
  * So the host is a flex child with `min-h-0`, which gives it a definite height
- * that does not depend on its content, and the observer below refuses to act
- * on a measurement that has not actually changed.
+ * that does not depend on its content, and `useTerminalFit` refuses to act on
+ * a measurement that has not actually changed.
+ *
+ * ## The order in here is the fix for the second bug this page had
+ *
+ * Text arrived mis-shaped on first open and came right the moment somebody
+ * collapsed the sidebar. `fit()` is a no-op until the renderer has measured a
+ * character cell, so the opening fit did nothing, the terminal stayed at
+ * xterm's default 80×24 in a much wider box, and **that** was the width sent
+ * to the machine — so the agent painted its first screen for a terminal
+ * nobody was looking at. Resizing afterwards does not re-wrap output a
+ * program has already written, which is why it looked broken rather than
+ * merely small. `useTerminalFit` carries the retry that fixes it, and the
+ * reasoning.
+ *
+ * Two things here are load-bearing for the same reason:
+ *
+ * - **The box is watched before anything is awaited.** Layout that settles
+ *   during an await is layout nobody observed, and on this page the header
+ *   grows once the session loads — the subtitle and the Stop button appear.
+ * - **The terminal is fitted before its size is sent.** Sending first means
+ *   sending the default.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { useTerminalSession, VIEWER_SESSION } from '../composables/useTerminalSession'
+import { useTerminalFit } from '../composables/useTerminalFit'
 import { TERMINAL_OPTIONS, TERMINAL_THEME } from '../composables/useTerminalView'
 import { terminalSocketUrl } from '../api'
 
@@ -44,39 +65,40 @@ let term = null
 let fit = null
 let session = null
 let observer = null
-let frame = 0
-let lastSize = ''
+let fitter = null
 
-/**
- * Re-fit, at most once a frame, and only when it changes something.
- *
- * Both halves matter. The frame keeps a drag from fitting on every pixel, and
- * the comparison is what stops a fit that changed nothing from being fed back
- * in as a reason to fit again.
- */
-function refit() {
-  if (frame) return
-  frame = requestAnimationFrame(() => {
-    frame = 0
-    if (!term || !fit || !host.value) return
-    // A hidden element measures zero, and fitting to zero throws away the
-    // terminal's dimensions for when it comes back.
-    if (host.value.clientHeight < 2 || host.value.clientWidth < 2) return
-
-    fit.fit()
-    const size = `${term.cols}x${term.rows}`
-    if (size === lastSize) return
-    lastSize = size
-    session?.sendResize(term.cols, term.rows)
-  })
-}
+/** Ask for a fit. Safe before the fitter exists, which the observer can be. */
+const refit = () => fitter?.request()
 
 onMounted(async () => {
   term = new Terminal({ ...TERMINAL_OPTIONS, theme: TERMINAL_THEME })
   fit = new FitAddon()
   term.loadAddon(fit)
   term.open(host.value)
-  refit()
+
+  fitter = useTerminalFit({
+    measure: () => (host.value ? { width: host.value.clientWidth, height: host.value.clientHeight } : null),
+    // Asked before every fit, because it is the only thing that distinguishes
+    // "the renderer has not measured a cell yet" from a real measurement —
+    // `fit()` itself is silent about it.
+    propose: () => fit?.proposeDimensions(),
+    apply: () => {
+      fit.fit()
+      return { cols: term.cols, rows: term.rows }
+    },
+    onSize: (cols, rows) => session?.sendResize(cols, rows),
+  })
+
+  // Before the session, and before anything is awaited: an unobserved layout
+  // change is one nothing will ever correct, because what fits after mount is
+  // this observer and only this observer.
+  observer = new ResizeObserver(refit)
+  observer.observe(host.value)
+  window.addEventListener('resize', refit)
+
+  // Now, synchronously where it can be, so the size sent below is a
+  // measurement rather than xterm's default.
+  fitter.settle()
 
   session = useTerminalSession({
     // Not props.sessionId: that is a base62 string, and the frame header wants
@@ -112,15 +134,11 @@ onMounted(async () => {
 
   session.open()
   session.sendResize(term.cols, term.rows)
-
-  observer = new ResizeObserver(refit)
-  observer.observe(host.value)
-  window.addEventListener('resize', refit)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', refit)
-  if (frame) cancelAnimationFrame(frame)
+  fitter?.stop()
   observer?.disconnect()
   session?.close()
   term?.dispose()
