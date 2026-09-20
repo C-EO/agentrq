@@ -334,6 +334,39 @@ func TestRepository_ListTasks_FiltersByAssignee(t *testing.T) {
 	}
 }
 
+func TestRepository_CountTasks_FiltersByStatusAndAssignee(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(1)
+	userID := int64(10)
+
+	db.Create(&model.Task{ID: 1, WorkspaceID: workspaceID, UserID: userID, Title: "Agent ongoing", Status: "ongoing", Assignee: "agent"})
+	db.Create(&model.Task{ID: 2, WorkspaceID: workspaceID, UserID: userID, Title: "Human ongoing", Status: "ongoing", Assignee: "human"})
+	db.Create(&model.Task{ID: 3, WorkspaceID: workspaceID, UserID: userID, Title: "Agent notstarted", Status: "notstarted", Assignee: "agent"})
+
+	req := entity.ListTasksRequest{
+		WorkspaceID: workspaceID,
+		Status:      []string{"ongoing"},
+		Assignee:    "agent",
+	}
+
+	count, err := repo.CountTasks(ctx, req, userID)
+	if err != nil {
+		t.Fatalf("CountTasks failed: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("expected a count of 1 for the agent's ongoing tasks, got %d", count)
+	}
+}
+
 func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

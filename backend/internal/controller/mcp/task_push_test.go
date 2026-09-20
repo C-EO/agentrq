@@ -65,11 +65,23 @@ func countingClear(ps *WorkspaceServer, err error) *int {
 	return &calls
 }
 
-// listTasksFunc is a repository that answers only the poller's one question.
+// listTasksFunc is a repository that answers the poller's questions from one
+// underlying function. CountTasks reuses it rather than needing its own,
+// since the fakes built on it already filter by the request's Status and
+// Assignee — counting is just listing without a Limit and taking the length.
 type listTasksFunc func(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 
 func (f listTasksFunc) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	return f(ctx, req, userID)
+}
+
+func (f listTasksFunc) CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error) {
+	req.Limit = 0
+	tasks, err := f(ctx, req, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(tasks)), nil
 }
 
 // pendingTaskRepo stands in for the repository's WHERE/LIMIT, since pollOnce
@@ -421,15 +433,19 @@ func TestPollOnceAsksTwoSeparateQueriesForItsOwnTasks(t *testing.T) {
 	}
 }
 
-// The busy check stops at the first query: no reason to ask for the agent's
-// pending backlog when it already has no room for it.
+// The busy check never asks about the agent's pending backlog: no reason to
+// list it when there is already no room to offer anything from it. (A full
+// tick can still make a second call — fetching one ongoing row to name in the
+// hourly status-check message — but that is never a "notstarted" query.)
 func TestPollOnceSkipsThePendingQueryWhenFull(t *testing.T) {
 	ps := pushServer(t)
 	repo, asked := recordingTaskRepo(model.Task{ID: 1, Status: "ongoing", Assignee: "agent"})
 	ps.pollOnce(repo)
 
-	if len(*asked) != 1 {
-		t.Fatalf("made %d queries while full, want exactly 1 (ongoing only)", len(*asked))
+	for _, req := range *asked {
+		if len(req.Status) == 1 && req.Status[0] == "notstarted" {
+			t.Fatalf("queried notstarted tasks while full: %+v", req)
+		}
 	}
 }
 
@@ -545,6 +561,10 @@ type pollRepo struct {
 
 func (r pollRepo) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	return r.list(ctx, req, userID)
+}
+
+func (r pollRepo) CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error) {
+	return listTasksFunc(r.list).CountTasks(ctx, req, userID)
 }
 
 // The loop itself: it ticks until the server is closed, and closing it is what

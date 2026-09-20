@@ -1092,11 +1092,12 @@ func (ps *WorkspaceServer) nextOfferIndex(pendingTasks []model.Task) int {
 	return 0
 }
 
-// taskLister is the one thing a poll asks of the repository. Named so that a
-// tick can be exercised without standing up the whole repository, which is the
-// only reason the body below is a method rather than a closure.
+// taskLister is what a poll asks of the repository. Named so that a tick can
+// be exercised without standing up the whole repository, which is the only
+// reason the body below is a method rather than a closure.
 type taskLister interface {
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 }
 
 // pollInterval is how often StartPoller goes looking for work. A var rather
@@ -1141,28 +1142,33 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 
-	// Ask only how many of the agent's own tasks are ongoing, bounded by the
-	// concurrency limit itself: past that count the answer is already "full"
-	// however many more there really are, so there is no reason to ask for
-	// more rows than that.
+	// Ask only how many of the agent's own tasks are ongoing — a COUNT, not a
+	// row fetch. Every tick needs this number and nothing else about those
+	// tasks, so there is no reason to hydrate a body, a response or an
+	// attachment list to get it.
 	ongoingReq := entity.ListTasksRequest{
 		WorkspaceID: ps.workspaceID,
 		UserID:      ps.userID,
 		Status:      []string{"ongoing"},
 		Assignee:    "agent",
-		Limit:       limit,
 	}
-	ongoingTasks, err := repo.ListTasks(context.Background(), ongoingReq, uid)
+	ongoingCount, err := repo.CountTasks(context.Background(), ongoingReq, uid)
 	if err != nil {
 		return 0
 	}
 
-	if len(ongoingTasks) >= limit {
+	if ongoingCount >= int64(limit) {
+		// The one case that does need an actual row: naming the task in the
+		// hourly status-check message. Asked for here, not above, because
+		// this branch is rare — most ticks return before ever needing it.
 		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
-			ongoingTask := ongoingTasks[0]
-			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
-			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
-			ps.lastUpdateCheckAt = time.Now()
+			ongoingReq.Limit = 1
+			if rows, err := repo.ListTasks(context.Background(), ongoingReq, uid); err == nil && len(rows) > 0 {
+				ongoingTask := rows[0]
+				msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
+				ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
+				ps.lastUpdateCheckAt = time.Now()
+			}
 		}
 		return 0
 	}
