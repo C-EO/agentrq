@@ -136,45 +136,84 @@ func TestClearContextForTaskDelegatesToClearContextFor(t *testing.T) {
 	}
 }
 
-// A task delivered immediately by a REST handler must not be rediscovered by
-// StartPoller on its next tick and pushed — and, if it wants one, cleared — a
-// second time while the agent simply hasn't flipped its status yet.
-func TestMarkTaskPushedIsRememberedUntilReconciled(t *testing.T) {
+// The push repeats until the agent takes the task; the clear behind it must
+// not, or each push would land in a context the next clear wipes. This is the
+// state that tells the two apart.
+func TestContextClearedIsRememberedUntilReconciled(t *testing.T) {
 	ps := serverWithClear(nil)
 
-	if ps.wasTaskPushed(7) {
-		t.Fatal("a task nothing has marked reads as already pushed")
+	if ps.wasContextCleared(7) {
+		t.Fatal("a task nothing has marked reads as already cleared")
 	}
 
-	ps.MarkTaskPushed(7)
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("MarkTaskPushed did not stick")
+	ps.markContextCleared(7)
+	if !ps.wasContextCleared(7) {
+		t.Fatal("markContextCleared did not stick")
 	}
 
-	// Still notstarted on the next tick: still remembered.
-	ps.reconcilePushedTaskIDs(map[int64]struct{}{7: {}})
-	if !ps.wasTaskPushed(7) {
+	// Still notstarted on the next tick: still remembered, so the tick that
+	// pushes it again does not clear again.
+	ps.reconcileClearedTaskIDs(map[int64]struct{}{7: {}})
+	if !ps.wasContextCleared(7) {
 		t.Fatal("reconcile dropped a task that is still pending")
 	}
 
-	// No longer notstarted (picked up or resolved some other way): forgotten,
-	// so the set does not grow forever.
-	ps.reconcilePushedTaskIDs(map[int64]struct{}{})
-	if ps.wasTaskPushed(7) {
+	// No longer notstarted (taken, or resolved some other way): forgotten, so
+	// the set does not grow forever and a later handover clears afresh.
+	ps.reconcileClearedTaskIDs(map[int64]struct{}{})
+	if ps.wasContextCleared(7) {
 		t.Fatal("reconcile kept a task that is no longer pending")
 	}
 }
 
-// serverWithClear leaves pushedTaskIDs nil, same as the zero value every
-// caller outside this package's constructor sees; MarkTaskPushed has to
+// serverWithClear leaves clearedTaskIDs nil, same as the zero value every
+// caller outside this package's constructor sees; markContextCleared has to
 // initialise it lazily rather than assume NewWorkspaceServer already did.
-func TestMarkTaskPushedOnANilMapDoesNotPanic(t *testing.T) {
+func TestMarkContextClearedOnANilMapDoesNotPanic(t *testing.T) {
 	ps := &WorkspaceServer{}
 
-	ps.MarkTaskPushed(7)
+	ps.markContextCleared(7)
 
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("MarkTaskPushed did not stick on a lazily-initialised map")
+	if !ps.wasContextCleared(7) {
+		t.Fatal("markContextCleared did not stick on a lazily-initialised map")
+	}
+}
+
+// The rule itself, at the level it is enforced: asking twice for the same task
+// clears once. Every push after the first goes to an agent that has already
+// been given its clean slate.
+func TestClearIsAskedForOnlyOncePerTask(t *testing.T) {
+	calls := 0
+	ps := serverWithClear(func(context.Context) error {
+		calls++
+		return nil
+	})
+	close(ps.done)
+
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+
+	if calls != 1 {
+		t.Errorf("clear called %d times for one task, want 1", calls)
+	}
+}
+
+// A clear that failed sent nothing, so it is not remembered as done — the next
+// push tries again rather than handing the agent the task on the very context
+// it asked to be rid of.
+func TestAFailedClearIsTriedAgainOnTheNextPush(t *testing.T) {
+	calls := 0
+	ps := serverWithClear(func(context.Context) error {
+		calls++
+		return errors.New("no running session for this workspace")
+	})
+	close(ps.done)
+
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+	ps.clearContextFor(context.Background(), model.Task{ID: 7, ClearContext: true})
+
+	if calls != 2 {
+		t.Errorf("clear attempted %d times, want 2", calls)
 	}
 }
 

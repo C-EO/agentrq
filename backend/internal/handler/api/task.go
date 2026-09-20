@@ -134,13 +134,16 @@ func (h *handler) createTask() fiber.Handler {
 				}
 				// This is the same "hand the agent its next task" push StartPoller
 				// makes, only immediate rather than on its next tick — so it must
-				// clear first for the same reason the poller does, and mark the
-				// task pushed so the poller does not rediscover it as still
-				// notstarted and push (and clear) it again before the agent gets a
-				// chance to flip its status.
+				// clear first for the same reason the poller does: the agent has
+				// to read the task on a clean context, and clearing after it has
+				// already been handed the task would throw the task away.
+				//
+				// Nothing records the push. The poller goes on offering the task
+				// until the agent moves it to ongoing, which is what makes a push
+				// made while nothing was attached recoverable. The clear is the
+				// half that must not repeat, and clearContextFor remembers it.
 				srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
 				srv.SendChannelNotification(ctx, rs.Task.ID, content)
-				srv.MarkTaskPushed(rs.Task.ID)
 			}
 		}
 
@@ -439,10 +442,10 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 			srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
 			content := fmt.Sprintf("[Task reassigned to agent] %s", rs.Task.Title)
 			// Same reasoning as the immediate push in createTask: clear before
-			// pushing, and mark it pushed so StartPoller does not repeat both.
+			// pushing, and leave the push itself unrecorded so StartPoller goes
+			// on offering the task until the agent takes it.
 			srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
 			srv.SendChannelNotification(ctx, rs.Task.ID, content)
-			srv.MarkTaskPushed(rs.Task.ID)
 		}
 
 		c.Status(http.StatusOK)

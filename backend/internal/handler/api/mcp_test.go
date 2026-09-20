@@ -73,15 +73,14 @@ type fakeWorkspaceServer struct {
 
 	stopOutcome mcpctrl.StopOutcome
 
-	// calls records, in order, which of ClearContextForTask/SendChannelNotification/
-	// MarkTaskPushed the handler made — a test asserting a push order needs to
-	// see the sequence, not just a count of each.
+	// calls records, in order, which of ClearContextForTask/
+	// SendChannelNotification the handler made — a test asserting a push order
+	// needs to see the sequence, not just a count of each.
 	calls              []string
 	clearedTaskID      int64
 	clearContextWanted bool
 	notifiedTaskID     int64
 	notifiedContent    string
-	pushedTaskID       int64
 }
 
 func (f *fakeWorkspaceServer) SendSetModelNotification(ctx context.Context, modelID string) error {
@@ -113,11 +112,6 @@ func (f *fakeWorkspaceServer) ClearContextForTask(ctx context.Context, taskID in
 	f.calls = append(f.calls, "ClearContextForTask")
 	f.clearedTaskID = taskID
 	f.clearContextWanted = clearContext
-}
-
-func (f *fakeWorkspaceServer) MarkTaskPushed(taskID int64) {
-	f.calls = append(f.calls, "MarkTaskPushed")
-	f.pushedTaskID = taskID
 }
 
 func (f *fakeWorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error {

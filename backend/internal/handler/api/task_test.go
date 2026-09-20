@@ -258,8 +258,9 @@ func (m *mockCrudCreateTask) ListTasks(ctx context.Context, req entity.ListTasks
 // over the MCP channel and left ClearContext for StartPoller's next tick,
 // up to sixty seconds later, to act on — which is a /clear arriving after the
 // task it was meant to precede. It must now clear before it notifies, exactly
-// like the poller does, and mark the task pushed so the poller does not
-// discover it as still notstarted and repeat both.
+// like the poller does. The push itself is recorded nowhere: the poller goes
+// on offering the task until the agent takes it, and clearContextFor is what
+// keeps the clear behind those repeats from happening twice.
 func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 	app := fiber.New()
 	created := entity.Task{
@@ -303,7 +304,7 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
 	}
@@ -312,9 +313,6 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 	}
 	if srv.notifiedTaskID != created.ID {
 		t.Errorf("notified task %d, want %d", srv.notifiedTaskID, created.ID)
-	}
-	if srv.pushedTaskID != created.ID {
-		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, created.ID)
 	}
 }
 
@@ -357,7 +355,7 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 	if srv.clearContextWanted {
 		t.Error("asked to clear a task that never requested one")
 	}
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v (clearContextFor's own no-op branch decides whether to actually clear, not the handler)", srv.calls, wantCalls)
 	}
@@ -375,7 +373,7 @@ func (m *mockCrudUpdateTaskAssignee) UpdateTaskAssignee(ctx context.Context, req
 
 // Reassigning a task to the agent is the same kind of immediate push as
 // createTask's, on a task that may equally have asked for a clean slate, so
-// it has to clear first and mark the task pushed for the same reason.
+// it has to clear first for the same reason.
 func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testing.T) {
 	app := fiber.New()
 	reassigned := entity.Task{ID: 44, WorkspaceID: 1, Title: "Pick this back up", ClearContext: true}
@@ -407,14 +405,11 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
 	}
 	if srv.clearedTaskID != reassigned.ID || !srv.clearContextWanted {
 		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, reassigned.ID)
-	}
-	if srv.pushedTaskID != reassigned.ID {
-		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, reassigned.ID)
 	}
 }
