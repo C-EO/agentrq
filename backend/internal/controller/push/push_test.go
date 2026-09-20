@@ -227,6 +227,38 @@ func TestSubscriptionAllowsType(t *testing.T) {
 	}
 }
 
+// ── task/reply payload URLs ──────────────────────────────────────────────────
+//
+// Every notification a user can click must land on the task it is about, not
+// just the workspace — otherwise the notification isn't actionable.
+
+func TestTaskCreatePayload_LinksToTask(t *testing.T) {
+	p := taskCreatePayload("My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug"})
+	want := "/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+	if p.Body != "My Workspace" {
+		t.Errorf("Body = %q, want workspace name", p.Body)
+	}
+}
+
+func TestTaskStatusPayload_LinksToTask(t *testing.T) {
+	p := taskStatusPayload("My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug", Status: "completed"})
+	want := "/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+}
+
+func TestReplyPayload_LinksToTask(t *testing.T) {
+	p := replyPayload("0000000000A", model.Task{ID: 5, Title: "Fix bug"}, model.Message{ID: 20, Text: "Done!"})
+	want := "/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+}
+
 // ── truncate ─────────────────────────────────────────────────────────────────
 
 func TestTruncate(t *testing.T) {

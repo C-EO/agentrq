@@ -150,7 +150,6 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 	}
 	ownerID := ws.UserID
 
-	var payload pushPayload
 	workspaceIDStr := monoflake.ID(ev.WorkspaceID).String()
 
 	switch ev.ResourceType {
@@ -165,21 +164,9 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		}
 		switch ev.Action {
 		case entity.ActionTaskCreate:
-			payload = pushPayload{
-				Title: fmt.Sprintf("New task: %s", truncate(t.Title, 60)),
-				Body:  ws.Name,
-				URL:   fmt.Sprintf("/workspaces/%s", workspaceIDStr),
-				Tag:   fmt.Sprintf("task-create-%d", t.ID),
-			}
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, payload)
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, taskCreatePayload(ws.Name, workspaceIDStr, t))
 		case entity.ActionTaskUpdate, entity.ActionTaskComplete:
-			payload = pushPayload{
-				Title: fmt.Sprintf("Task %s: %s", strings.ToUpper(t.Status), truncate(t.Title, 50)),
-				Body:  ws.Name,
-				URL:   fmt.Sprintf("/workspaces/%s", workspaceIDStr),
-				Tag:   fmt.Sprintf("task-status-%d", t.ID),
-			}
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, payload)
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, taskStatusPayload(ws.Name, workspaceIDStr, t))
 		}
 		return
 
@@ -199,18 +186,45 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		if err != nil {
 			return
 		}
-		taskIDStr := monoflake.ID(t.ID).String()
-		payload = pushPayload{
-			Title: fmt.Sprintf("Reply on: %s", truncate(t.Title, 55)),
-			Body:  truncate(m.Text, 100),
-			URL:   fmt.Sprintf("/workspaces/%s/tasks/%s", workspaceIDStr, taskIDStr),
-			Tag:   fmt.Sprintf("reply-%d", m.ID),
-		}
-		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, payload)
+		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, replyPayload(workspaceIDStr, t, m))
 		return
 
 	default:
 		return
+	}
+}
+
+// taskURL is the path a task-related notification opens on click. It must
+// point at the task, not just its workspace, or the notification is a
+// dead end the user has to re-navigate from.
+func taskURL(workspaceIDStr string, taskID int64) string {
+	return fmt.Sprintf("/workspaces/%s/tasks/%s", workspaceIDStr, monoflake.ID(taskID).String())
+}
+
+func taskCreatePayload(wsName, workspaceIDStr string, t model.Task) pushPayload {
+	return pushPayload{
+		Title: fmt.Sprintf("New task: %s", truncate(t.Title, 60)),
+		Body:  wsName,
+		URL:   taskURL(workspaceIDStr, t.ID),
+		Tag:   fmt.Sprintf("task-create-%d", t.ID),
+	}
+}
+
+func taskStatusPayload(wsName, workspaceIDStr string, t model.Task) pushPayload {
+	return pushPayload{
+		Title: fmt.Sprintf("Task %s: %s", strings.ToUpper(t.Status), truncate(t.Title, 50)),
+		Body:  wsName,
+		URL:   taskURL(workspaceIDStr, t.ID),
+		Tag:   fmt.Sprintf("task-status-%d", t.ID),
+	}
+}
+
+func replyPayload(workspaceIDStr string, t model.Task, m model.Message) pushPayload {
+	return pushPayload{
+		Title: fmt.Sprintf("Reply on: %s", truncate(t.Title, 55)),
+		Body:  truncate(m.Text, 100),
+		URL:   taskURL(workspaceIDStr, t.ID),
+		Tag:   fmt.Sprintf("reply-%d", m.ID),
 	}
 }
 
