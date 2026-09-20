@@ -33,4 +33,15 @@ makes them self-evidently true. A few happen entirely in the browser and are
   usage was added; ordinary use passes the old ceiling of 10 easily, and being
   short there loses reports silently and starves the local-AI metrics that share
   the bucket.
+- **MCP tool/resource/prompt calls are a separate, backend-only path** —
+  `mcp.Action`/`MCPEvent` on `PubSubTopicMCP`, not the CRUD path above — shared
+  by *both* the per-workspace MCP server and CoreMCP (the account-wide
+  supervisor server). A tool call is `ActionMCPToolCall`; a resource read or
+  prompt get is `ActionMCPMethodCall`, so a supervisor pulling a guide resource
+  doesn't inflate the same count as it calling a tool. Neither server
+  distinguishes itself in the stored row, so per-tool or per-server breakdowns
+  aren't possible from `model.Telemetry` alone. CoreMCP calls that aren't
+  scoped to one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
+  event/workflow) store workspace `0`, same convention as the machine actions
+  above.
 
