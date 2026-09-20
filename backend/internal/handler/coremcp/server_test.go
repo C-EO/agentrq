@@ -10,9 +10,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
-	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -147,19 +145,12 @@ func TestServerHandlers_EmitToolCallTelemetry(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockPS := mock_pubsub.NewMockService(ctrl)
 			var got mcpevent.MCPEvent
-			mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).DoAndReturn(
-				func(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
-					got = req.Event.(mcpevent.MCPEvent)
-					return nil, nil
-				},
-			)
+			fps := &fakePubSub{onPublish: func(req pubsub.PublishRequest) {
+				got = req.Event.(mcpevent.MCPEvent)
+			}}
 
-			srv := &WorkspaceServer{crud: &mockServerCrud{}, pubsub: mockPS}
+			srv := &WorkspaceServer{crud: &mockServerCrud{}, pubsub: fps}
 			if _, _, err := tc.call(authedContext(), srv); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
