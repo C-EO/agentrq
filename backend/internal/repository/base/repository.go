@@ -32,6 +32,7 @@ type Repository interface {
 	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
 	GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
 	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error
 
@@ -269,7 +270,12 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	if req.CreatedBy != "" {
 		q = q.Where("created_by = ?", req.CreatedBy)
 	}
-	if len(req.Status) > 0 {
+	if req.Assignee != "" {
+		q = q.Where("assignee = ?", req.Assignee)
+	}
+	if len(req.Status) == 1 {
+		q = q.Where("status = ?", req.Status[0])
+	} else if len(req.Status) > 0 {
 		q = q.Where("status IN ?", req.Status)
 	}
 
@@ -369,6 +375,35 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	}
 
 	return tasks, nil
+}
+
+// CountTasks answers a filtered count without hydrating a single row — for a
+// caller that only needs to compare against a threshold (is the agent full?)
+// and would otherwise pay to unmarshal bodies, responses and attachments it
+// never looks at.
+func (r *repository) CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error) {
+	q := r.conn(ctx).Model(&model.Task{}).Where("user_id = ?", userID)
+
+	if req.WorkspaceID != 0 {
+		q = q.Where("workspace_id = ?", req.WorkspaceID)
+	}
+	if req.CreatedBy != "" {
+		q = q.Where("created_by = ?", req.CreatedBy)
+	}
+	if req.Assignee != "" {
+		q = q.Where("assignee = ?", req.Assignee)
+	}
+	if len(req.Status) == 1 {
+		q = q.Where("status = ?", req.Status[0])
+	} else if len(req.Status) > 0 {
+		q = q.Where("status IN ?", req.Status)
+	}
+
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error) {

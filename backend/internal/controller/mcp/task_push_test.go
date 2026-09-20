@@ -65,17 +65,62 @@ func countingClear(ps *WorkspaceServer, err error) *int {
 	return &calls
 }
 
-// listTasksFunc is a repository that answers only the poller's one question.
+// listTasksFunc is a repository that answers the poller's questions from one
+// underlying function. CountTasks reuses it rather than needing its own,
+// since the fakes built on it already filter by the request's Status and
+// Assignee — counting is just listing without a Limit and taking the length.
 type listTasksFunc func(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 
 func (f listTasksFunc) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	return f(ctx, req, userID)
 }
 
-func pendingTaskRepo(tasks ...model.Task) listTasksFunc {
-	return func(context.Context, entity.ListTasksRequest, int64) ([]model.Task, error) {
-		return tasks, nil
+func (f listTasksFunc) CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error) {
+	req.Limit = 0
+	tasks, err := f(ctx, req, userID)
+	if err != nil {
+		return 0, err
 	}
+	return int64(len(tasks)), nil
+}
+
+// pendingTaskRepo stands in for the repository's WHERE/LIMIT, since pollOnce
+// now makes two separate calls (one for "ongoing", one for "notstarted") and
+// trusts each one to have already been filtered and capped — exactly what the
+// real repository.ListTasks does.
+func pendingTaskRepo(tasks ...model.Task) listTasksFunc {
+	return func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
+		wantStatus := make(map[string]bool, len(req.Status))
+		for _, s := range req.Status {
+			wantStatus[s] = true
+		}
+		var out []model.Task
+		for _, t := range tasks {
+			if len(wantStatus) > 0 && !wantStatus[t.Status] {
+				continue
+			}
+			if req.Assignee != "" && t.Assignee != req.Assignee {
+				continue
+			}
+			out = append(out, t)
+			if req.Limit > 0 && len(out) >= req.Limit {
+				break
+			}
+		}
+		return out, nil
+	}
+}
+
+// recordingTaskRepo wraps pendingTaskRepo and also records every request made
+// to it, so a test can assert on the shape of pollOnce's separate queries.
+func recordingTaskRepo(tasks ...model.Task) (listTasksFunc, *[]entity.ListTasksRequest) {
+	var asked []entity.ListTasksRequest
+	inner := pendingTaskRepo(tasks...)
+	f := listTasksFunc(func(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
+		asked = append(asked, req)
+		return inner(ctx, req, userID)
+	})
+	return f, &asked
 }
 
 // The reported bug, and the rule that fixes it: a task stands until the agent
@@ -361,25 +406,45 @@ func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
 	}
 }
 
-// A poll asks for the two statuses it reads and nothing else. Unfiltered, the
-// query returned the hundred most recent tasks of any status — so a workspace
-// with a hundred completed tasks could push its pending ones out of the
-// window, and the poll would find no work to hand over at all.
-func TestPollOnceAsksOnlyForTheStatusesItReads(t *testing.T) {
+// A poll asks two separate questions — never a single query naming both
+// statuses — and both ask only about the agent's own tasks. Unfiltered, a
+// combined query returned the hundred most recent tasks of any status or
+// assignee: a workspace with a hundred completed or human tasks could push
+// the agent's pending ones out of the window, and a human's own ongoing task
+// counted toward the agent's concurrency, blocking every push behind it.
+func TestPollOnceAsksTwoSeparateQueriesForItsOwnTasks(t *testing.T) {
 	ps := pushServer(t)
-	var asked entity.ListTasksRequest
-	ps.pollOnce(listTasksFunc(func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
-		asked = req
-		return []model.Task{{ID: 7, Status: "notstarted", Assignee: "agent"}}, nil
-	}))
+	repo, asked := recordingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
+	ps.pollOnce(repo)
 
-	want := map[string]bool{"ongoing": true, "notstarted": true}
-	if len(asked.Status) != len(want) {
-		t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+	if len(*asked) != 2 {
+		t.Fatalf("made %d queries, want exactly 2 (ongoing, then notstarted)", len(*asked))
 	}
-	for _, s := range asked.Status {
-		if !want[s] {
-			t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+	if got := (*asked)[0].Status; len(got) != 1 || got[0] != "ongoing" {
+		t.Fatalf("first query asked for statuses %v, want exactly [ongoing]", got)
+	}
+	if got := (*asked)[1].Status; len(got) != 1 || got[0] != "notstarted" {
+		t.Fatalf("second query asked for statuses %v, want exactly [notstarted]", got)
+	}
+	for i, req := range *asked {
+		if req.Assignee != "agent" {
+			t.Fatalf("query %d asked for assignee %q, want \"agent\"", i, req.Assignee)
+		}
+	}
+}
+
+// The busy check never asks about the agent's pending backlog: no reason to
+// list it when there is already no room to offer anything from it. (A full
+// tick can still make a second call — fetching one ongoing row to name in the
+// hourly status-check message — but that is never a "notstarted" query.)
+func TestPollOnceSkipsThePendingQueryWhenFull(t *testing.T) {
+	ps := pushServer(t)
+	repo, asked := recordingTaskRepo(model.Task{ID: 1, Status: "ongoing", Assignee: "agent"})
+	ps.pollOnce(repo)
+
+	for _, req := range *asked {
+		if len(req.Status) == 1 && req.Status[0] == "notstarted" {
+			t.Fatalf("queried notstarted tasks while full: %+v", req)
 		}
 	}
 }
@@ -496,6 +561,10 @@ type pollRepo struct {
 
 func (r pollRepo) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	return r.list(ctx, req, userID)
+}
+
+func (r pollRepo) CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error) {
+	return listTasksFunc(r.list).CountTasks(ctx, req, userID)
 }
 
 // The loop itself: it ticks until the server is closed, and closing it is what

@@ -1092,11 +1092,12 @@ func (ps *WorkspaceServer) nextOfferIndex(pendingTasks []model.Task) int {
 	return 0
 }
 
-// taskLister is the one thing a poll asks of the repository. Named so that a
-// tick can be exercised without standing up the whole repository, which is the
-// only reason the body below is a method rather than a closure.
+// taskLister is what a poll asks of the repository. Named so that a tick can
+// be exercised without standing up the whole repository, which is the only
+// reason the body below is a method rather than a closure.
 type taskLister interface {
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 }
 
 // pollInterval is how often StartPoller goes looking for work. A var rather
@@ -1130,50 +1131,6 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	// Only the two statuses a poll reads. Unfiltered, this pulled the hundred
-	// most recently created tasks of any status — a workspace with a hundred
-	// completed tasks could push its pending ones out of the window entirely,
-	// and the poll would see no work to hand over at all.
-	req := entity.ListTasksRequest{
-		WorkspaceID: ps.workspaceID,
-		UserID:      ps.userID,
-		Status:      []string{"ongoing", "notstarted"},
-	}
-	uid := monoflake.IDFromBase62(ps.userID).Int64()
-	tasks, err := repo.ListTasks(context.Background(), req, uid)
-	if err != nil {
-		return 0
-	}
-
-	ongoingCount := 0
-	var ongoingTask model.Task
-	var pendingTasks []model.Task
-	notStartedIDs := make(map[int64]struct{})
-	// Every task is looked at, including those listed after an ongoing one.
-	// Stopping at the first ongoing task truncated the set handed to
-	// reconcileClearedTaskIDs below, which then forgot the clear of every
-	// pending task behind it and cleared it a second time later.
-	for _, t := range tasks {
-		if t.Status == "ongoing" {
-			ongoingCount++
-			if ongoingCount == 1 {
-				ongoingTask = t
-			}
-			continue
-		}
-		if t.Status == "notstarted" && t.Assignee == "agent" {
-			notStartedIDs[t.ID] = struct{}{}
-			// Offered again however many times it has been offered before.
-			// A push is the only thing that starts an idle agent, and one
-			// that went out while nothing was attached reached nobody — so
-			// the task stands until the agent takes it and says so by
-			// moving to ongoing. The clear behind it does not repeat; see
-			// clearContextFor.
-			pendingTasks = append(pendingTasks, t)
-		}
-	}
-	ps.reconcileClearedTaskIDs(notStartedIDs)
-
 	// Full when the agent is already running everything it will run at once,
 	// which is what the gateway itself reports. One when it has reported
 	// nothing, which is the single-task behaviour every workspace had before
@@ -1183,13 +1140,63 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		limit = c.MaxConcurrency
 	}
 
-	if ongoingCount >= limit {
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+
+	// Ask only how many of the agent's own tasks are ongoing — a COUNT, not a
+	// row fetch. Every tick needs this number and nothing else about those
+	// tasks, so there is no reason to hydrate a body, a response or an
+	// attachment list to get it.
+	ongoingReq := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"ongoing"},
+		Assignee:    "agent",
+	}
+	ongoingCount, err := repo.CountTasks(context.Background(), ongoingReq, uid)
+	if err != nil {
+		return 0
+	}
+
+	if ongoingCount >= int64(limit) {
+		// The one case that does need an actual row: naming the task in the
+		// hourly status-check message. Asked for here, not above, because
+		// this branch is rare — most ticks return before ever needing it.
 		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
-			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
-			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
-			ps.lastUpdateCheckAt = time.Now()
+			ongoingReq.Limit = 1
+			if rows, err := repo.ListTasks(context.Background(), ongoingReq, uid); err == nil && len(rows) > 0 {
+				ongoingTask := rows[0]
+				msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
+				ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
+				ps.lastUpdateCheckAt = time.Now()
+			}
 		}
-	} else if len(pendingTasks) > 0 {
+		return 0
+	}
+
+	// Room for more: look at the agent's own pending backlog. Kept as a
+	// second, separate query rather than combined with the one above — a
+	// query naming two statuses sorts everything but "ongoing" by
+	// updated_at DESC, not the FIFO order a single "notstarted" query gets,
+	// and limiting that combined order would drop the longest-waiting tasks
+	// first.
+	pendingReq := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"notstarted"},
+		Assignee:    "agent",
+	}
+	pendingTasks, err := repo.ListTasks(context.Background(), pendingReq, uid)
+	if err != nil {
+		return 0
+	}
+
+	notStartedIDs := make(map[int64]struct{}, len(pendingTasks))
+	for _, t := range pendingTasks {
+		notStartedIDs[t.ID] = struct{}{}
+	}
+	ps.reconcileClearedTaskIDs(notStartedIDs)
+
+	if len(pendingTasks) > 0 {
 		sort.Slice(pendingTasks, func(i, j int) bool {
 			orderI := pendingTasks[i].SortOrder
 			if orderI == 0 {
