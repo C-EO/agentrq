@@ -160,6 +160,43 @@ func TestPollOnceClearsAgainForALaterHandover(t *testing.T) {
 	}
 }
 
+// A human putting a task back to notstarted hands it to the agent again. The
+// status is the whole contract — nothing is remembered about the earlier push
+// that could suppress this one, which is exactly what the old dedup got wrong:
+// a task taken and put back inside one tick stayed marked as delivered and was
+// never offered again.
+func TestPollOnceOffersATaskPutBackToNotStarted(t *testing.T) {
+	ps := pushServer(t)
+	pending := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
+
+	if got := ps.pollOnce(pending); got != 7 {
+		t.Fatalf("offered task %d, want 7", got)
+	}
+	// The agent takes it.
+	if got := ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "ongoing", Assignee: "agent"})); got != 0 {
+		t.Fatalf("offered task %d while it was ongoing, want none", got)
+	}
+	// The human puts it back.
+	if got := ps.pollOnce(pending); got != 7 {
+		t.Fatalf("offered task %d after it was put back to notstarted, want 7", got)
+	}
+}
+
+// The same, with no tick in between — the agent took the task and the human put
+// it back inside one interval, so the server never observed it as ongoing. The
+// task must still be offered again.
+func TestPollOnceOffersATaskPutBackWithinOneInterval(t *testing.T) {
+	ps := pushServer(t)
+	pending := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
+
+	if got := ps.pollOnce(pending); got != 7 {
+		t.Fatalf("offered task %d, want 7", got)
+	}
+	if got := ps.pollOnce(pending); got != 7 {
+		t.Fatalf("offered task %d on the tick after, want 7", got)
+	}
+}
+
 // Nothing is offered while a task is ongoing: the agent already has work.
 func TestPollOnceOffersNothingWhileATaskIsOngoing(t *testing.T) {
 	ps := pushServer(t)
