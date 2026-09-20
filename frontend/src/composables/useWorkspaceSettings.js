@@ -97,21 +97,91 @@ export const WORKSPACE_MCP_TOOLS = Object.freeze([
 ]);
 
 /**
+ * The MCP server key the core (non-workspace-scoped) server is written under
+ * in a "supervisor" workspace's `.mcp.json` and permissions snippets.
+ */
+const SUPERVISOR_MCP_SERVER_NAME = 'agentrq';
+
+/**
+ * Every tool the core MCP server (`backend/internal/handler/coremcp/`, across
+ * `server.go`, `events.go` and `workflows.go`) registers.
+ *
+ * Mirrors `SUPERVISOR_TOOLS` in `desktop/src/main/extensions/servers.js`,
+ * which the same Go source already keeps honest for the desktop app;
+ * `test/workspaceSettings.test.js` does the equivalent check here.
+ */
+export const SUPERVISOR_MCP_TOOLS = Object.freeze([
+  'listWorkspaces',
+  'createWorkspace',
+  'getWorkspace',
+  'updateWorkspace',
+  'getWorkspaceStats',
+  'listTasks',
+  'listAllTasks',
+  'createTask',
+  'getTask',
+  'respondToTask',
+  'replyToTask',
+  'updateTaskStatus',
+  'updateTaskOrder',
+  'updateTaskAssignee',
+  'updateTaskAllowAll',
+  'updateScheduledTask',
+  'deleteTask',
+  'getAttachment',
+  'listMemories',
+  'getMemory',
+  'listEvents',
+  'createEvent',
+  'getEvent',
+  'updateEvent',
+  'deleteEvent',
+  'createEventTrigger',
+  'listEventTriggers',
+  'getEventTrigger',
+  'updateEventTrigger',
+  'deleteEventTrigger',
+  'listEventTasks',
+  'listWorkflows',
+  'createWorkflow',
+  'getWorkflow',
+  'updateWorkflow',
+  'deleteWorkflow',
+  'createWorkflowStep',
+  'listWorkflowSteps',
+  'deleteWorkflowStep',
+  'listWorkflowTasks',
+  'getWorkflowText',
+  'replaceWorkflowFromText',
+]);
+
+/**
  * Builds the `.claude/settings.local.json` contents shown on the setup tab.
  *
  * The server name has to match the key used in `.mcp.json`, since that is what
  * Claude Code prefixes onto each tool to form the permission entry.
  *
+ * A workspace named exactly "supervisor" also gets every core-server tool
+ * allowed under the `agentrq` server key, matching the second `.mcp.json`
+ * entry `buildMcpServers` writes for it — otherwise every one of those calls
+ * would stop and ask.
+ *
  * @param {string} serverName The MCP server key, e.g. `agentrq-0ZzhYQG2qtl`.
+ * @param {string} [workspaceName] The workspace's name, checked for the exact
+ *   "supervisor" case.
  * @returns {{permissions: {allow: string[]}, enableAllProjectMcpServers: boolean, enabledMcpjsonServers: string[]}}
  */
-export function buildClaudePermissionsConfig(serverName) {
+export function buildClaudePermissionsConfig(serverName, workspaceName) {
+  const allow = WORKSPACE_MCP_TOOLS.map((tool) => `mcp__${serverName}__${tool}`);
+  const enabledMcpjsonServers = [serverName];
+  if (workspaceName === 'supervisor') {
+    allow.push(...SUPERVISOR_MCP_TOOLS.map((tool) => `mcp__${SUPERVISOR_MCP_SERVER_NAME}__${tool}`));
+    enabledMcpjsonServers.push(SUPERVISOR_MCP_SERVER_NAME);
+  }
   return {
-    permissions: {
-      allow: WORKSPACE_MCP_TOOLS.map((tool) => `mcp__${serverName}__${tool}`),
-    },
+    permissions: { allow },
     enableAllProjectMcpServers: true,
-    enabledMcpjsonServers: [serverName],
+    enabledMcpjsonServers,
   };
 }
 
@@ -156,7 +226,7 @@ export function buildMcpServers({ serverName, authenticatedUrl, workspaceName, s
     [serverName]: { type: 'http', url: authenticatedUrl },
   };
   if (workspaceName === 'supervisor') {
-    servers.agentrq = { type: 'http', url: supervisorMcpUrl };
+    servers[SUPERVISOR_MCP_SERVER_NAME] = { type: 'http', url: supervisorMcpUrl };
   }
   return servers;
 }

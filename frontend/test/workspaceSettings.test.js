@@ -1,7 +1,7 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { describe, it, expect } from 'vitest';
@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   EDITABLE_SETTINGS_TABS,
   READ_ONLY_SETTINGS_TABS,
+  SUPERVISOR_MCP_TOOLS,
   WORKSPACE_MCP_TOOLS,
   buildClaudePermissionsConfig,
   buildMcpServers,
@@ -18,6 +19,7 @@ import {
 } from '../src/composables/useWorkspaceSettings';
 
 const SERVER_GO = 'backend/internal/controller/mcp/server.go';
+const COREMCP_DIR = 'backend/internal/handler/coremcp';
 
 /**
  * Locates the Go MCP server's source by walking up from the working directory.
@@ -48,6 +50,37 @@ function toolsRegisteredByServer() {
   const source = readFileSync(serverSourcePath(), 'utf-8');
   return [...source.matchAll(/mcp\.AddTool\(mcpSrv, &mcp\.Tool\{\s*Name:\s*"([^"]+)"/g)]
     .map((match) => match[1]);
+}
+
+/**
+ * Locates the coremcp package's directory by walking up from the working
+ * directory, the same way `serverSourcePath` locates the workspace server.
+ */
+function coremcpDirPath() {
+  for (let dir = process.cwd(); ; dir = dirname(dir)) {
+    const candidate = resolve(dir, COREMCP_DIR);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    if (dirname(dir) === dir) {
+      throw new Error(`could not find ${COREMCP_DIR} above ${process.cwd()}`);
+    }
+  }
+}
+
+/**
+ * The tool names the core MCP server registers, across every non-test file in
+ * the package — it registers across `server.go`, `events.go` and
+ * `workflows.go`, and reading only one would miss two thirds of the surface.
+ * Mirrors `registeredUnder` in `desktop/test/extensions/servers.test.js`,
+ * which guards the same Go source for the desktop app.
+ */
+function toolsRegisteredByCoremcp() {
+  const dir = coremcpDirPath();
+  const re = /mcp\.AddTool\(s\.server, &mcp\.Tool\{\s*Name:\s*"([^"]+)"/g;
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.go') && !name.endsWith('_test.go'))
+    .flatMap((name) => [...readFileSync(resolve(dir, name), 'utf-8').matchAll(re)].map((match) => match[1]));
 }
 
 describe('useWorkspaceSettings', () => {
@@ -153,6 +186,16 @@ describe('useWorkspaceSettings', () => {
     });
   });
 
+  describe('SUPERVISOR_MCP_TOOLS', () => {
+    it('is exactly what the core (coremcp) server registers, across every file', () => {
+      expect([...SUPERVISOR_MCP_TOOLS].sort()).toEqual(toolsRegisteredByCoremcp().sort());
+    });
+
+    it('is frozen, so a caller cannot mutate the shared list', () => {
+      expect(Object.isFrozen(SUPERVISOR_MCP_TOOLS)).toBe(true);
+    });
+  });
+
   describe('buildClaudePermissionsConfig', () => {
     it('prefixes every tool with the MCP server name', () => {
       const { permissions } = buildClaudePermissionsConfig('agentrq-ws1');
@@ -194,6 +237,30 @@ describe('useWorkspaceSettings', () => {
         'enabledMcpjsonServers',
       ]);
       expect(JSON.parse(JSON.stringify(config))).toEqual(config);
+    });
+
+    it('does not add core-server tools when no workspace name is given', () => {
+      const config = buildClaudePermissionsConfig('agentrq-ws1');
+
+      expect(config.permissions.allow).toHaveLength(WORKSPACE_MCP_TOOLS.length);
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1']);
+    });
+
+    it('does not add core-server tools for a workspace that is not named exactly "supervisor"', () => {
+      const config = buildClaudePermissionsConfig('agentrq-ws1', 'Supervisor');
+
+      expect(config.permissions.allow).toHaveLength(WORKSPACE_MCP_TOOLS.length);
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1']);
+    });
+
+    it('adds every core-server tool and enables the "agentrq" server for a supervisor workspace', () => {
+      const config = buildClaudePermissionsConfig('agentrq-ws1', 'supervisor');
+
+      expect(config.permissions.allow).toHaveLength(WORKSPACE_MCP_TOOLS.length + SUPERVISOR_MCP_TOOLS.length);
+      SUPERVISOR_MCP_TOOLS.forEach((tool) => {
+        expect(config.permissions.allow).toContain(`mcp__agentrq__${tool}`);
+      });
+      expect(config.enabledMcpjsonServers).toEqual(['agentrq-ws1', 'agentrq']);
     });
   });
 
