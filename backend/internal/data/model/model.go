@@ -12,22 +12,22 @@ import (
 type (
 	// Workspace hosts an agentrq workspace
 	Workspace struct {
-		ID                    int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt             time.Time
-		UpdatedAt             time.Time
-		UserID                int64  `gorm:"index:idx_workspaces_user_id"`
-		Name                  string `gorm:"type:varchar(128)"`
-		Description           string `gorm:"type:text"`
-		ArchivedAt            *time.Time
-		Icon                  string         `gorm:"type:text"`
-		NotificationSettings  datatypes.JSON `gorm:"type:text"`
-		AutoAllowedTools      datatypes.JSON `gorm:"type:text"`
-		AllowAllCommands      bool           `gorm:"default:false"`
+		ID                   int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt            time.Time
+		UpdatedAt            time.Time
+		UserID               int64  `gorm:"index:idx_workspaces_user_id"`
+		Name                 string `gorm:"type:varchar(128)"`
+		Description          string `gorm:"type:text"`
+		ArchivedAt           *time.Time
+		Icon                 string         `gorm:"type:text"`
+		NotificationSettings datatypes.JSON `gorm:"type:text"`
+		AutoAllowedTools     datatypes.JSON `gorm:"type:text"`
+		AllowAllCommands     bool           `gorm:"default:false"`
 		// ClearContextDefault is what a new task's ClearContext starts as.
-		ClearContextDefault bool `gorm:"default:true"`
-		SelfLearningLoopNote  string         `gorm:"type:text"`
-		InputSendDelaySeconds int            `gorm:"default:0"`
-		WorkingDirectory      string         `gorm:"type:text"`
+		ClearContextDefault   bool   `gorm:"default:true"`
+		SelfLearningLoopNote  string `gorm:"type:text"`
+		InputSendDelaySeconds int    `gorm:"default:0"`
+		WorkingDirectory      string `gorm:"type:text"`
 	}
 
 	// Task hosts a task created by a human or an agent within a workspace
@@ -62,9 +62,9 @@ type (
 		// task. Stored per task rather than read from the workspace at push
 		// time so that what a task was created with is what it runs with, even
 		// if the workspace default changes in between.
-		ClearContext bool `gorm:"default:false"`
-		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
-		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+		ClearContext bool  `gorm:"default:false"`
+		TriggerID    int64 `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
+		EventID      int64 `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
 		// WorkflowID carries workflow context through a run: when this task
 		// publishes its event, the consumer routes the fan-out through this
 		// workflow's steps instead of the global triggers, and stamps the same
@@ -465,4 +465,7 @@ const (
 	// only when the clear actually went out, not on every task that asked for
 	// one — a failed clear left nothing to count.
 	ActionIDMCPClearContext
+	// A resource read or prompt get, on either MCP server — the non-tool
+	// counterpart to ActionIDMCPToolCall.
+	ActionIDMCPMethodCall
 )

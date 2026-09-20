@@ -224,6 +224,8 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
 		action = model.ActionIDMCPToolCall
+	case mcp.ActionMCPMethodCall:
+		action = model.ActionIDMCPMethodCall
 	case mcp.ActionMCPConnect:
 		action = model.ActionIDMCPConnect
 	case mcp.ActionMCPClearContext:

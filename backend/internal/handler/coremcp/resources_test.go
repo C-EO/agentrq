@@ -12,7 +12,7 @@ import (
 )
 
 func resourceServer(baseURL string) *WorkspaceServer {
-	return NewServer(&mockEventCrud{}, baseURL)
+	return NewServer(&mockEventCrud{}, baseURL, nil)
 }
 
 func readResource(t *testing.T, s *WorkspaceServer, handler func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error), uri string) string {

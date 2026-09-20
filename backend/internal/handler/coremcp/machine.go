@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,6 +21,7 @@ func (s *WorkspaceServer) registerMachineTools() {
 // There is no remote enrolment — a human has to run the resulting command on
 // the target machine themselves.
 func (s *WorkspaceServer) handleCreateEnrolmentCode(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createEnrolmentCode", 0)
 	userID := getUserID(ctx)
 	res, err := s.crud.CreateEnrolmentCode(ctx, entity.CreateEnrolmentCodeRequest{UserID: userID})
 	if err != nil {

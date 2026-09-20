@@ -12,7 +12,7 @@ import (
 )
 
 func promptServer() *WorkspaceServer {
-	return NewServer(&mockEventCrud{}, "https://agentrq.example")
+	return NewServer(&mockEventCrud{}, "https://agentrq.example", nil)
 }
 
 func promptText(t *testing.T, res *mcp.GetPromptResult) string {

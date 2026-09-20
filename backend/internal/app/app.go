@@ -900,6 +900,7 @@ func New(cfg Config) (*App, error) {
 		BaseURL:  cfg.App.BaseURL,
 		Domain:   cfg.App.Domain,
 		Mux:      mux,
+		PubSub:   pubsubSvc,
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}

@@ -6,6 +6,7 @@ package coremcp
 import (
 	"context"
 
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
@@ -147,6 +148,7 @@ func (s *WorkspaceServer) registerEventTools() {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) handleListEvents(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listEvents", 0)
 	res, err := s.crud.ListEvents(ctx, entity.ListEventsRequest{UserID: getUserID(ctx)})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -155,6 +157,7 @@ func (s *WorkspaceServer) handleListEvents(ctx context.Context, req *mcp.CallToo
 }
 
 func (s *WorkspaceServer) handleCreateEvent(ctx context.Context, req *mcp.CallToolRequest, args CreateEventParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createEvent", 0)
 	res, err := s.crud.CreateEvent(ctx, entity.CreateEventRequest{
 		UserID:            getUserID(ctx),
 		Name:              args.Name,
@@ -167,6 +170,7 @@ func (s *WorkspaceServer) handleCreateEvent(ctx context.Context, req *mcp.CallTo
 }
 
 func (s *WorkspaceServer) handleGetEvent(ctx context.Context, req *mcp.CallToolRequest, args GetEventParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getEvent", 0)
 	res, err := s.crud.GetEvent(ctx, entity.GetEventRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.EventID),
@@ -178,6 +182,7 @@ func (s *WorkspaceServer) handleGetEvent(ctx context.Context, req *mcp.CallToolR
 }
 
 func (s *WorkspaceServer) handleUpdateEvent(ctx context.Context, req *mcp.CallToolRequest, args UpdateEventParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateEvent", 0)
 	res, err := s.crud.UpdateEvent(ctx, entity.UpdateEventRequest{
 		UserID:            getUserID(ctx),
 		ID:                parseID(args.EventID),
@@ -190,6 +195,7 @@ func (s *WorkspaceServer) handleUpdateEvent(ctx context.Context, req *mcp.CallTo
 }
 
 func (s *WorkspaceServer) handleDeleteEvent(ctx context.Context, req *mcp.CallToolRequest, args DeleteEventParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "deleteEvent", 0)
 	if err := s.crud.DeleteEvent(ctx, entity.DeleteEventRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.EventID),
@@ -200,6 +206,7 @@ func (s *WorkspaceServer) handleDeleteEvent(ctx context.Context, req *mcp.CallTo
 }
 
 func (s *WorkspaceServer) handleCreateEventTrigger(ctx context.Context, req *mcp.CallToolRequest, args CreateEventTriggerParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createEventTrigger", parseID(args.WorkspaceID))
 	res, err := s.crud.CreateEventTrigger(ctx, entity.CreateEventTriggerRequest{
 		UserID:           getUserID(ctx),
 		EventID:          parseID(args.EventID),
@@ -218,6 +225,7 @@ func (s *WorkspaceServer) handleCreateEventTrigger(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleListEventTriggers(ctx context.Context, req *mcp.CallToolRequest, args ListEventTriggersParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listEventTriggers", 0)
 	res, err := s.crud.ListEventTriggers(ctx, entity.ListEventTriggersRequest{
 		UserID:  getUserID(ctx),
 		EventID: parseID(args.EventID),
@@ -229,6 +237,7 @@ func (s *WorkspaceServer) handleListEventTriggers(ctx context.Context, req *mcp.
 }
 
 func (s *WorkspaceServer) handleGetEventTrigger(ctx context.Context, req *mcp.CallToolRequest, args GetEventTriggerParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getEventTrigger", 0)
 	res, err := s.crud.GetEventTrigger(ctx, entity.GetEventTriggerRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.TriggerID),
@@ -240,6 +249,7 @@ func (s *WorkspaceServer) handleGetEventTrigger(ctx context.Context, req *mcp.Ca
 }
 
 func (s *WorkspaceServer) handleUpdateEventTrigger(ctx context.Context, req *mcp.CallToolRequest, args UpdateEventTriggerParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateEventTrigger", parseID(args.WorkspaceID))
 	res, err := s.crud.UpdateEventTrigger(ctx, entity.UpdateEventTriggerRequest{
 		UserID:           getUserID(ctx),
 		ID:               parseID(args.TriggerID),
@@ -258,6 +268,7 @@ func (s *WorkspaceServer) handleUpdateEventTrigger(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleDeleteEventTrigger(ctx context.Context, req *mcp.CallToolRequest, args DeleteEventTriggerParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "deleteEventTrigger", 0)
 	if err := s.crud.DeleteEventTrigger(ctx, entity.DeleteEventTriggerRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.TriggerID),
@@ -268,6 +279,7 @@ func (s *WorkspaceServer) handleDeleteEventTrigger(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleListEventTasks(ctx context.Context, req *mcp.CallToolRequest, args ListEventTasksParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listEventTasks", 0)
 	res, err := s.crud.ListTasksFromEvent(ctx, entity.ListTasksFromEventRequest{
 		UserID:  getUserID(ctx),
 		EventID: parseID(args.EventID),
