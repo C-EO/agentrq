@@ -32,6 +32,12 @@ type (
 		Repository base.Repository
 		PubSub     pubsub.Service
 		IDGen      idgen.Service
+		// BasePath is cfg.App.BasePath — the reverse-proxy prefix the SPA is
+		// served under (e.g. /abc/def), or "" at the root. A notification is
+		// opened by the service worker via clients.openWindow, which never
+		// goes through Vue Router and has no way to learn this on its own, so
+		// the backend has to bake it into the URL it sends.
+		BasePath string
 	}
 
 	Controller interface {
@@ -45,10 +51,11 @@ type (
 	}
 
 	controller struct {
-		cfg    Config
-		repo   base.Repository
-		pubsub pubsub.Service
-		ids    idgen.Service
+		cfg      Config
+		repo     base.Repository
+		pubsub   pubsub.Service
+		ids      idgen.Service
+		basePath string
 	}
 
 	pushPayload struct {
@@ -67,10 +74,11 @@ const (
 
 func New(p Params) Controller {
 	return &controller{
-		cfg:    p.Config,
-		repo:   p.Repository,
-		pubsub: p.PubSub,
-		ids:    p.IDGen,
+		cfg:      p.Config,
+		repo:     p.Repository,
+		pubsub:   p.PubSub,
+		ids:      p.IDGen,
+		basePath: p.BasePath,
 	}
 }
 
@@ -164,9 +172,9 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		}
 		switch ev.Action {
 		case entity.ActionTaskCreate:
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, taskCreatePayload(ws.Name, workspaceIDStr, t))
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, taskCreatePayload(c.basePath, ws.Name, workspaceIDStr, t))
 		case entity.ActionTaskUpdate, entity.ActionTaskComplete:
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, taskStatusPayload(ws.Name, workspaceIDStr, t))
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, taskStatusPayload(c.basePath, ws.Name, workspaceIDStr, t))
 		}
 		return
 
@@ -186,7 +194,7 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		if err != nil {
 			return
 		}
-		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, replyPayload(workspaceIDStr, t, m))
+		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, replyPayload(c.basePath, workspaceIDStr, t, m))
 		return
 
 	default:
@@ -197,33 +205,41 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 // taskURL is the path a task-related notification opens on click. It must
 // point at the task, not just its workspace, or the notification is a
 // dead end the user has to re-navigate from.
-func taskURL(workspaceIDStr string, taskID int64) string {
-	return fmt.Sprintf("/workspaces/%s/tasks/%s", workspaceIDStr, monoflake.ID(taskID).String())
+//
+// basePath is prepended raw (no separator): it is already normalized to ""
+// or a leading-slash, no-trailing-slash prefix by app.go, the same value the
+// SPA itself is served under. This URL is opened by the service worker's
+// clients.openWindow, a browser API with no notion of the app's router or its
+// base — unlike a client-side router.push, it resolves an absolute path
+// against the origin root, so a deployment served under a reverse-proxy
+// prefix needs that prefix baked in here or the notification 404s.
+func taskURL(basePath, workspaceIDStr string, taskID int64) string {
+	return fmt.Sprintf("%s/workspaces/%s/tasks/%s", basePath, workspaceIDStr, monoflake.ID(taskID).String())
 }
 
-func taskCreatePayload(wsName, workspaceIDStr string, t model.Task) pushPayload {
+func taskCreatePayload(basePath, wsName, workspaceIDStr string, t model.Task) pushPayload {
 	return pushPayload{
 		Title: fmt.Sprintf("New task: %s", truncate(t.Title, 60)),
 		Body:  wsName,
-		URL:   taskURL(workspaceIDStr, t.ID),
+		URL:   taskURL(basePath, workspaceIDStr, t.ID),
 		Tag:   fmt.Sprintf("task-create-%d", t.ID),
 	}
 }
 
-func taskStatusPayload(wsName, workspaceIDStr string, t model.Task) pushPayload {
+func taskStatusPayload(basePath, wsName, workspaceIDStr string, t model.Task) pushPayload {
 	return pushPayload{
 		Title: fmt.Sprintf("Task %s: %s", strings.ToUpper(t.Status), truncate(t.Title, 50)),
 		Body:  wsName,
-		URL:   taskURL(workspaceIDStr, t.ID),
+		URL:   taskURL(basePath, workspaceIDStr, t.ID),
 		Tag:   fmt.Sprintf("task-status-%d", t.ID),
 	}
 }
 
-func replyPayload(workspaceIDStr string, t model.Task, m model.Message) pushPayload {
+func replyPayload(basePath, workspaceIDStr string, t model.Task, m model.Message) pushPayload {
 	return pushPayload{
 		Title: fmt.Sprintf("Reply on: %s", truncate(t.Title, 55)),
 		Body:  truncate(m.Text, 100),
-		URL:   taskURL(workspaceIDStr, t.ID),
+		URL:   taskURL(basePath, workspaceIDStr, t.ID),
 		Tag:   fmt.Sprintf("reply-%d", m.ID),
 	}
 }

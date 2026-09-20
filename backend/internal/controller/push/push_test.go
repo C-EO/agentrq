@@ -233,7 +233,7 @@ func TestSubscriptionAllowsType(t *testing.T) {
 // just the workspace — otherwise the notification isn't actionable.
 
 func TestTaskCreatePayload_LinksToTask(t *testing.T) {
-	p := taskCreatePayload("My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug"})
+	p := taskCreatePayload("", "My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug"})
 	want := "/workspaces/0000000000A/tasks/00000000005"
 	if p.URL != want {
 		t.Errorf("URL = %q, want %q", p.URL, want)
@@ -244,7 +244,7 @@ func TestTaskCreatePayload_LinksToTask(t *testing.T) {
 }
 
 func TestTaskStatusPayload_LinksToTask(t *testing.T) {
-	p := taskStatusPayload("My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug", Status: "completed"})
+	p := taskStatusPayload("", "My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug", Status: "completed"})
 	want := "/workspaces/0000000000A/tasks/00000000005"
 	if p.URL != want {
 		t.Errorf("URL = %q, want %q", p.URL, want)
@@ -252,8 +252,51 @@ func TestTaskStatusPayload_LinksToTask(t *testing.T) {
 }
 
 func TestReplyPayload_LinksToTask(t *testing.T) {
-	p := replyPayload("0000000000A", model.Task{ID: 5, Title: "Fix bug"}, model.Message{ID: 20, Text: "Done!"})
+	p := replyPayload("", "0000000000A", model.Task{ID: 5, Title: "Fix bug"}, model.Message{ID: 20, Text: "Done!"})
 	want := "/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+}
+
+// A deployment served under a reverse-proxy prefix (cfg.App.BasePath) needs
+// that prefix baked into the URL: clients.openWindow in the service worker
+// has no router and resolves an absolute path against the origin root, not
+// wherever the app happens to be mounted.
+func TestTaskURL_HonoursBasePath(t *testing.T) {
+	tests := []struct {
+		basePath string
+		want     string
+	}{
+		{"", "/workspaces/0000000000A/tasks/00000000005"},
+		{"/abc/def", "/abc/def/workspaces/0000000000A/tasks/00000000005"},
+	}
+	for _, tt := range tests {
+		if got := taskURL(tt.basePath, "0000000000A", 5); got != tt.want {
+			t.Errorf("taskURL(%q, ...) = %q, want %q", tt.basePath, got, tt.want)
+		}
+	}
+}
+
+func TestTaskCreatePayload_HonoursBasePath(t *testing.T) {
+	p := taskCreatePayload("/abc/def", "My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug"})
+	want := "/abc/def/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+}
+
+func TestTaskStatusPayload_HonoursBasePath(t *testing.T) {
+	p := taskStatusPayload("/abc/def", "My Workspace", "0000000000A", model.Task{ID: 5, Title: "Fix bug"})
+	want := "/abc/def/workspaces/0000000000A/tasks/00000000005"
+	if p.URL != want {
+		t.Errorf("URL = %q, want %q", p.URL, want)
+	}
+}
+
+func TestReplyPayload_HonoursBasePath(t *testing.T) {
+	p := replyPayload("/abc/def", "0000000000A", model.Task{ID: 5, Title: "Fix bug"}, model.Message{ID: 20, Text: "Done!"})
+	want := "/abc/def/workspaces/0000000000A/tasks/00000000005"
 	if p.URL != want {
 		t.Errorf("URL = %q, want %q", p.URL, want)
 	}
