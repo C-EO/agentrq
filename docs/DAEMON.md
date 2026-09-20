@@ -79,6 +79,39 @@ curl -fsSL https://agentrq.com/install-agentrqd.sh | sh -s -- --version 0.7.0
 `--version` pins a release, `--dir` installs somewhere else, `--force`
 reinstalls, and `--help` lists them.
 
+**Windows (PowerShell)**:
+
+```powershell
+irm https://agentrq.com/install-agentrqd.ps1 | iex
+```
+
+Same trade, same guarantee: it verifies the checksum, installs to
+`%LOCALAPPDATA%\Programs`, and adds that folder to your user `PATH` if it
+isn't there already — Windows has no directory that is already on `PATH` the
+way `~/.local/bin` is. Running it again updates in place, and it does not
+enrol, start anything, or require Administrator (it refuses to run elevated).
+
+To read it first:
+
+```powershell
+iwr https://agentrq.com/install-agentrqd.ps1 -OutFile install-agentrqd.ps1
+notepad install-agentrqd.ps1
+.\install-agentrqd.ps1
+```
+
+Piped into `iex`, the script has nothing to attach command-line flags to, so
+pass them through an environment variable instead:
+
+```powershell
+$env:AGENTRQD_VERSION = "0.7.0"
+irm https://agentrq.com/install-agentrqd.ps1 | iex
+```
+
+`AGENTRQD_VERSION` pins a release, `AGENTRQD_INSTALL_DIR` installs somewhere
+else, `AGENTRQD_FORCE` reinstalls. Run the file directly instead of piping it
+and the same options are ordinary parameters: `-Version`, `-Dir`, `-Force`,
+`-Help`.
+
 ### Or by hand
 
 Releases are on the

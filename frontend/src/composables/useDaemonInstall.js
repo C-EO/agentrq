@@ -17,8 +17,11 @@
 /** Where the daemon's releases live. */
 export const RELEASES_URL = 'https://github.com/agentrq/agentrq/releases/latest'
 
-/** The hosted installer, for the platforms that can run a shell script. */
+/** The hosted installer for Linux and macOS, a POSIX `sh` script. */
 export const INSTALLER_URL = 'https://agentrq.com/install-agentrqd.sh'
+
+/** The hosted installer for Windows, a PowerShell script. */
+export const INSTALLER_URL_WINDOWS = 'https://agentrq.com/install-agentrqd.ps1'
 
 /** The user-facing guide, which carries the trust model. */
 export const DAEMON_DOCS_URL = 'https://agentrq.com/docs/daemon'
@@ -48,11 +51,11 @@ export function platformLabel(platform) {
 /**
  * The command that puts the binary on a machine's PATH.
  *
- * One line on Linux and macOS, matching the desktop app's installer. It works
- * out the right build, checks it against the SHA-256 checksums published with
- * the release — mandatorily, with no flag to skip — and installs to
- * `~/.local/bin` or `/usr/local/bin`. It installs only: it does not enrol,
- * start anything, or run as root.
+ * One line everywhere, matching the desktop app's installer. It works out the
+ * right build, checks it against the SHA-256 checksums published with the
+ * release — mandatorily, with no flag to skip — and installs to `~/.local/bin`,
+ * `/usr/local/bin` or `%LOCALAPPDATA%\Programs`. It installs only: it does not
+ * enrol, start anything, or run as root or Administrator.
  *
  * This panel used to refuse the pipe and print `tar` and `install` instead, on
  * the grounds that piping unseen code into a shell is worst on the machine you
@@ -63,29 +66,23 @@ export function platformLabel(platform) {
  * read it first is a step away — `docs/DAEMON.md`, linked from this step,
  * shows the fetch-read-run form.
  *
- * Windows has no `sh`, so it keeps the manual route. It also has no user
- * directory that is already on PATH, so the step that claims to put it on PATH
- * has to actually do that — unpacking into %LOCALAPPDATA% and saying nothing
- * more would leave somebody with a binary they cannot run by name and a step
- * that lied about what it did.
+ * Windows has no `sh`, so it gets its own PowerShell script rather than the
+ * same one — but it is a script the same way, and adds its own install
+ * directory to the user `PATH` itself, so this step needs nothing extra for
+ * that platform any more.
  */
 export function installSteps(platform) {
   switch (platform) {
     case 'windows':
-      return [
-        'Expand-Archive agentrqd_*_windows_*.zip -DestinationPath $env:LOCALAPPDATA\\agentrqd',
-        '# add it to PATH for future shells:',
-        '[Environment]::SetEnvironmentVariable("Path",',
-        '  "$env:Path;$env:LOCALAPPDATA\\agentrqd", "User")',
-      ]
+      return [`irm ${INSTALLER_URL_WINDOWS} | iex`]
     default:
       return [`curl -fsSL ${INSTALLER_URL} | sh`]
   }
 }
 
-/** Whether this platform installs with the script rather than by hand. */
-export function usesInstaller(platform) {
-  return platform !== 'windows'
+/** Whether this platform installs with a script rather than by hand. Every platform does. */
+export function usesInstaller() {
+  return true
 }
 
 /**
@@ -134,20 +131,11 @@ export function runSteps(platform) {
  * for a binary that is not there yet, which is the bug this replaces.
  */
 export function installGuide(platform, enrolCommand) {
-  // The installer collapses "download" and "put it on your PATH" into one
-  // step, because it does both. Windows has no `sh`, so it keeps the two.
-  const install = usesInstaller(platform)
-    ? [{ title: 'Install it', lines: installSteps(platform), link: DAEMON_DOCS_URL }]
-    : [
-        { title: 'Download it', lines: [], link: RELEASES_URL },
-        { title: 'Put it on your PATH', lines: installSteps(platform) },
-      ]
-
   return {
     platform,
     label: platformLabel(platform),
     steps: [
-      ...install,
+      { title: 'Install it', lines: installSteps(platform), link: DAEMON_DOCS_URL },
       { title: 'Enrol this machine', lines: enrolCommand ? [enrolCommand] : [] },
       { title: 'Run it', lines: runSteps(platform) },
     ],

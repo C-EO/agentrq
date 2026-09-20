@@ -145,11 +145,12 @@ The same steps appear in `docs/DAEMON.md` (for somebody who has not downloaded
 anything) and `daemon/packaging/INSTALL.md` (for somebody who has the archive
 and not the page). Change one, change all three.
 
-Linux and macOS install with `curl -fsSL https://agentrq.com/install-agentrqd.sh | sh`.
-The script lives in the **agentrq-landing** repository, not this one, so
-changing what it does is a change over there. Windows has no `sh` and keeps the
-manual download → PATH steps, which is why that platform has one step more than
-the other two.
+Linux and macOS install with `curl -fsSL https://agentrq.com/install-agentrqd.sh | sh`;
+Windows, which has no `sh`, gets its own script instead, piped into `iex`:
+`irm https://agentrq.com/install-agentrqd.ps1 | iex`. Both scripts live in the
+**agentrq-landing** repository, not this one, so changing what either does is a
+change over there. Added 2026-09-20 — before that, Windows had one step more
+than the other two, doing by hand what the script now does.
 
 **This used to forbid the one-liner**, on the grounds that piping unseen code
 into a shell is worst on the very machine you are about to grant command

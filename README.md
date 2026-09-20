@@ -249,10 +249,16 @@ On Linux and macOS:
 curl -fsSL https://agentrq.com/install-agentrqd.sh | sh
 ```
 
-It picks the right build, **verifies it against the checksums published with
-the release**, and puts it on your `PATH`; running it again updates in place.
-It installs only — enrolling stays a separate, deliberate step, and it never
-runs as root. Windows and manual installs are on the
+On Windows (PowerShell):
+
+```powershell
+irm https://agentrq.com/install-agentrqd.ps1 | iex
+```
+
+Either one picks the right build, **verifies it against the checksums
+published with the release**, and puts it on your `PATH`; running it again
+updates in place. It installs only — enrolling stays a separate, deliberate
+step, and it never runs as root or Administrator. Manual installs are on the
 [releases page](https://github.com/agentrq/agentrq/releases/latest)
 — one static binary for Linux, macOS and Windows.
 
