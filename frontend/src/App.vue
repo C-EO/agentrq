@@ -926,7 +926,8 @@ onEvent((event) => {
   })
   if (toast) {
     const show = toast.tone === 'error' ? notifyError : toast.tone === 'success' ? notifySuccess : notifyInfo
-    show(toast.message, ...(toast.title ? [toast.title] : []))
+    const link = toast.taskId && toast.workspaceId ? { taskId: toast.taskId, workspaceId: toast.workspaceId } : null
+    show(toast.message, toast.title, link)
   }
 })
 

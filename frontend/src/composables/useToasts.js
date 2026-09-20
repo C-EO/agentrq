@@ -6,12 +6,14 @@ import { ref } from 'vue';
 const toasts = ref([]);
 
 export function useToasts() {
-  const addToast = (message, type = 'info', title = null, duration = 4000) => {
+  // `link`, when given, is `{ taskId, workspaceId }` — where clicking the
+  // toast (not its close button) should navigate. Falsy ids mean no link.
+  const addToast = (message, type = 'info', title = null, duration = 4000, link = null) => {
     const id = Date.now() + Math.random();
     // A zero duration means the toast waits to be dismissed; the progress bar
     // is a countdown, so it has nothing to show.
-    const toast = { id, message, type, title, persistent: duration <= 0 };
-    
+    const toast = { id, message, type, title, persistent: duration <= 0, link };
+
     toasts.value.push(toast);
 
     if (duration > 0) {
@@ -26,9 +28,9 @@ export function useToasts() {
     toasts.value = toasts.value.filter(t => t.id !== id);
   };
 
-  const notifyError = (message, title = 'Error') => addToast(message, 'error', title);
-  const notifySuccess = (message, title = 'Success') => addToast(message, 'success', title);
-  const notifyInfo = (message, title = 'Notice') => addToast(message, 'info', title);
+  const notifyError = (message, title = 'Error', link = null) => addToast(message, 'error', title, 4000, link);
+  const notifySuccess = (message, title = 'Success', link = null) => addToast(message, 'success', title, 4000, link);
+  const notifyInfo = (message, title = 'Notice', link = null) => addToast(message, 'info', title, 4000, link);
 
   return {
     toasts,

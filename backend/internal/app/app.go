@@ -770,6 +770,7 @@ func New(cfg Config) (*App, error) {
 		Repository: repo,
 		PubSub:     pubsubSvc,
 		IDGen:      ids,
+		BasePath:   cfg.App.BasePath,
 	})
 	if err := pushCtrl.Start(context.Background()); err != nil {
 		zlog.Error().Err(err).Msg("failed to start push controller")
