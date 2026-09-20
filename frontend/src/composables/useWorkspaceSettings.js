@@ -153,6 +153,7 @@ export const SUPERVISOR_MCP_TOOLS = Object.freeze([
   'listWorkflowTasks',
   'getWorkflowText',
   'replaceWorkflowFromText',
+  'createEnrolmentCode',
 ]);
 
 /**

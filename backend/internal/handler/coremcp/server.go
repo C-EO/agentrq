@@ -279,6 +279,11 @@ func (s *WorkspaceServer) registerTools() {
 	// Events and their triggers — see events.go.
 	s.registerEventTools()
 	s.registerWorkflowTools()
+	s.registerMachineTools()
+
+	// Resources and prompts — see resources.go and prompts.go.
+	s.registerResources()
+	s.registerPrompts()
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

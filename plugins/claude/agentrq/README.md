@@ -64,6 +64,7 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `listWorkflowTasks` | List the tasks a workflow has spawned |
 | `getWorkflowText` | Read a workflow's graph as the indented document text mode edits |
 | `replaceWorkflowFromText` | Replace a workflow's entire graph with a document |
+| `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd |
 
 The tables here are checked against the server in CI — see
 `backend/internal/handler/coremcp/plugin_docs_test.go`. A tool added to the server
