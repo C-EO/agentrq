@@ -10,6 +10,7 @@ import {
   machineEligibility,
   sessionEligibility,
   paramsEligibility,
+  launchParamsPayload,
   lastAcpGatewayChoice,
   rememberAcpGatewayChoice,
   KINDS,
@@ -159,14 +160,28 @@ describe('paramsEligibility', () => {
     expect(paramsEligibility('claude-code', {}).ok).toBe(true)
   })
 
-  it('needs a model and an agent for the gateway', () => {
-    expect(paramsEligibility('acp-gateway', {}).reason).toContain('model')
-    expect(paramsEligibility('acp-gateway', { model: 'm' }).reason).toContain('agent')
+  it('needs only an agent for the gateway', () => {
+    expect(paramsEligibility('acp-gateway', {}).reason).toContain('agent')
+    expect(paramsEligibility('acp-gateway', { agent: 'a' }).ok).toBe(true)
     expect(paramsEligibility('acp-gateway', GATEWAY_DEFAULTS).ok).toBe(true)
   })
 
-  it('treats whitespace as empty', () => {
-    expect(paramsEligibility('acp-gateway', { model: '   ', agent: 'a' }).ok).toBe(false)
+  it('treats a blank agent as missing, whitespace included', () => {
+    expect(paramsEligibility('acp-gateway', { agent: '   ' }).ok).toBe(false)
+  })
+
+  // The required field's shape check is its own branch, distinct from the
+  // optional one below — a bad model must not be the only way to reach it.
+  it('refuses a badly shaped agent, the one required field', () => {
+    const e = paramsEligibility('acp-gateway', { agent: 'a b' })
+    expect(e.ok).toBe(false)
+    expect(e.reason).toContain('will not accept')
+  })
+
+  // A model left blank is "let the gateway decide", not a value that failed
+  // validation — the field is optional, not merely tolerant of anything.
+  it('treats a blank model as not chosen rather than as a bad one', () => {
+    expect(paramsEligibility('acp-gateway', { model: '   ', agent: 'a' }).ok).toBe(true)
   })
 
   // Mirrors the daemon's own rule, so the refusal arrives while somebody is
@@ -187,6 +202,36 @@ describe('paramsEligibility', () => {
 
   it('refuses a kind the daemon does not run', () => {
     expect(paramsEligibility('bash', {}).ok).toBe(false)
+  })
+
+  // Format is still checked even though the field is optional: a value that
+  // is present has to be a real identifier, or the daemon refuses it anyway.
+  it('still refuses a bad model, even though the field is optional', () => {
+    const e = paramsEligibility('acp-gateway', { model: 'a b', agent: 'a' })
+    expect(e.ok).toBe(false)
+    expect(e.reason).toContain('will not accept')
+  })
+})
+
+describe('launchParamsPayload', () => {
+  it('sends nothing for a kind the daemon does not run', () => {
+    expect(launchParamsPayload('bash', {})).toEqual({})
+  })
+
+  it('needs nothing extra for claude-code', () => {
+    expect(launchParamsPayload('claude-code', {})).toEqual({})
+  })
+
+  // A key the caller never set at all (not merely blank) is the other way
+  // "no preference" arrives, and must be skipped the same as an empty string.
+  it('omits an optional field the caller never set at all', () => {
+    expect(launchParamsPayload('acp-gateway', { agent: 'a' })).toEqual({ agent: 'a' })
+  })
+
+  // A required field goes through the same nullish fallback as an optional
+  // one before it's trimmed — a missing key must not throw, just come out blank.
+  it('treats a missing required field as blank, not absent', () => {
+    expect(launchParamsPayload('acp-gateway', {})).toEqual({ agent: '' })
   })
 })
 
@@ -321,8 +366,15 @@ describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
     expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
   })
 
-  it('ignores a stored value missing either field, the same as nothing stored', () => {
+  // The agent is the one field a launch cannot go without; a remembered
+  // model is a bonus, not a condition for restoring the rest.
+  it('remembers just the agent when no model was ever chosen', () => {
     localStorage.setItem('agentrq:lastAcpGateway', JSON.stringify({ agent: 'codex-acp' }))
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: '' })
+  })
+
+  it('ignores a stored value missing the agent, the same as nothing stored', () => {
+    localStorage.setItem('agentrq:lastAcpGateway', JSON.stringify({ model: 'gpt-5.5' }))
     expect(lastAcpGatewayChoice()).toBeNull()
   })
 
@@ -439,6 +491,21 @@ describe('launching', () => {
     )
   })
 
+  // Only the agent is mandatory: a launch with no model chosen must still go
+  // through, and must not send a `model` the gateway never asked for.
+  it('launches the gateway with just an agent, sending no model at all', async () => {
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { model: '', agent: 'antigravity-acp' }
+
+    await h.l.launch()
+    const sent = h.deps.launchAgent.mock.calls[0][1]
+    expect(sent.agent).toBe('antigravity-acp')
+    expect(sent).not.toHaveProperty('model')
+  })
+
   // The answer can change between the page loading and the button being
   // pressed, so every refusal is still handled rather than assumed away.
   it('reports a refusal the eligibility check could not have known about', async () => {
@@ -485,7 +552,7 @@ describe('the catalogue', () => {
     expect(KINDS.map((k) => k.id)).toEqual(['claude-code', 'acp-gateway'])
   })
 
-  // Two empty required fields is a worse first impression than a working
+  // An empty required field is a worse first impression than a working
   // default, and these are the repository's own.
   it('opens the gateway form on something that works', () => {
     expect(paramsEligibility('acp-gateway', GATEWAY_DEFAULTS).ok).toBe(true)

@@ -24,6 +24,7 @@ import {
   GATEWAY_DEFAULTS,
   KINDS,
   lastAcpGatewayChoice,
+  launchParamsPayload,
   paramsEligibility,
   rememberAcpGatewayChoice,
   useAcpGatewaySuggestions,
@@ -175,9 +176,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     launching.value = true
     error.value = ''
     try {
-      const spec = KINDS.find((k) => k.id === kind.value)
-      const extra = {}
-      for (const field of spec.needs) extra[field] = params.value[field].trim()
+      const extra = launchParamsPayload(kind.value, params.value)
 
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspace.value.id, {

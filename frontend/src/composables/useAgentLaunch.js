@@ -32,14 +32,18 @@ export const KINDS = [
     id: 'acp-gateway',
     label: 'ACP Gateway',
     description: 'Bridges another agent into the workspace.',
-    needs: ['model', 'agent'],
+    // Only the agent picks which process runs at all. The model is the
+    // gateway's own choice to make when nobody names one, so it is validated
+    // when given but never required.
+    needs: ['agent'],
+    optional: ['model'],
   },
 ]
 
 /**
  * Defaults for the gateway, taken from the repository's own `remote-agy`
- * target so the form opens on something that works rather than on two empty
- * required fields.
+ * target so the form opens on something that works rather than on an empty
+ * required field.
  */
 export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
 
@@ -63,8 +67,10 @@ const LAST_ACP_GATEWAY_KEY = 'agentrq:lastAcpGateway'
 export function lastAcpGatewayChoice() {
   try {
     const parsed = JSON.parse(localStorage.getItem(LAST_ACP_GATEWAY_KEY) ?? 'null')
-    if (!parsed?.agent || !parsed?.model) return null
-    return { agent: parsed.agent, model: parsed.model }
+    // The agent is the one field a launch cannot go without; a remembered
+    // model is a bonus, not a condition for restoring the rest.
+    if (!parsed?.agent) return null
+    return { agent: parsed.agent, model: parsed.model ?? '' }
   } catch {
     return null
   }
@@ -73,7 +79,7 @@ export function lastAcpGatewayChoice() {
 /** Remembers a gateway launch's agent and model for the next one. */
 export function rememberAcpGatewayChoice({ agent, model }) {
   try {
-    localStorage.setItem(LAST_ACP_GATEWAY_KEY, JSON.stringify({ agent, model }))
+    localStorage.setItem(LAST_ACP_GATEWAY_KEY, JSON.stringify({ agent, model: model ?? '' }))
   } catch {
     // Nothing to fall back to here: the next launch just opens on
     // GATEWAY_DEFAULTS again, exactly as it did before this existed.
@@ -189,6 +195,9 @@ export function machineEligibility(machine) {
   return { ok: true }
 }
 
+const BAD_SHAPE_REASON = (field) =>
+  `That ${field} has characters the daemon will not accept: letters, digits, dot, dash and underscore, starting with a letter or digit.`
+
 /** Whether the kind's own parameters are filled in and acceptable. */
 export function paramsEligibility(kind, params) {
   const spec = KINDS.find((k) => k.id === kind)
@@ -196,14 +205,33 @@ export function paramsEligibility(kind, params) {
   for (const field of spec.needs) {
     const value = (params?.[field] ?? '').trim()
     if (!value) return { ok: false, reason: `${spec.label} needs a ${field}.` }
-    if (!SAFE_PARAM.test(value)) {
-      return {
-        ok: false,
-        reason: `That ${field} has characters the daemon will not accept: letters, digits, dot, dash and underscore, starting with a letter or digit.`,
-      }
-    }
+    if (!SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
+  }
+  // Optional fields are validated the same way when given, and skipped
+  // entirely when not — leaving one blank is how "no preference" arrives.
+  for (const field of spec.optional ?? []) {
+    const value = (params?.[field] ?? '').trim()
+    if (value && !SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
   }
   return { ok: true }
+}
+
+/**
+ * The kind's own parameters shaped as the launch payload sends them: required
+ * fields trimmed, and an optional one included only when it was actually
+ * given. Shared by both launch composables so "which fields does a launch
+ * send" has one answer.
+ */
+export function launchParamsPayload(kind, params) {
+  const spec = KINDS.find((k) => k.id === kind)
+  if (!spec) return {}
+  const extra = {}
+  for (const field of spec.needs) extra[field] = (params?.[field] ?? '').trim()
+  for (const field of spec.optional ?? []) {
+    const value = (params?.[field] ?? '').trim()
+    if (value) extra[field] = value
+  }
+  return extra
 }
 
 /**
@@ -356,9 +384,7 @@ export function useAgentLaunch(deps = {}) {
     launching.value = true
     error.value = ''
     try {
-      const spec = KINDS.find((k) => k.id === kind.value)
-      const extra = {}
-      for (const field of spec.needs) extra[field] = params.value[field].trim()
+      const extra = launchParamsPayload(kind.value, params.value)
 
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspaceId.value, {
