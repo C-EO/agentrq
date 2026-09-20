@@ -169,6 +169,7 @@ type CreateTaskParams struct {
 	Assignee     string `json:"assignee,omitempty" jsonschema:"enum: human, agent"`
 	CronSchedule string `json:"cronSchedule,omitempty"`
 	ParentID     string `json:"parentId,omitempty"`
+	ClearContext bool   `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the target workspace has no running Claude Code session. Defaults to the target workspace's own setting."`
 }
 
 type GetTaskParams struct {
@@ -490,6 +491,7 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 			Assignee:     assignee,
 			CronSchedule: args.CronSchedule,
 			ParentID:     parseID(args.ParentID),
+			ClearContext: args.ClearContext,
 		},
 	})
 	if err != nil {
