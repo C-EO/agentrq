@@ -197,6 +197,129 @@ func TestPollOnceOffersATaskPutBackWithinOneInterval(t *testing.T) {
 	}
 }
 
+// The reported bug (task 0j1wvKhUB5V, reproduced live): a task the agent never
+// picks up used to hide every task created after it. The poller always offered
+// the oldest pending task and only that one, so a newer task behind it was
+// never sent — not once, for as long as the older one sat there. Offering has
+// to move on.
+func TestPollOnceDoesNotStarveANewerTaskBehindAStuckOne(t *testing.T) {
+	ps := pushServer(t)
+	stuck := model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1}
+	newer := model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2}
+	repo := pendingTaskRepo(stuck, newer)
+
+	// Four ticks, the way the live reproduction ran. The newer task has to be
+	// offered in there somewhere.
+	offered := map[int64]int{}
+	for i := 0; i < 4; i++ {
+		offered[ps.pollOnce(repo)]++
+	}
+
+	if offered[8] == 0 {
+		t.Fatalf("the newer task was never offered across four ticks; offers were %v", offered)
+	}
+	if offered[7] == 0 {
+		t.Errorf("the older task stopped being offered entirely; offers were %v", offered)
+	}
+}
+
+// One task per tick, still. The fix for starvation must not turn into handing
+// an agent its whole backlog at once, which is a different way to break it.
+func TestPollOnceOffersOneTaskPerTick(t *testing.T) {
+	ps := pushServer(t)
+
+	got := ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1},
+		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
+		model.Task{ID: 9, Status: "notstarted", Assignee: "agent", SortOrder: 3},
+	))
+
+	if got != 7 {
+		t.Fatalf("the first tick offered task %d, want the oldest (7) — order still decides where it starts", got)
+	}
+}
+
+// Rotation follows the queue order rather than jumping about, so the oldest
+// still goes first and the rest follow it in turn.
+func TestPollOnceRotatesInQueueOrder(t *testing.T) {
+	ps := pushServer(t)
+	repo := pendingTaskRepo(
+		model.Task{ID: 9, Status: "notstarted", Assignee: "agent", SortOrder: 3},
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1},
+		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
+	)
+
+	var got []int64
+	for i := 0; i < 4; i++ {
+		got = append(got, ps.pollOnce(repo))
+	}
+
+	want := []int64{7, 8, 9, 7}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("offers were %v, want %v", got, want)
+		}
+	}
+}
+
+// A task taken off the queue does not disturb the rotation of what is left.
+func TestPollOnceKeepsRotatingWhenATaskIsTaken(t *testing.T) {
+	ps := pushServer(t)
+	all := pendingTaskRepo(
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1},
+		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
+	)
+
+	if got := ps.pollOnce(all); got != 7 {
+		t.Fatalf("first offer was %d, want 7", got)
+	}
+	// 7 is taken; only 8 is left, and it must be offered rather than the
+	// rotation stalling on a task that is no longer pending.
+	only8 := pendingTaskRepo(
+		model.Task{ID: 7, Status: "ongoing", Assignee: "agent", SortOrder: 1},
+		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
+	)
+	if got := ps.pollOnce(only8); got != 0 {
+		t.Fatalf("offered task %d while another was ongoing, want none", got)
+	}
+	done := pendingTaskRepo(
+		model.Task{ID: 7, Status: "completed", Assignee: "agent", SortOrder: 1},
+		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
+	)
+	if got := ps.pollOnce(done); got != 8 {
+		t.Fatalf("offered task %d, want the one still pending (8)", got)
+	}
+}
+
+// The scan used to stop at the first ongoing task, so the set handed to
+// reconcileClearedTaskIDs was truncated and silently dropped the record for
+// every task listed after it — which would then be cleared a second time.
+func TestPollOnceReconcilesEveryPendingTaskNotJustThoseBeforeAnOngoingOne(t *testing.T) {
+	ps := pushServer(t)
+	clears := countingClear(ps, nil)
+	pending := model.Task{ID: 8, Status: "notstarted", Assignee: "agent", ClearContext: true}
+
+	// Cleared once while nothing is ongoing.
+	ps.pollOnce(pendingTaskRepo(pending))
+	if *clears != 1 {
+		t.Fatalf("cleared %d times, want 1", *clears)
+	}
+
+	// Now something is ongoing and is listed *before* the pending task. The
+	// pending task is still pending, so its clear must still be remembered.
+	ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
+		pending,
+	))
+
+	// Back to nothing ongoing: the task is offered again, and must not be
+	// cleared again.
+	ps.pollOnce(pendingTaskRepo(pending))
+	if *clears != 1 {
+		t.Fatalf("cleared %d times, want 1 — the ongoing task truncated the reconcile set", *clears)
+	}
+}
+
 // Nothing is offered while a task is ongoing: the agent already has work.
 func TestPollOnceOffersNothingWhileATaskIsOngoing(t *testing.T) {
 	ps := pushServer(t)

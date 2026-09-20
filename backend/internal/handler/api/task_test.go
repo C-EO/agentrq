@@ -361,6 +361,94 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 	}
 }
 
+// The reported bug, at the handler end (task 0j1wvKhUB5V). A task already
+// waiting in the queue used to suppress the push for the task created behind
+// it — and StartPoller only ever offered the queue's oldest task, so the newer
+// one was never sent by anything. One task the agent ignored hid every task
+// created after it.
+func TestCreateTask_PushesEvenWhenAnotherTaskIsAlreadyPending(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          47,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Created behind a stuck one",
+	}
+	stuck := entity.Task{ID: 46, WorkspaceID: 1, Assignee: "agent", Status: "notstarted", Title: "Never picked up"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{stuck, created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Created behind a stuck one","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if srv.notifiedTaskID != created.ID {
+		t.Fatalf("notified task %d, want %d — a queued task must not hide the one created behind it", srv.notifiedTaskID, created.ID)
+	}
+}
+
+// Still held back while the agent is actually working: that one is not a
+// starvation risk, because the poller offers the queue again the moment the
+// ongoing task is done.
+func TestCreateTask_DoesNotPushWhileAnotherTaskIsOngoing(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          48,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Created mid-work",
+	}
+	working := entity.Task{ID: 49, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "In progress"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{working, created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Created mid-work","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(srv.calls) != 0 {
+		t.Fatalf("calls = %v, want none while another task is ongoing", srv.calls)
+	}
+}
+
 // mockCrudUpdateTaskAssignee answers exactly UpdateTaskAssignee.
 type mockCrudUpdateTaskAssignee struct {
 	crud.Controller

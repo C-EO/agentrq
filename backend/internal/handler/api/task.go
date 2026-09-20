@@ -90,24 +90,24 @@ func (h *handler) createTask() fiber.Handler {
 		// If human created the task, notify the LLM via MCP channel
 		// ONLY if status is NOT 'cron' (don't notify for template creation)
 		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
+			// Held back only while the agent is actually working. A task
+			// already waiting in the queue is not a reason to withhold this
+			// one: the agent may never pick that one up, and this used to mean
+			// a task created behind it was never pushed at all — not by this
+			// handler, which skipped it, and not by StartPoller, which offered
+			// the queue's oldest task and only that one. Between them a single
+			// task the agent ignored hid every task created after it.
 			shouldNotifyMCP := true
 			listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: rq.Task.WorkspaceID, UserID: rq.UserID})
 			if listErr == nil {
-				hasOngoing := false
-				hasOtherNotStarted := false
 				for _, t := range listRs.Tasks {
 					if t.ID == rs.Task.ID {
 						continue // skip the newly created task itself
 					}
 					if t.Status == "ongoing" {
-						hasOngoing = true
+						shouldNotifyMCP = false
+						break
 					}
-					if t.Status == "notstarted" && t.Assignee == "agent" {
-						hasOtherNotStarted = true
-					}
-				}
-				if hasOngoing || hasOtherNotStarted {
-					shouldNotifyMCP = false
 				}
 			}
 
