@@ -15,7 +15,13 @@ that picks the right build and checks it against the published checksums,
 which these steps do not do:
 
 ```sh
+# Linux, macOS
 curl -fsSL https://agentrq.com/install-agentrqd.sh | sh
+```
+
+```powershell
+# Windows
+irm https://agentrq.com/install-agentrqd.ps1 | iex
 ```
 
 **Linux and macOS**
