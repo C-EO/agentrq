@@ -38,6 +38,30 @@ func TestCreateWorkspace_WithOptions(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspace_ClearContextDefaultsToTrue(t *testing.T) {
+	e := newTestController(t)
+
+	e.idgen.EXPECT().NextID().Return(int64(100))
+	var captured model.Workspace
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, p model.Workspace) (model.Workspace, error) {
+			captured = p
+			return p, nil
+		},
+	)
+
+	_, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
+		UserID:    testUserIDStr,
+		Workspace: entity.Workspace{Name: "W"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !captured.ClearContextDefault {
+		t.Errorf("expected ClearContextDefault to default to true on workspace creation")
+	}
+}
+
 func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 

@@ -36,7 +36,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		Name:                  req.Workspace.Name,
 		Description:           req.Workspace.Description,
 		AllowAllCommands:      req.Workspace.AllowAllCommands,
-		ClearContextDefault:   req.Workspace.ClearContextDefault,
+		ClearContextDefault:   true,
 		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
 		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
 		WorkingDirectory:      workingDirectory,

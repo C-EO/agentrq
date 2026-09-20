@@ -24,7 +24,7 @@ type (
 		AutoAllowedTools      datatypes.JSON `gorm:"type:text"`
 		AllowAllCommands      bool           `gorm:"default:false"`
 		// ClearContextDefault is what a new task's ClearContext starts as.
-		ClearContextDefault bool `gorm:"default:false"`
+		ClearContextDefault bool `gorm:"default:true"`
 		SelfLearningLoopNote  string         `gorm:"type:text"`
 		InputSendDelaySeconds int            `gorm:"default:0"`
 		WorkingDirectory      string         `gorm:"type:text"`
