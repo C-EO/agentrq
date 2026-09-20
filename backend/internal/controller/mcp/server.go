@@ -1130,53 +1130,6 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	// Only the two statuses a poll reads, and only tasks assigned to the
-	// agent. Unfiltered, this pulled the hundred most recently created tasks
-	// of any status or assignee — a workspace with a hundred human tasks, or
-	// even a single ongoing one, could push the agent's own pending tasks out
-	// of the window, or count a human's ongoing task as the agent's, blocking
-	// every push behind a task the agent was never running.
-	req := entity.ListTasksRequest{
-		WorkspaceID: ps.workspaceID,
-		UserID:      ps.userID,
-		Status:      []string{"ongoing", "notstarted"},
-		Assignee:    "agent",
-	}
-	uid := monoflake.IDFromBase62(ps.userID).Int64()
-	tasks, err := repo.ListTasks(context.Background(), req, uid)
-	if err != nil {
-		return 0
-	}
-
-	ongoingCount := 0
-	var ongoingTask model.Task
-	var pendingTasks []model.Task
-	notStartedIDs := make(map[int64]struct{})
-	// Every task is looked at, including those listed after an ongoing one.
-	// Stopping at the first ongoing task truncated the set handed to
-	// reconcileClearedTaskIDs below, which then forgot the clear of every
-	// pending task behind it and cleared it a second time later.
-	for _, t := range tasks {
-		if t.Status == "ongoing" {
-			ongoingCount++
-			if ongoingCount == 1 {
-				ongoingTask = t
-			}
-			continue
-		}
-		if t.Status == "notstarted" {
-			notStartedIDs[t.ID] = struct{}{}
-			// Offered again however many times it has been offered before.
-			// A push is the only thing that starts an idle agent, and one
-			// that went out while nothing was attached reached nobody — so
-			// the task stands until the agent takes it and says so by
-			// moving to ongoing. The clear behind it does not repeat; see
-			// clearContextFor.
-			pendingTasks = append(pendingTasks, t)
-		}
-	}
-	ps.reconcileClearedTaskIDs(notStartedIDs)
-
 	// Full when the agent is already running everything it will run at once,
 	// which is what the gateway itself reports. One when it has reported
 	// nothing, which is the single-task behaviour every workspace had before
@@ -1186,13 +1139,58 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		limit = c.MaxConcurrency
 	}
 
-	if ongoingCount >= limit {
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+
+	// Ask only how many of the agent's own tasks are ongoing, bounded by the
+	// concurrency limit itself: past that count the answer is already "full"
+	// however many more there really are, so there is no reason to ask for
+	// more rows than that.
+	ongoingReq := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"ongoing"},
+		Assignee:    "agent",
+		Limit:       limit,
+	}
+	ongoingTasks, err := repo.ListTasks(context.Background(), ongoingReq, uid)
+	if err != nil {
+		return 0
+	}
+
+	if len(ongoingTasks) >= limit {
 		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
+			ongoingTask := ongoingTasks[0]
 			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
 			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
 			ps.lastUpdateCheckAt = time.Now()
 		}
-	} else if len(pendingTasks) > 0 {
+		return 0
+	}
+
+	// Room for more: look at the agent's own pending backlog. Kept as a
+	// second, separate query rather than combined with the one above — a
+	// query naming two statuses sorts everything but "ongoing" by
+	// updated_at DESC, not the FIFO order a single "notstarted" query gets,
+	// and limiting that combined order would drop the longest-waiting tasks
+	// first.
+	pendingReq := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"notstarted"},
+		Assignee:    "agent",
+	}
+	pendingTasks, err := repo.ListTasks(context.Background(), pendingReq, uid)
+	if err != nil {
+		return 0
+	}
+
+	notStartedIDs := make(map[int64]struct{}, len(pendingTasks))
+	for _, t := range pendingTasks {
+		notStartedIDs[t.ID] = struct{}{}
+	}
+	ps.reconcileClearedTaskIDs(notStartedIDs)
+
+	if len(pendingTasks) > 0 {
 		sort.Slice(pendingTasks, func(i, j int) bool {
 			orderI := pendingTasks[i].SortOrder
 			if orderI == 0 {

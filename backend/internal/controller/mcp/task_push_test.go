@@ -72,10 +72,43 @@ func (f listTasksFunc) ListTasks(ctx context.Context, req entity.ListTasksReques
 	return f(ctx, req, userID)
 }
 
+// pendingTaskRepo stands in for the repository's WHERE/LIMIT, since pollOnce
+// now makes two separate calls (one for "ongoing", one for "notstarted") and
+// trusts each one to have already been filtered and capped — exactly what the
+// real repository.ListTasks does.
 func pendingTaskRepo(tasks ...model.Task) listTasksFunc {
-	return func(context.Context, entity.ListTasksRequest, int64) ([]model.Task, error) {
-		return tasks, nil
+	return func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
+		wantStatus := make(map[string]bool, len(req.Status))
+		for _, s := range req.Status {
+			wantStatus[s] = true
+		}
+		var out []model.Task
+		for _, t := range tasks {
+			if len(wantStatus) > 0 && !wantStatus[t.Status] {
+				continue
+			}
+			if req.Assignee != "" && t.Assignee != req.Assignee {
+				continue
+			}
+			out = append(out, t)
+			if req.Limit > 0 && len(out) >= req.Limit {
+				break
+			}
+		}
+		return out, nil
 	}
+}
+
+// recordingTaskRepo wraps pendingTaskRepo and also records every request made
+// to it, so a test can assert on the shape of pollOnce's separate queries.
+func recordingTaskRepo(tasks ...model.Task) (listTasksFunc, *[]entity.ListTasksRequest) {
+	var asked []entity.ListTasksRequest
+	inner := pendingTaskRepo(tasks...)
+	f := listTasksFunc(func(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
+		asked = append(asked, req)
+		return inner(ctx, req, userID)
+	})
+	return f, &asked
 }
 
 // The reported bug, and the rule that fixes it: a task stands until the agent
@@ -361,43 +394,42 @@ func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
 	}
 }
 
-// A poll asks for the two statuses it reads and nothing else. Unfiltered, the
-// query returned the hundred most recent tasks of any status — so a workspace
-// with a hundred completed tasks could push its pending ones out of the
-// window, and the poll would find no work to hand over at all.
-func TestPollOnceAsksOnlyForTheStatusesItReads(t *testing.T) {
+// A poll asks two separate questions — never a single query naming both
+// statuses — and both ask only about the agent's own tasks. Unfiltered, a
+// combined query returned the hundred most recent tasks of any status or
+// assignee: a workspace with a hundred completed or human tasks could push
+// the agent's pending ones out of the window, and a human's own ongoing task
+// counted toward the agent's concurrency, blocking every push behind it.
+func TestPollOnceAsksTwoSeparateQueriesForItsOwnTasks(t *testing.T) {
 	ps := pushServer(t)
-	var asked entity.ListTasksRequest
-	ps.pollOnce(listTasksFunc(func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
-		asked = req
-		return []model.Task{{ID: 7, Status: "notstarted", Assignee: "agent"}}, nil
-	}))
+	repo, asked := recordingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
+	ps.pollOnce(repo)
 
-	want := map[string]bool{"ongoing": true, "notstarted": true}
-	if len(asked.Status) != len(want) {
-		t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+	if len(*asked) != 2 {
+		t.Fatalf("made %d queries, want exactly 2 (ongoing, then notstarted)", len(*asked))
 	}
-	for _, s := range asked.Status {
-		if !want[s] {
-			t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+	if got := (*asked)[0].Status; len(got) != 1 || got[0] != "ongoing" {
+		t.Fatalf("first query asked for statuses %v, want exactly [ongoing]", got)
+	}
+	if got := (*asked)[1].Status; len(got) != 1 || got[0] != "notstarted" {
+		t.Fatalf("second query asked for statuses %v, want exactly [notstarted]", got)
+	}
+	for i, req := range *asked {
+		if req.Assignee != "agent" {
+			t.Fatalf("query %d asked for assignee %q, want \"agent\"", i, req.Assignee)
 		}
 	}
 }
 
-// A poll asks only for the agent's own tasks. Unfiltered, a human's ongoing
-// task in the same workspace counted toward the agent's concurrency and
-// blocked every push behind it, and a human's own pending tasks could push
-// the agent's out of the query's row limit.
-func TestPollOnceAsksOnlyForTheAgentsOwnTasks(t *testing.T) {
+// The busy check stops at the first query: no reason to ask for the agent's
+// pending backlog when it already has no room for it.
+func TestPollOnceSkipsThePendingQueryWhenFull(t *testing.T) {
 	ps := pushServer(t)
-	var asked entity.ListTasksRequest
-	ps.pollOnce(listTasksFunc(func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
-		asked = req
-		return []model.Task{{ID: 7, Status: "notstarted", Assignee: "agent"}}, nil
-	}))
+	repo, asked := recordingTaskRepo(model.Task{ID: 1, Status: "ongoing", Assignee: "agent"})
+	ps.pollOnce(repo)
 
-	if asked.Assignee != "agent" {
-		t.Fatalf("asked for assignee %q, want \"agent\"", asked.Assignee)
+	if len(*asked) != 1 {
+		t.Fatalf("made %d queries while full, want exactly 1 (ongoing only)", len(*asked))
 	}
 }
 
