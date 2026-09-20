@@ -273,7 +273,9 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	if req.Assignee != "" {
 		q = q.Where("assignee = ?", req.Assignee)
 	}
-	if len(req.Status) > 0 {
+	if len(req.Status) == 1 {
+		q = q.Where("status = ?", req.Status[0])
+	} else if len(req.Status) > 0 {
 		q = q.Where("status IN ?", req.Status)
 	}
 
@@ -391,7 +393,9 @@ func (r *repository) CountTasks(ctx context.Context, req entity.ListTasksRequest
 	if req.Assignee != "" {
 		q = q.Where("assignee = ?", req.Assignee)
 	}
-	if len(req.Status) > 0 {
+	if len(req.Status) == 1 {
+		q = q.Where("status = ?", req.Status[0])
+	} else if len(req.Status) > 0 {
 		q = q.Where("status IN ?", req.Status)
 	}
 
