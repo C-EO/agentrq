@@ -88,6 +88,13 @@ func TestFindOrCreateUser_NotFound_CreateNew(t *testing.T) {
 		}
 		return u, nil
 	})
+	e.idgen.EXPECT().NextID().Return(int64(1000))
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
+		if w.ID != 1000 || w.UserID != 999 || w.Name != "supervisor" {
+			return model.Workspace{}, fmt.Errorf("unexpected supervisor workspace values")
+		}
+		return w, nil
+	})
 
 	resp, err := e.controller.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
 		Email: "new@example.com",
@@ -99,6 +106,24 @@ func TestFindOrCreateUser_NotFound_CreateNew(t *testing.T) {
 	}
 	if resp.User.ID != 999 {
 		t.Errorf("expected ID 999, got %d", resp.User.ID)
+	}
+}
+
+func TestFindOrCreateUser_NotFound_SupervisorWorkspaceError(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().FindUserByEmail(gomock.Any(), "new@example.com").Return(model.User{}, base.ErrNotFound)
+	e.idgen.EXPECT().NextID().Return(int64(999))
+	e.repo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(model.User{ID: 999, Email: "new@example.com"}, nil)
+	e.idgen.EXPECT().NextID().Return(int64(1000))
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{}, fmt.Errorf("db error"))
+
+	_, err := e.controller.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
+		Email: "new@example.com",
+		Name:  "New Person",
+	})
+	if err == nil {
+		t.Fatal("expected error when the supervisor workspace fails to create")
 	}
 }
 
