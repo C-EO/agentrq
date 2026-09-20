@@ -147,9 +147,9 @@ async function start() {
         <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
       </div>
 
-      <!-- Only the gateway needs these, and it needs both. Agent first: the
-           model list is per-agent, so there is nothing to suggest for the
-           second field until the first is answered. -->
+      <!-- Only the gateway needs these, and only the agent is required. Agent
+           first: the model list is per-agent, so there is nothing to suggest
+           for the second field until the first is answered. -->
       <div v-if="kind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
         <div>
           <label
@@ -177,13 +177,14 @@ async function start() {
           <label
             for="start-agent-model"
             class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >Model</label
+            >Model <span class="normal-case font-normal tracking-normal">(optional)</span></label
           >
           <input
             id="start-agent-model"
             v-model="params.model"
             type="text"
             list="start-agent-model-options"
+            placeholder="Gateway default"
             spellcheck="false"
             autocapitalize="off"
             autocorrect="off"

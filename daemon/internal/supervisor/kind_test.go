@@ -29,7 +29,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want = "npx -y @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp"
+	want = "npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --model gemini-3.8-flash-high"
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -81,7 +81,6 @@ func TestResolveRequiresItsParameters(t *testing.T) {
 	}{
 		{"claude without workspace", KindClaudeCode, Params{ServerName: "s"}},
 		{"claude without server name", KindClaudeCode, Params{Workspace: "w"}},
-		{"gateway without model", KindACPGateway, Params{Agent: "a"}},
 		{"gateway without agent", KindACPGateway, Params{Model: "m"}},
 	}
 	for _, tc := range tests {
@@ -90,6 +89,20 @@ func TestResolveRequiresItsParameters(t *testing.T) {
 				t.Errorf("error = %v, want ErrMissingParam", err)
 			}
 		})
+	}
+}
+
+// Only the agent is mandatory: the model is the gateway's own selection to
+// make when nobody names one, so a launch without it must succeed and must
+// not emit a --model flag the gateway never asked for.
+func TestGatewayWithoutModelIsAccepted(t *testing.T) {
+	c, err := Resolve(KindACPGateway, Params{Agent: "a"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := "npx -y @agentrq/acp-gateway@latest --agent a"
+	if got := strings.Join(c.Argv, " "); got != want {
+		t.Errorf("argv = %q, want %q", got, want)
 	}
 }
 
@@ -104,12 +117,17 @@ func TestIdentifiersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
 		"a\nb", "a\x00b", // control characters
 		"../escape", "a/b", // path-shaped
 		strings.Repeat("a", 200), // absurd length
-		"",
 	}
 	for _, v := range bad {
 		if _, err := Resolve(KindACPGateway, Params{Model: v, Agent: "a"}); err == nil {
 			t.Errorf("Resolve accepted model=%q", v)
 		}
+	}
+
+	// Unlike a bad shape, an absent model is not refused — it is optional, and
+	// an empty string is how "nobody chose one" arrives.
+	if _, err := Resolve(KindACPGateway, Params{Model: "", Agent: "a"}); err != nil {
+		t.Errorf("Resolve refused an absent model: %v", err)
 	}
 }
 

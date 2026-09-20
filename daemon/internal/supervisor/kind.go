@@ -80,6 +80,16 @@ func checkParam(field, value string) error {
 	return check(safeParam, field, value)
 }
 
+// checkOptionalParam validates an identifier's shape only when one was given.
+// A field that is not mandatory must not gain a mandatory shape the moment
+// it is empty.
+func checkOptionalParam(field, value string) error {
+	if value == "" {
+		return nil
+	}
+	return checkParam(field, value)
+}
+
 // checkName validates a human-chosen name.
 func checkName(field, value string) error {
 	return check(safeName, field, value)
@@ -103,9 +113,9 @@ type Command struct {
 	// before starting it.
 	//
 	// Both kinds do. That is worth saying because it is easy to assume only
-	// claude-code cares — the gateway takes its model and agent on the command
-	// line, so it looks self-contained — and it is not: it reads the workspace
-	// from the same file.
+	// claude-code cares — the gateway takes its agent (and optionally a model)
+	// on the command line, so it looks self-contained — and it is not: it
+	// reads the workspace from the same file.
 	NeedsMCPConfig bool
 }
 
@@ -145,11 +155,21 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		}, nil
 
 	case KindACPGateway:
-		if err := checkParam("model", p.Model); err != nil {
-			return Command{}, err
-		}
 		if err := checkParam("agent", p.Agent); err != nil {
 			return Command{}, err
+		}
+		// Model is the gateway's own default when none is given — only the
+		// agent picks which process runs at all, so it is the one parameter
+		// this daemon can't leave unresolved.
+		if err := checkOptionalParam("model", p.Model); err != nil {
+			return Command{}, err
+		}
+		argv := []string{
+			"npx", "-y", "@agentrq/acp-gateway@latest",
+			"--agent", p.Agent,
+		}
+		if p.Model != "" {
+			argv = append(argv, "--model", p.Model)
 		}
 		// The gateway reads .mcp.json from its working directory, exactly as
 		// claude-code does — `make remote-agy` works only because it is run
@@ -157,11 +177,7 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		// starts, prints "Could not find .mcp.json" and dies, which is a
 		// launch that looks like it worked for about a second.
 		return Command{
-			Argv: []string{
-				"npx", "-y", "@agentrq/acp-gateway@latest",
-				"--model", p.Model,
-				"--agent", p.Agent,
-			},
+			Argv:           argv,
 			NeedsMCPConfig: true,
 		}, nil
 

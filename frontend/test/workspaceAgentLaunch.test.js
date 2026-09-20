@@ -226,11 +226,16 @@ describe('useWorkspaceAgentLaunch: blockers', () => {
     const { l } = harness()
     await l.load()
     l.kind.value = 'acp-gateway'
-    l.params.value = { model: '', agent: 'antigravity-acp' }
+    l.params.value = { model: '', agent: '' }
     expect(l.canLaunch.value).toBe(false)
 
     l.params.value = { model: '--rm -rf', agent: 'antigravity-acp' }
     expect(l.blockers.value[0].reason).toMatch(/characters the daemon will not accept/)
+
+    // The agent alone is enough — the model is the gateway's own choice to
+    // make when nobody names one.
+    l.params.value = { model: '', agent: 'antigravity-acp' }
+    expect(l.canLaunch.value).toBe(true)
 
     l.params.value = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
     expect(l.canLaunch.value).toBe(true)
@@ -382,6 +387,20 @@ describe('useWorkspaceAgentLaunch: launching', () => {
       model: 'gemini-3.8-flash-high',
       agent: 'antigravity-acp',
     })
+  })
+
+  // Only the agent is mandatory: a launch with no model chosen must still
+  // succeed, and must not send a `model` the gateway never asked for.
+  it('sends the gateway just an agent when no model was chosen', async () => {
+    const { l, deps } = harness()
+    await l.load()
+    l.kind.value = 'acp-gateway'
+    l.params.value = { model: '', agent: 'antigravity-acp' }
+    await l.launch()
+
+    const sent = deps.launchAgent.mock.calls[0][1]
+    expect(sent.agent).toBe('antigravity-acp')
+    expect(sent).not.toHaveProperty('model')
   })
 
   it('sends nothing when it already knows the launch would be refused', async () => {

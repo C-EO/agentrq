@@ -247,11 +247,12 @@ the caller actually uses are how a bug like that survives a full green suite.
 
 ## Both agent kinds read `.mcp.json`
 
-It is easy to assume only claude-code does — the gateway takes its model and
-agent on the command line, so it looks self-contained — and `make remote-agy`
-reinforces that, because it happens to run from the repository root, which has
-one. It does not: the gateway reads the workspace from the same file, and
-without it prints "Could not find .mcp.json" and dies a second after starting.
+It is easy to assume only claude-code does — the gateway takes its agent (and
+optionally a model) on the command line, so it looks self-contained — and
+`make remote-agy` reinforces that, because it happens to run from the
+repository root, which has one. It does not: the gateway reads the workspace
+from the same file, and without it prints "Could not find .mcp.json" and dies
+a second after starting.
 
 So the backend mints an MCP token for both kinds and the daemon writes a config
 for both.
