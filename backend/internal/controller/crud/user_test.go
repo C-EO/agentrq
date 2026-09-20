@@ -93,6 +93,12 @@ func TestFindOrCreateUser_NotFound_CreateNew(t *testing.T) {
 		if w.ID != 1000 || w.UserID != 999 || w.Name != "supervisor" {
 			return model.Workspace{}, fmt.Errorf("unexpected supervisor workspace values")
 		}
+		if w.Description != defaultSupervisorWorkspaceDescription {
+			return model.Workspace{}, fmt.Errorf("supervisor workspace description should be the default mission text")
+		}
+		if w.SelfLearningLoopNote != defaultSupervisorWorkspaceSelfLearningLoopNote {
+			return model.Workspace{}, fmt.Errorf("supervisor workspace self-learning-loop note should be the default")
+		}
 		return w, nil
 	})
 

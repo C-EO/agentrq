@@ -13,6 +13,29 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 )
 
+// defaultSupervisorWorkspaceDescription and
+// defaultSupervisorWorkspaceSelfLearningLoopNote are what every new account's
+// auto-created "supervisor" workspace ships with, so a first-time user opens
+// it to a working mission rather than a blank one. Deliberately generic — the
+// same text for every account, not tailored to any one operator's business.
+const (
+	defaultSupervisorWorkspaceDescription = `You are the supervisor workspace — the coordination hub for your other AgentRQ workspaces and agents. Your job is to help your human operator get things done by routing work to the right workspace, tracking it through to completion, and keeping the human informed along the way.
+
+**Important**
+- This is the only workspace with access to the supervisor-level MCP tools (creating/listing/managing other workspaces and their tasks).
+- If a task is assigned to "human", that means the human operator should do it — don't try to complete it yourself.
+- Be a responsible, trustworthy delegate: you represent the human's intent to every other agent you talk to.
+- If something needs the human's direct attention or a decision only they can make, ask them — don't guess.`
+
+	defaultSupervisorWorkspaceSelfLearningLoopNote = `**Follow**
+- When you start working on a task, mark it "ongoing" immediately so it isn't re-assigned.
+- Load this workspace's memory before starting work — it may already answer something you'd otherwise ask the human.
+- If you hit a problem and find a fix or a lesson worth keeping, save it to memory so you (or another agent) don't repeat it. Keep entries short and specific.
+- When you create a task for another agent (or relay one from the human), follow up on it until it's resolved — don't fire-and-forget.
+- Sign every message you post into another workspace's task with "[sent by supervisor]", so it's clear the message is relayed, not written by that workspace's own agent.
+- When creating a task for another agent, request a clean-slate context (clearContext=true) if the tool in use supports it, since you'll already have written full context into the task body.`
+)
+
 func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error) {
 	var u model.User
 	var err error
@@ -98,11 +121,13 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 	// Every new account gets a "supervisor" workspace, the one whose
 	// .mcp.json setup snippet also wires in the cross-workspace coremcp tools.
 	supervisorWorkspace := model.Workspace{
-		ID:        c.idgen.NextID(),
-		CreatedAt: created.CreatedAt,
-		UpdatedAt: created.CreatedAt,
-		UserID:    created.ID,
-		Name:      "supervisor",
+		ID:                   c.idgen.NextID(),
+		CreatedAt:            created.CreatedAt,
+		UpdatedAt:            created.CreatedAt,
+		UserID:               created.ID,
+		Name:                 "supervisor",
+		Description:          defaultSupervisorWorkspaceDescription,
+		SelfLearningLoopNote: defaultSupervisorWorkspaceSelfLearningLoopNote,
 	}
 	createdWorkspace, err := c.repository.CreateWorkspace(ctx, supervisorWorkspace)
 	if err != nil {
