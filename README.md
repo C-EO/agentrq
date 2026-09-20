@@ -521,6 +521,9 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 - `listMemories`: List a workspace's memories — name, size and when each changed.
 - `getMemory`: Read one memory in full. `MEMORY.md` is the index the others hang off.
 
+**Machine Setup**
+- `createEnrolmentCode`: Mint a one-time code for enrolling a new machine with `agentrqd`. Shown once and expires shortly — there is no remote enrolment, so it hands back a ready-to-run command rather than acting on the machine itself.
+
 **Events & Triggers**
 An event is a named signal a workspace publishes; a trigger creates a task somewhere when it fires. Publishing stays agent-side (`publishEvent` on the per-workspace server) — the supervisor builds the wiring, the workers fire it.
 - `listEvents`, `createEvent`, `getEvent`, `updateEvent`, `deleteEvent`: define the signals.
@@ -533,6 +536,18 @@ The graph those pieces add up to: a start event, and the steps that react to it 
 - `createWorkflowStep`, `listWorkflowSteps`, `deleteWorkflowStep`: its nodes, one at a time.
 - `getWorkflowText`, `replaceWorkflowFromText`: the whole graph as the indented document the UI's text mode edits — the declarative way to write one.
 - `listWorkflowTasks`: see the tasks a workflow has spawned.
+
+### Supervisor Resources & Prompts
+Beyond tools, the Supervisor also exposes MCP **resources** — read-only reference material an agent can pull into its own context — and MCP **prompts** — ready-made templates for the workflows a "single brain overseeing many workspaces" is for.
+
+Resources:
+- `agentrq://guides/new-workspace`: how to set up a new workspace end-to-end.
+- `agentrq://guides/agentrqd-setup`: how to install `agentrqd` and enrol a new machine, with the enrol command templated to this server.
+
+Prompts:
+- `new-workspace`: scaffold a new workspace for a stated purpose.
+- `setup-agentrqd`: mint an enrolment code and hand back the exact commands to run on a new machine.
+- `workspace-status`: a status report across every workspace at once.
 
 ### Connecting to Supervisor (Claude Code)
 Since the Supervisor uses OAuth2, you can connect it using the following configuration in your `~/.mcp.json`:

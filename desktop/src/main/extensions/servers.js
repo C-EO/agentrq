@@ -107,6 +107,7 @@ export const SUPERVISOR_TOOLS = Object.freeze([
   'listWorkflowTasks',
   'getWorkflowText',
   'replaceWorkflowFromText',
+  'createEnrolmentCode',
 ])
 
 /** What `checkCompatibility` takes, with the running version. */

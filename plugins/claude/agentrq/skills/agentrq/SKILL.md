@@ -73,6 +73,7 @@ A workflow is the graph those pieces add up to: a start event, and steps that re
 | `listWorkflowTasks` | List the tasks a workflow has spawned |
 | `getWorkflowText` | Read the whole graph as an indented document. Steps naming a deleted event or workspace are left out so it always parses |
 | `replaceWorkflowFromText` | Replace the entire graph with a document. Names are resolved before anything is written, so an unknown one leaves the workflow untouched |
+| `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd. Shown once and expires shortly — hand it to the human right away |
 
 Text mode is two spaces per level, and every list line is `- agent:<workspace>` or `- event:<name>`, alternating:
 
