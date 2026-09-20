@@ -17,7 +17,7 @@ import { isOpenPermissionRequest, lastMessage, toastFor } from '../src/composabl
 
 const reply = (messages, over = {}) => ({
   type: 'reply.received',
-  payload: { id: 't1', title: 'Ship it', status: 'ongoing', messages, ...over },
+  payload: { id: 't1', workspaceId: 'w1', title: 'Ship it', status: 'ongoing', messages, ...over },
 });
 
 const from = (sender, over = {}) => ({ sender, text: 'on it', ...over });
@@ -66,6 +66,8 @@ describe('toastFor', () => {
     expect(toastFor(reply([from('human'), from('agent')]))).toEqual({
       tone: 'info',
       message: 'New reply on "Ship it"',
+      taskId: 't1',
+      workspaceId: 'w1',
     });
   });
 
@@ -86,6 +88,8 @@ describe('toastFor', () => {
         tone: 'error',
         title: 'Action Needed',
         message: 'Permission required: bash',
+        taskId: 't1',
+        workspaceId: 'w1',
       });
     }
   });
@@ -116,13 +120,39 @@ describe('toastFor', () => {
   it('reads a status announcement as the status', () => {
     const said = from('agent', { text: 'Status updated to: ongoing' });
 
-    expect(toastFor(reply([said]))).toEqual({ tone: 'info', message: 'Task "Ship it" is now ongoing' });
+    expect(toastFor(reply([said]))).toEqual({
+      tone: 'info',
+      message: 'Task "Ship it" is now ongoing',
+      taskId: 't1',
+      workspaceId: 'w1',
+    });
   });
 
   it('welcomes a task the agent started by itself', () => {
+    const event = {
+      type: 'task.created',
+      payload: { id: 't2', workspaceId: 'w1', title: 'Nightly digest', createdBy: 'agent' },
+    };
+
+    expect(toastFor(event)).toEqual({
+      tone: 'success',
+      message: 'Agent started a new task: Nightly digest',
+      taskId: 't2',
+      workspaceId: 'w1',
+    });
+  });
+
+  // A task.created payload missing ids still gets a toast, just one that
+  // links nowhere — the empty-string sentinel, not a crash.
+  it('still says it with no id to link to', () => {
     const event = { type: 'task.created', payload: { title: 'Nightly digest', createdBy: 'agent' } };
 
-    expect(toastFor(event)).toEqual({ tone: 'success', message: 'Agent started a new task: Nightly digest' });
+    expect(toastFor(event)).toEqual({
+      tone: 'success',
+      message: 'Agent started a new task: Nightly digest',
+      taskId: '',
+      workspaceId: '',
+    });
   });
 
   // You just created it. You know.
@@ -163,6 +193,8 @@ describe('a launch that was refused', () => {
       title: 'Agent could not start',
       message:
         'supervisor: too many sessions running: 8 already running for profile "default", and the limit is 8',
+      taskId: '',
+      workspaceId: '',
     });
   });
 

@@ -10,13 +10,14 @@
         v-for="toast in toasts"
         :key="toast.id"
         class="toast"
-        :class="toast.type"
+        :class="[toast.type, { clickable: hasLink(toast) }]"
+        @click="openLink(toast)"
       >
         <div class="toast-content">
           <div v-if="toast.title" class="toast-title">{{ toast.title }}</div>
           <div class="toast-message">{{ toast.message }}</div>
         </div>
-        <button @click="removeToast(toast.id)" class="toast-close">
+        <button @click.stop="removeToast(toast.id)" class="toast-close">
           &times;
         </button>
         <div v-if="!toast.persistent" class="toast-progress"></div>
@@ -26,9 +27,23 @@
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router';
 import { useToasts } from '../composables/useToasts';
 
 const { toasts, removeToast } = useToasts();
+const router = useRouter();
+
+// Falsy ids mean the toast has nothing to link to — the same sentinel
+// useStreamToasts.toastFor uses for "no task".
+function hasLink(toast) {
+  return Boolean(toast.link?.taskId && toast.link?.workspaceId);
+}
+
+function openLink(toast) {
+  if (!hasLink(toast)) return;
+  removeToast(toast.id);
+  router.push(`/workspaces/${toast.link.workspaceId}/tasks/${toast.link.taskId}`);
+}
 </script>
 
 <style scoped>
@@ -133,6 +148,18 @@ const { toasts, removeToast } = useToasts();
   background: #fff;
   border-color: #111;
   color: #111;
+}
+
+.toast.clickable {
+  cursor: pointer;
+}
+
+.toast.clickable:hover {
+  border-color: #4f46e5;
+}
+
+.dark .toast.clickable:hover {
+  border-color: #818cf8;
 }
 
 .dark .toast.success {

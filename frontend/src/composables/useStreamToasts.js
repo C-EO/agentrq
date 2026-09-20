@@ -41,7 +41,11 @@ export function isOpenPermissionRequest(message) {
 /**
  * The toast an event deserves, or null for the ones that are not news.
  *
- * @returns {{ tone: 'success'|'info'|'error', message: string, title?: string }|null}
+ * `taskId`/`workspaceId` are always present so a caller can build a link
+ * without a special case — empty string means "no task to link to", the same
+ * falsy sentinel a route param would reject anyway.
+ *
+ * @returns {{ tone: 'success'|'info'|'error', message: string, title?: string, taskId: string, workspaceId: string }|null}
  */
 export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   const payload = event?.payload;
@@ -58,18 +62,21 @@ export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   // rather than a sentence. That is the terminal's news, not a toast's.
   if (event.type === 'session.updated') {
     if (payload.status !== 'failed' || !payload.error) return null;
-    return { tone: 'error', title: 'Agent could not start', message: payload.error };
+    // A session is not a task — there is nothing here to link to.
+    return { tone: 'error', title: 'Agent could not start', message: payload.error, taskId: '', workspaceId: '' };
   }
 
   // Everything below is about a task, which is what the rest of this stream
   // carries.
   const task = payload;
+  const taskId = task.id ?? '';
+  const workspaceId = task.workspaceId ?? '';
 
   // An agent starting work on its own initiative is worth saying; a task the
   // person in front of the screen just created is not.
   if (event.type === 'task.created') {
     return task.createdBy === 'agent'
-      ? { tone: 'success', message: `Agent started a new task: ${task.title}` }
+      ? { tone: 'success', message: `Agent started a new task: ${task.title}`, taskId, workspaceId }
       : null;
   }
 
@@ -86,13 +93,15 @@ export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
       // Both spellings, because both have been written: the metadata the MCP
       // server stores uses `toolName`, and older rows carry `tool_name`.
       message: `Permission required: ${message.metadata.toolName || message.metadata.tool_name}`,
+      taskId,
+      workspaceId,
     };
   }
 
   // The agent announcing its own status change, which reads better as the
   // status than as the sentence it wrote about it.
   if (message.text?.includes('Status updated to:')) {
-    return { tone: 'info', message: `Task "${task.title}" is now ${task.status}` };
+    return { tone: 'info', message: `Task "${task.title}" is now ${task.status}`, taskId, workspaceId };
   }
 
   // Past here it is an ordinary reply, and two things make it not worth saying.
@@ -110,5 +119,5 @@ export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   // this is the difference between being kept informed and being talked over.
   if (openTaskId && openTaskId === task.id) return null;
 
-  return { tone: 'info', message: `New reply on "${task.title}"` };
+  return { tone: 'info', message: `New reply on "${task.title}"`, taskId, workspaceId };
 }
