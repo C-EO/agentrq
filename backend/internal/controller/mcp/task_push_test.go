@@ -20,8 +20,13 @@ import (
 	"github.com/mustafaturan/monoflake"
 )
 
-// pushServer builds a workspace server with just enough wired up to push a task
-// down the channel and be asked whether anything received it.
+// errNotTheRealThing stands in for whatever a dependency says when it cannot
+// answer — an in-memory session id is not a token, and a repository under test
+// here is one that failed.
+var errNotTheRealThing = errors.New("not the real thing")
+
+// pushServer builds a workspace server with just enough wired up to run a poll
+// and push a task down the channel.
 func pushServer(t *testing.T) *WorkspaceServer {
 	t.Helper()
 	ctrl := gomock.NewController(t)
@@ -34,7 +39,7 @@ func pushServer(t *testing.T) *WorkspaceServer {
 	tokenMock := mock_auth.NewMockTokenService(ctrl)
 	tokenMock.EXPECT().ValidateToken(gomock.Any()).Return(nil, errNotTheRealThing).AnyTimes()
 
-	return &WorkspaceServer{
+	ps := &WorkspaceServer{
 		workspaceID: 100,
 		userID:      monoflake.ID(100).String(),
 		done:        make(chan struct{}),
@@ -42,60 +47,22 @@ func pushServer(t *testing.T) *WorkspaceServer {
 		pubsub:      pubsubMock,
 		tokenSvc:    tokenMock,
 	}
+	// Closed up front so clearContextFor's settle wait returns immediately: the
+	// delay has its own test rather than being paid for in every poll here.
+	close(ps.done)
+	return ps
 }
 
-// errNotTheRealThing stands in for whatever a dependency says when it cannot
-// answer — an in-memory session id is not a token, and a repository under test
-// here is one that failed.
-var errNotTheRealThing = errors.New("not the real thing")
-
-// A push with nothing attached at all reaches no agent, and has to say so: the
-// caller records a delivery on the strength of this answer, and a delivery
-// recorded here is a task retired from the only retry there is.
-func TestSendChannelNotificationWithNoServerIsNotADelivery(t *testing.T) {
-	ps := pushServer(t)
-
-	if ps.SendChannelNotification(context.Background(), 7, "next task") {
-		t.Fatal("a push with no MCP server reported a delivery")
+// countingClear wires the clear seam and reports how many times it was actually
+// asked to clear — which is the number that has to stay at one however many
+// times a task is pushed.
+func countingClear(ps *WorkspaceServer, err error) *int {
+	calls := 0
+	ps.clearAgentContext = func(context.Context) error {
+		calls++
+		return err
 	}
-}
-
-// The case this whole change exists for: a gateway whose session is still
-// listed but whose stream has gone. Notifying it succeeds quietly and reaches
-// nobody, which is indistinguishable from a real delivery unless the stream is
-// what decides.
-func TestSendChannelNotificationWithNoLiveStreamIsNotADelivery(t *testing.T) {
-	ps := pushServer(t)
-	connectedServer(t, ps, "acp-gateway")
-
-	if ps.SendChannelNotification(context.Background(), 7, "next task") {
-		t.Fatal("a push to a session with no stream reported a delivery")
-	}
-}
-
-// And the happy path: a gateway still holding its stream is reachable, so the
-// push counts.
-func TestSendChannelNotificationToAStreamingSessionIsADelivery(t *testing.T) {
-	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
-
-	if !ps.SendChannelNotification(context.Background(), 7, "next task") {
-		t.Fatal("a push to a live gateway reported no delivery")
-	}
-}
-
-// One live gateway is enough, even beside one that has gone: the task only has
-// to reach somebody.
-func TestSendChannelNotificationIsADeliveryIfAnySessionIsLive(t *testing.T) {
-	ps := pushServer(t)
-	connectedServer(t, ps, "acp-gateway")
-	live := connectSession(t, ps, "acp-gateway")
-	defer streamFor(ps, live)()
-
-	if !ps.SendChannelNotification(context.Background(), 7, "next task") {
-		t.Fatal("a push reported no delivery while a live gateway was attached")
-	}
+	return &calls
 }
 
 // listTasksFunc is a repository that answers only the poller's one question.
@@ -111,71 +78,110 @@ func pendingTaskRepo(tasks ...model.Task) listTasksFunc {
 	}
 }
 
-// The reported bug. A tick that pushes into a workspace with nothing reachable
-// delivers nothing, and must not record the task as pushed — the poller is the
-// only thing that ever retries, and it skips whatever this set holds for as
-// long as the task stays notstarted. Marking here is how a task created while
-// the gateway was between connections became a task that never arrives at all.
-func TestPollOnceDoesNotMarkATaskPushedWhenNothingReceivedIt(t *testing.T) {
-	ps := pushServer(t)
-
-	ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"}))
-
-	if ps.wasTaskPushed(7) {
-		t.Fatal("a task nothing received was recorded as delivered, so the poller will never offer it again")
-	}
-}
-
-// And the tick after the gateway comes back offers the task again, which is the
-// whole point of not marking it.
-func TestPollOnceOffersTheTaskAgainOnceTheGatewayIsBack(t *testing.T) {
+// The reported bug, and the rule that fixes it: a task stands until the agent
+// takes it. Nothing about a push is remembered, so a push made while a gateway
+// was between connections — which reaches nobody, silently — is simply made
+// again on the next tick. Suppressing the second one is what turned a task
+// created at the wrong moment into a task that never arrived at all.
+func TestPollOnceOffersAPendingTaskOnEveryTick(t *testing.T) {
 	ps := pushServer(t)
 	repo := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})
 
-	ps.pollOnce(repo)
-	// The discriminator: a tick that reached nobody must leave the task
-	// unmarked, or the tick below is skipped and this passes without the
-	// gateway ever being handed anything.
-	if ps.wasTaskPushed(7) {
-		t.Fatal("the undelivered first tick recorded a delivery")
-	}
-
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
-	ps.pollOnce(repo)
-
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("the task was not delivered once a gateway was reachable again")
+	for tick := 1; tick <= 3; tick++ {
+		if got := ps.pollOnce(repo); got != 7 {
+			t.Fatalf("tick %d offered task %d, want 7 — a pending task stands until the agent takes it", tick, got)
+		}
 	}
 }
 
-// A delivered push is still recorded, so the poller does not push — and clear —
-// the same task again on its next tick while the agent simply hasn't flipped
-// its status yet.
-func TestPollOnceMarksADeliveredTaskPushed(t *testing.T) {
+// The other half, and the reason the two are tracked apart: the push repeats
+// and the clear must not. A clear landing behind the second push would wipe the
+// context that push had just put the task into.
+func TestPollOnceClearsOnceHoweverManyTimesItPushes(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
+	clears := countingClear(ps, nil)
+	repo := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent", ClearContext: true})
 
-	ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"}))
+	ps.pollOnce(repo)
+	ps.pollOnce(repo)
+	ps.pollOnce(repo)
 
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("a delivered task was not recorded, so the poller will push it again")
+	if *clears != 1 {
+		t.Fatalf("cleared %d times across three pushes, want 1", *clears)
 	}
 }
 
-// An archived workspace pushes nothing at all.
+// A clear that could not be sent is not a clear. The machine may be offline or
+// the session gone — both ordinary — and remembering the failure as done would
+// skip the clear for good the moment the machine came back, handing the agent a
+// task on exactly the context the task asked to be rid of.
+func TestPollOnceRetriesAClearThatNeverWentOut(t *testing.T) {
+	ps := pushServer(t)
+	clears := countingClear(ps, errNotTheRealThing)
+	repo := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent", ClearContext: true})
+
+	ps.pollOnce(repo)
+	ps.pollOnce(repo)
+
+	if *clears != 2 {
+		t.Fatalf("attempted %d clears, want 2 — a failed clear must be tried again", *clears)
+	}
+}
+
+// Taking the task is what stops the pushes: the agent moves it to ongoing, and
+// the tick after that offers nothing.
+func TestPollOnceStopsOnceTheTaskIsOngoing(t *testing.T) {
+	ps := pushServer(t)
+
+	if got := ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})); got != 7 {
+		t.Fatalf("offered task %d, want 7", got)
+	}
+	if got := ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "ongoing", Assignee: "agent"})); got != 0 {
+		t.Fatalf("offered task %d while it was ongoing, want none", got)
+	}
+}
+
+// A task handed back to an agent later is cleared afresh: the set is reconciled
+// against what is still pending, so the record of the first handover's clear
+// does not silently cover the second.
+func TestPollOnceClearsAgainForALaterHandover(t *testing.T) {
+	ps := pushServer(t)
+	clears := countingClear(ps, nil)
+	pending := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent", ClearContext: true})
+
+	ps.pollOnce(pending)
+	// Taken, worked, and put back — the reconcile on this tick is what forgets
+	// the first handover.
+	ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "completed", Assignee: "agent"}))
+	ps.pollOnce(pending)
+
+	if *clears != 2 {
+		t.Fatalf("cleared %d times across two handovers, want 2", *clears)
+	}
+}
+
+// Nothing is offered while a task is ongoing: the agent already has work.
+func TestPollOnceOffersNothingWhileATaskIsOngoing(t *testing.T) {
+	ps := pushServer(t)
+
+	got := ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
+	))
+
+	if got != 0 {
+		t.Fatalf("offered task %d while another was ongoing, want none", got)
+	}
+}
+
+// An archived workspace offers nothing at all.
 func TestPollOnceSkipsAnArchivedWorkspace(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
 	now := time.Now()
 	ps.archivedAt = &now
 
-	ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"}))
-
-	if ps.wasTaskPushed(7) {
-		t.Fatal("an archived workspace pushed a task")
+	if got := ps.pollOnce(pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent"})); got != 0 {
+		t.Fatalf("an archived workspace offered task %d", got)
 	}
 }
 
@@ -183,65 +189,27 @@ func TestPollOnceSkipsAnArchivedWorkspace(t *testing.T) {
 func TestPollOnceSurvivesARepositoryError(t *testing.T) {
 	ps := pushServer(t)
 
-	ps.pollOnce(listTasksFunc(func(context.Context, entity.ListTasksRequest, int64) ([]model.Task, error) {
+	got := ps.pollOnce(listTasksFunc(func(context.Context, entity.ListTasksRequest, int64) ([]model.Task, error) {
 		return nil, errNotTheRealThing
 	}))
 
-	if ps.wasTaskPushed(7) {
-		t.Fatal("a failed listing pushed a task")
+	if got != 0 {
+		t.Fatalf("a failed listing offered task %d", got)
 	}
 }
 
-// Nothing is pushed while a task is ongoing: the agent already has work.
-func TestPollOncePushesNothingWhileATaskIsOngoing(t *testing.T) {
+// Two tasks waiting means the order they were put in decides, not the order the
+// repository happened to list them in — and one tick hands over one task.
+func TestPollOnceOffersThePendingTasksInOrder(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
 
-	ps.pollOnce(pendingTaskRepo(
-		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
-		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
-	))
-
-	if ps.wasTaskPushed(7) {
-		t.Fatal("a task was pushed while another was ongoing")
-	}
-}
-
-// The task already delivered is skipped, and the one behind it goes instead.
-func TestPollOnceSkipsATaskAlreadyDelivered(t *testing.T) {
-	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
-	ps.MarkTaskPushed(7)
-
-	ps.pollOnce(pendingTaskRepo(
-		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1},
-		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
-	))
-
-	if !ps.wasTaskPushed(8) {
-		t.Fatal("the task behind the one already delivered was not pushed")
-	}
-}
-
-// Two tasks waiting means the order they were put in is what decides, not the
-// order the repository happened to list them in.
-func TestPollOncePushesThePendingTasksInOrder(t *testing.T) {
-	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
-
-	ps.pollOnce(pendingTaskRepo(
+	got := ps.pollOnce(pendingTaskRepo(
 		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", SortOrder: 2},
 		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", SortOrder: 1},
 	))
 
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("the task sorted first was not the one pushed")
-	}
-	if ps.wasTaskPushed(8) {
-		t.Fatal("both tasks went out; one tick hands over one task")
+	if got != 7 {
+		t.Fatalf("offered task %d, want the one sorted first", got)
 	}
 }
 
@@ -249,35 +217,50 @@ func TestPollOncePushesThePendingTasksInOrder(t *testing.T) {
 // two tasks made in the same millisecond still have to have an order.
 func TestPollOnceFallsBackToCreationTimeThenID(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
 	made := time.Now()
 
-	ps.pollOnce(pendingTaskRepo(
+	got := ps.pollOnce(pendingTaskRepo(
 		model.Task{ID: 9, Status: "notstarted", Assignee: "agent", CreatedAt: made},
 		model.Task{ID: 7, Status: "notstarted", Assignee: "agent", CreatedAt: made},
 		model.Task{ID: 8, Status: "notstarted", Assignee: "agent", CreatedAt: made.Add(-time.Hour)},
 	))
 
-	if !ps.wasTaskPushed(8) {
-		t.Fatal("the oldest task was not the one pushed")
+	if got != 8 {
+		t.Fatalf("offered task %d, want the oldest", got)
 	}
 }
 
 // A task's attachments travel with it, so the agent can fetch them.
 func TestPollOnceCarriesTheTaskAttachments(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
 
-	ps.pollOnce(pendingTaskRepo(model.Task{
+	got := ps.pollOnce(pendingTaskRepo(model.Task{
 		ID: 7, Status: "notstarted", Assignee: "agent",
 		Attachments: []byte(`[{"id":"a1","filename":"trace.log","mimeType":"text/plain"}]`),
 	}))
 
-	if !ps.wasTaskPushed(7) {
-		t.Fatal("a task with attachments was not delivered")
+	if got != 7 {
+		t.Fatalf("offered task %d, want 7", got)
 	}
+}
+
+// A push reaches a gateway that is really there. Nothing is reported back about
+// it — the retry above is what covers a push that lands nowhere — so this is
+// here to prove the reflection into the SDK's private conn still works at all.
+func TestSendChannelNotificationReachesALiveSession(t *testing.T) {
+	ps := pushServer(t)
+	sessID := connectedServer(t, ps, "acp-gateway")
+	defer streamFor(ps, sessID)()
+
+	ps.SendChannelNotification(context.Background(), 7, "next task")
+}
+
+// A workspace whose MCP server has not been built has nothing to notify, and
+// must say so rather than panicking on a nil server's session list.
+func TestSendChannelNotificationWithNoServerDoesNotPanic(t *testing.T) {
+	ps := pushServer(t)
+
+	ps.SendChannelNotification(context.Background(), 7, "next task")
 }
 
 // pollRepo is a repository that answers only ListTasks, so StartPoller's own
@@ -298,9 +281,23 @@ func TestStartPollerTicksAndStopsWhenTheServerCloses(t *testing.T) {
 	pollInterval = time.Millisecond
 	t.Cleanup(func() { pollInterval = previous })
 
-	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
-	defer streamFor(ps, sessID)()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+	pubsubMock := mock_pubsub.NewMockService(ctrl)
+	pubsubMock.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes()
+	tokenMock := mock_auth.NewMockTokenService(ctrl)
+	tokenMock.EXPECT().ValidateToken(gomock.Any()).Return(nil, errNotTheRealThing).AnyTimes()
+
+	// Not pushServer: this one needs `done` still open, since closing it is the
+	// thing under test.
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(100).String(),
+		done:        make(chan struct{}),
+		bus:         eventbus.New(),
+		pubsub:      pubsubMock,
+		tokenSvc:    tokenMock,
+	}
 
 	ticked := make(chan struct{})
 	var once sync.Once

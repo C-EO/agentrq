@@ -102,17 +102,15 @@ doc checks — and all three stop seeing a tool if anything precedes its name.
 `createTask` and `updateTaskAssignee` in `handler/api/task.go` push a new or
 reassigned task immediately when nothing else is running, rather than waiting
 for `StartPoller`'s next tick. Both must call `ClearContextForTask` before
-`SendChannelNotification` and `MarkTaskPushed` after, exactly like the poller
-does — skip either and a task that asked for a clean slate gets its `/clear`
-only from the poller rediscovering the still-`notstarted` task up to sixty
-seconds later, after the agent already acted on the un-cleared task text,
-wiping it and pushing the same task a second time. `wasTaskPushed`/
-`reconcilePushedTaskIDs` are what let the poller recognise a task it (or a
-handler) already delivered and leave it alone.
+`SendChannelNotification`, exactly like the poller does — clear after, and the
+clear wipes the task text the agent was just handed.
 
-**Only mark a task pushed when `SendChannelNotification` says it landed.** It
-returns false when no session still holding a stream received it, and marking
-such a push retires the task from the poller — the only retry there is — while
-an idle gateway never asks for work of its own accord either. That is a task
-that never arrives at all.
+**The push repeats and the clear does not.** A pending task is offered again on
+every tick until the agent moves it to `ongoing`, because a push is the only
+thing that starts an idle agent (a gateway asks for work itself only when a
+task finishes or its concurrency limit moves) and a push made while nothing was
+attached reaches nobody, silently. Recording the push instead — which is what
+`MarkTaskPushed` used to do — turned a task created at that moment into one
+that never arrived at all. The `/clear` is the half that must not repeat, and
+`clearContextFor` remembers it per task, only once it has actually gone out.
 

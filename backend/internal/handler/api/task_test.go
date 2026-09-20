@@ -258,8 +258,9 @@ func (m *mockCrudCreateTask) ListTasks(ctx context.Context, req entity.ListTasks
 // over the MCP channel and left ClearContext for StartPoller's next tick,
 // up to sixty seconds later, to act on — which is a /clear arriving after the
 // task it was meant to precede. It must now clear before it notifies, exactly
-// like the poller does, and mark the task pushed so the poller does not
-// discover it as still notstarted and repeat both.
+// like the poller does. The push itself is recorded nowhere: the poller goes
+// on offering the task until the agent takes it, and clearContextFor is what
+// keeps the clear behind those repeats from happening twice.
 func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 	app := fiber.New()
 	created := entity.Task{
@@ -283,9 +284,7 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
 		},
 	}
-	// Delivered: an agent is reachable, so the push lands and the task is
-	// recorded as handed over.
-	srv := &fakeWorkspaceServer{notifyDelivered: true}
+	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -305,7 +304,7 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
 	}
@@ -314,9 +313,6 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 	}
 	if srv.notifiedTaskID != created.ID {
 		t.Errorf("notified task %d, want %d", srv.notifiedTaskID, created.ID)
-	}
-	if srv.pushedTaskID != created.ID {
-		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, created.ID)
 	}
 }
 
@@ -340,9 +336,7 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
 		},
 	}
-	// Delivered: an agent is reachable, so the push lands and the task is
-	// recorded as handed over.
-	srv := &fakeWorkspaceServer{notifyDelivered: true}
+	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -361,7 +355,7 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 	if srv.clearContextWanted {
 		t.Error("asked to clear a task that never requested one")
 	}
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v (clearContextFor's own no-op branch decides whether to actually clear, not the handler)", srv.calls, wantCalls)
 	}
@@ -379,7 +373,7 @@ func (m *mockCrudUpdateTaskAssignee) UpdateTaskAssignee(ctx context.Context, req
 
 // Reassigning a task to the agent is the same kind of immediate push as
 // createTask's, on a task that may equally have asked for a clean slate, so
-// it has to clear first and mark the task pushed for the same reason.
+// it has to clear first for the same reason.
 func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testing.T) {
 	app := fiber.New()
 	reassigned := entity.Task{ID: 44, WorkspaceID: 1, Title: "Pick this back up", ClearContext: true}
@@ -388,9 +382,7 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
 		},
 	}
-	// Delivered: an agent is reachable, so the push lands and the task is
-	// recorded as handed over.
-	srv := &fakeWorkspaceServer{notifyDelivered: true}
+	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
@@ -413,100 +405,11 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification", "MarkTaskPushed"}
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v in that order", srv.calls, wantCalls)
 	}
 	if srv.clearedTaskID != reassigned.ID || !srv.clearContextWanted {
 		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, reassigned.ID)
-	}
-	if srv.pushedTaskID != reassigned.ID {
-		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, reassigned.ID)
-	}
-}
-
-// The reported bug: a task created while nothing was reachable — a gateway
-// between connections is the ordinary case — was pushed into the void and
-// recorded as delivered anyway. StartPoller then skipped it for as long as it
-// stayed notstarted, and since a gateway only goes looking for work when a task
-// finishes or its concurrency limit moves, an idle one never asked either. The
-// task simply never arrived.
-func TestCreateTask_DoesNotMarkPushedWhenNothingReceivedIt(t *testing.T) {
-	app := fiber.New()
-	created := entity.Task{
-		ID:          45,
-		WorkspaceID: 1,
-		CreatedBy:   "human",
-		Assignee:    "agent",
-		Status:      "notstarted",
-		Title:       "Nobody is listening",
-	}
-	crudCtrl := &mockCrudCreateTask{
-		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
-			return &entity.CreateTaskResponse{Task: created}, nil
-		},
-		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
-			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
-		},
-	}
-	// Undelivered: nothing is attached to the workspace.
-	srv := &fakeWorkspaceServer{}
-	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
-
-	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
-		c.Locals("user_id", monoflake.ID(100).String())
-		return h.createTask()(c)
-	})
-
-	body := `{"task":{"title":"Nobody is listening","createdBy":"human","assignee":"agent"}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected 201, got %d", resp.StatusCode)
-	}
-
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
-	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
-		t.Fatalf("calls = %v, want %v: a push nobody received must leave the task for the poller to offer again", srv.calls, wantCalls)
-	}
-}
-
-// Reassignment pushes the same way and has to answer an undelivered push the
-// same way.
-func TestUpdateTaskAssignee_DoesNotMarkPushedWhenNothingReceivedIt(t *testing.T) {
-	app := fiber.New()
-	reassigned := entity.Task{ID: 46, WorkspaceID: 1, Title: "Pick this back up"}
-	crudCtrl := &mockCrudUpdateTaskAssignee{
-		updateTaskAssigneeFunc: func(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
-			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
-		},
-	}
-	srv := &fakeWorkspaceServer{}
-	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
-
-	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
-		c.Locals("user_id", monoflake.ID(100).String())
-		return h.updateTaskAssignee()(c)
-	})
-
-	req := httptest.NewRequest(
-		http.MethodPatch,
-		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(46).String()+"/assignee",
-		strings.NewReader(`{"assignee":{"value":"agent"}}`),
-	)
-	req.Header.Set("Content-Type", "application/json")
-
-	if _, err := app.Test(req); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
-	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
-		t.Fatalf("calls = %v, want %v: a push nobody received must leave the task for the poller to offer again", srv.calls, wantCalls)
 	}
 }
