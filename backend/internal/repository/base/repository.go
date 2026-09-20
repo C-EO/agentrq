@@ -269,6 +269,9 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	if req.CreatedBy != "" {
 		q = q.Where("created_by = ?", req.CreatedBy)
 	}
+	if req.Assignee != "" {
+		q = q.Where("assignee = ?", req.Assignee)
+	}
 	if len(req.Status) > 0 {
 		q = q.Where("status IN ?", req.Status)
 	}

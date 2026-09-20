@@ -291,6 +291,7 @@ type (
 	ListTasksRequest struct {
 		WorkspaceID     int64
 		CreatedBy       string   // optional filter
+		Assignee        string   // optional filter, e.g. "agent" | "human"
 		Status          []string // optional filter
 		Filter          string   // e.g. "pending_approval"
 		Limit           int

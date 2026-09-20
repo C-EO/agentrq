@@ -1130,14 +1130,17 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	// Only the two statuses a poll reads. Unfiltered, this pulled the hundred
-	// most recently created tasks of any status — a workspace with a hundred
-	// completed tasks could push its pending ones out of the window entirely,
-	// and the poll would see no work to hand over at all.
+	// Only the two statuses a poll reads, and only tasks assigned to the
+	// agent. Unfiltered, this pulled the hundred most recently created tasks
+	// of any status or assignee — a workspace with a hundred human tasks, or
+	// even a single ongoing one, could push the agent's own pending tasks out
+	// of the window, or count a human's ongoing task as the agent's, blocking
+	// every push behind a task the agent was never running.
 	req := entity.ListTasksRequest{
 		WorkspaceID: ps.workspaceID,
 		UserID:      ps.userID,
 		Status:      []string{"ongoing", "notstarted"},
+		Assignee:    "agent",
 	}
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	tasks, err := repo.ListTasks(context.Background(), req, uid)
@@ -1161,7 +1164,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 			}
 			continue
 		}
-		if t.Status == "notstarted" && t.Assignee == "agent" {
+		if t.Status == "notstarted" {
 			notStartedIDs[t.ID] = struct{}{}
 			// Offered again however many times it has been offered before.
 			// A push is the only thing that starts an idle agent, and one

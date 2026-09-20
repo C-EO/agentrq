@@ -384,6 +384,23 @@ func TestPollOnceAsksOnlyForTheStatusesItReads(t *testing.T) {
 	}
 }
 
+// A poll asks only for the agent's own tasks. Unfiltered, a human's ongoing
+// task in the same workspace counted toward the agent's concurrency and
+// blocked every push behind it, and a human's own pending tasks could push
+// the agent's out of the query's row limit.
+func TestPollOnceAsksOnlyForTheAgentsOwnTasks(t *testing.T) {
+	ps := pushServer(t)
+	var asked entity.ListTasksRequest
+	ps.pollOnce(listTasksFunc(func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
+		asked = req
+		return []model.Task{{ID: 7, Status: "notstarted", Assignee: "agent"}}, nil
+	}))
+
+	if asked.Assignee != "agent" {
+		t.Fatalf("asked for assignee %q, want \"agent\"", asked.Assignee)
+	}
+}
+
 // Nothing is offered while a task is ongoing: the agent already has work.
 func TestPollOnceOffersNothingWhileATaskIsOngoing(t *testing.T) {
 	ps := pushServer(t)

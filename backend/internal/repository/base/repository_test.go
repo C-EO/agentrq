@@ -302,6 +302,38 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 	}
 }
 
+func TestRepository_ListTasks_FiltersByAssignee(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(1)
+	userID := int64(10)
+
+	db.Create(&model.Task{ID: 1, WorkspaceID: workspaceID, UserID: userID, Title: "Agent task", Status: "notstarted", Assignee: "agent"})
+	db.Create(&model.Task{ID: 2, WorkspaceID: workspaceID, UserID: userID, Title: "Human task", Status: "notstarted", Assignee: "human"})
+
+	req := entity.ListTasksRequest{
+		WorkspaceID: workspaceID,
+		Status:      []string{"notstarted"},
+		Assignee:    "agent",
+	}
+
+	tasks, err := repo.ListTasks(ctx, req, userID)
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+
+	if len(tasks) != 1 || tasks[0].ID != 1 {
+		t.Fatalf("expected only the agent-assigned task, got %+v", tasks)
+	}
+}
+
 func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
