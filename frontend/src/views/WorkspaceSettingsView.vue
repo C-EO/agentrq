@@ -942,7 +942,7 @@ import {
   getRetentionDays,
   setRetentionDays,
 } from '../composables/useCacheRetention';
-import { shouldShowSettingsActionBar, buildClaudePermissionsConfig } from '../composables/useWorkspaceSettings';
+import { shouldShowSettingsActionBar, buildClaudePermissionsConfig, buildMcpServers, buildSupervisorMcpUrl } from '../composables/useWorkspaceSettings';
 import {
   entryForTab,
   isExtensionTab,
@@ -1283,13 +1283,23 @@ const SETUP_CARD_TITLES = {
 };
 const setupCardTitle = computed(() => SETUP_CARD_TITLES[activeConnectionTab.value] ?? 'ACP Gateway Setup');
 
+// The core (non-workspace-scoped) MCP server the "supervisor" workspace's
+// .mcp.json also wires in, templated from the same host the per-workspace
+// URL comes back on rather than a hard-coded one, so it follows this
+// deployment's domain.
+const supervisorMcpUrl = computed(() => buildSupervisorMcpUrl({
+  workspaceMcpUrl: workspace.value?.mcpUrl,
+  origin: window.location.origin,
+  basePath: window.__AGENTRQ_BASE_PATH__ || '',
+}));
+
 const mcpConfig = computed(() => ({
-  mcpServers: {
-    [serverName.value]: {
-      type: "http",
-      url: authenticatedUrl.value
-    }
-  }
+  mcpServers: buildMcpServers({
+    serverName: serverName.value,
+    authenticatedUrl: authenticatedUrl.value,
+    workspaceName: workspace.value?.name,
+    supervisorMcpUrl: supervisorMcpUrl.value,
+  })
 }));
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));

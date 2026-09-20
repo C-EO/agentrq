@@ -11,6 +11,8 @@ import {
   READ_ONLY_SETTINGS_TABS,
   WORKSPACE_MCP_TOOLS,
   buildClaudePermissionsConfig,
+  buildMcpServers,
+  buildSupervisorMcpUrl,
   isReadOnlySettingsTab,
   shouldShowSettingsActionBar,
 } from '../src/composables/useWorkspaceSettings';
@@ -192,6 +194,88 @@ describe('useWorkspaceSettings', () => {
         'enabledMcpjsonServers',
       ]);
       expect(JSON.parse(JSON.stringify(config))).toEqual(config);
+    });
+  });
+
+  describe('buildSupervisorMcpUrl', () => {
+    it('rewrites a subdomain-based workspace mcpUrl to the bare mcp.<domain>/mcp host', () => {
+      const url = buildSupervisorMcpUrl({
+        workspaceMcpUrl: 'https://a1b2.mcp.agentrq.com',
+        origin: 'https://app.agentrq.com',
+        basePath: '',
+      });
+
+      expect(url).toBe('https://mcp.agentrq.com/mcp');
+    });
+
+    it('preserves http and strips any query string before templating', () => {
+      const url = buildSupervisorMcpUrl({
+        workspaceMcpUrl: 'http://a1b2.mcp.example.internal?token=secret',
+        origin: 'http://app.example.internal',
+        basePath: '',
+      });
+
+      expect(url).toBe('http://mcp.example.internal/mcp');
+    });
+
+    it('falls back to the origin-based bare /mcp path when there is no subdomain masking', () => {
+      const url = buildSupervisorMcpUrl({
+        workspaceMcpUrl: 'http://localhost:8080/mcp/abc123',
+        origin: 'http://localhost:8080',
+        basePath: '',
+      });
+
+      expect(url).toBe('http://localhost:8080/mcp');
+    });
+
+    it('honors a configured base path in the fallback case', () => {
+      const url = buildSupervisorMcpUrl({
+        workspaceMcpUrl: '',
+        origin: 'https://app.agentrq.com',
+        basePath: '/abc/def/',
+      });
+
+      expect(url).toBe('https://app.agentrq.com/abc/def/mcp');
+    });
+  });
+
+  describe('buildMcpServers', () => {
+    it('writes a single entry for a regular workspace', () => {
+      const servers = buildMcpServers({
+        serverName: 'agentrq-ws1',
+        authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
+        workspaceName: 'My Workspace',
+        supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
+      });
+
+      expect(servers).toEqual({
+        'agentrq-ws1': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
+      });
+    });
+
+    it('adds a second "agentrq" entry for a workspace named exactly "supervisor"', () => {
+      const servers = buildMcpServers({
+        serverName: 'agentrq-ws1',
+        authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
+        workspaceName: 'supervisor',
+        supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
+      });
+
+      expect(servers).toEqual({
+        'agentrq-ws1': { type: 'http', url: 'https://a1b2.mcp.agentrq.com?token=tok' },
+        agentrq: { type: 'http', url: 'https://mcp.agentrq.com/mcp' },
+      });
+    });
+
+    it('does not add the second entry for a name that only looks like supervisor', () => {
+      const servers = buildMcpServers({
+        serverName: 'agentrq-ws1',
+        authenticatedUrl: 'https://a1b2.mcp.agentrq.com?token=tok',
+        workspaceName: 'Supervisor',
+        supervisorMcpUrl: 'https://mcp.agentrq.com/mcp',
+      });
+
+      expect(Object.keys(servers)).toEqual(['agentrq-ws1']);
     });
   });
 });

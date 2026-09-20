@@ -5,6 +5,7 @@ package crud
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -92,6 +93,28 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 		ResourceID:   created.ID,
 		Actor:        entity.ActorHuman,
 		Origin:       entity.OriginAPI,
+	})
+
+	// Every new account gets a "supervisor" workspace, the one whose
+	// .mcp.json setup snippet also wires in the cross-workspace coremcp tools.
+	supervisorWorkspace := model.Workspace{
+		ID:        c.idgen.NextID(),
+		CreatedAt: created.CreatedAt,
+		UpdatedAt: created.CreatedAt,
+		UserID:    created.ID,
+		Name:      "supervisor",
+	}
+	createdWorkspace, err := c.repository.CreateWorkspace(ctx, supervisorWorkspace)
+	if err != nil {
+		return nil, fmt.Errorf("create supervisor workspace: %w", err)
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceCreate,
+		WorkspaceID:  createdWorkspace.ID,
+		UserID:       createdWorkspace.UserID,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   createdWorkspace.ID,
+		Actor:        entity.ActorHuman,
 	})
 
 	return &entity.FindOrCreateUserResponse{
