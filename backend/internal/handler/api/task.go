@@ -90,26 +90,53 @@ func (h *handler) createTask() fiber.Handler {
 		// If human created the task, notify the LLM via MCP channel
 		// ONLY if status is NOT 'cron' (don't notify for template creation)
 		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
-			shouldNotifyMCP := true
-			listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: rq.Task.WorkspaceID, UserID: rq.UserID})
+			// Held back only while the agent is actually working. A task
+			// already waiting in the queue is not a reason to withhold this
+			// one: the agent may never pick that one up, and this used to mean
+			// a task created behind it was never pushed at all — not by this
+			// handler, which skipped it, and not by StartPoller, which offered
+			// the queue's oldest task and only that one. Between them a single
+			// task the agent ignored hid every task created after it.
+			// Held back only when the agent is already running as many tasks
+			// as it will run at once. Asked of the database as the counting
+			// question it is, bounded by that limit: listing the workspace
+			// unfiltered pulled up to a hundred whole tasks — bodies,
+			// responses, and a JSON unmarshal of every task's attachments —
+			// on every task creation, to find out whether one row existed.
+			// Workspace, user and status are exactly the columns
+			// idx_tasks_dequeue covers.
+			//
+			// That call was also wrong, not merely wasteful: its implicit
+			// hundred-row limit took the *most recent* tasks, so an ongoing
+			// task older than those was invisible and the push went out as
+			// though the agent were idle.
+			//
+			// One row more than the limit is asked for because the task just
+			// created is skipped below — a task created directly as ongoing
+			// sorts first on this query's `updated_at desc` and would
+			// otherwise fill a slot in the answer.
+			limit := agentTaskConcurrency(h.mcpManager, rq.Task.WorkspaceID)
+			listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{
+				WorkspaceID: rq.Task.WorkspaceID,
+				UserID:      rq.UserID,
+				Status:      []string{"ongoing"},
+				Limit:       limit + 1,
+			})
+			ongoing := 0
 			if listErr == nil {
-				hasOngoing := false
-				hasOtherNotStarted := false
 				for _, t := range listRs.Tasks {
 					if t.ID == rs.Task.ID {
 						continue // skip the newly created task itself
 					}
-					if t.Status == "ongoing" {
-						hasOngoing = true
-					}
-					if t.Status == "notstarted" && t.Assignee == "agent" {
-						hasOtherNotStarted = true
-					}
-				}
-				if hasOngoing || hasOtherNotStarted {
-					shouldNotifyMCP = false
+					ongoing++
 				}
 			}
+			// A listing that failed leaves the count at zero and the task is
+			// pushed. Withholding work from an agent because a count could
+			// not be taken is the worse of the two mistakes: the poller
+			// re-offers a task the agent was not ready for, and nothing
+			// re-offers one that was never sent.
+			shouldNotifyMCP := ongoing < limit
 
 			if shouldNotifyMCP {
 				srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
@@ -156,6 +183,24 @@ func (h *handler) createTask() fiber.Handler {
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}
+}
+
+// agentTaskConcurrency is how many tasks the workspace's connected agent will
+// run at once, as the gateway itself last reported it.
+//
+// One when nothing has reported a limit — a workspace with nothing attached,
+// or a gateway too old to say. Reading silence as "as many as you like" would
+// hand a queue to an agent that can only take one, and there is no way to take
+// that back; reading it as one costs at most a minute, because the poller
+// offers the rest as soon as a slot frees.
+func agentTaskConcurrency(m mcpManager, workspaceID int64) int {
+	if m == nil {
+		return 1
+	}
+	if c := m.AgentConcurrency(workspaceID); c != nil && c.MaxConcurrency > 0 {
+		return c.MaxConcurrency
+	}
+	return 1
 }
 
 func (h *handler) listTasks() fiber.Handler {

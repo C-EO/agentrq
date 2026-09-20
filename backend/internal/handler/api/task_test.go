@@ -249,8 +249,33 @@ func (m *mockCrudCreateTask) CreateTask(ctx context.Context, req entity.CreateTa
 	return m.createTaskFunc(ctx, req)
 }
 
+// ListTasks honours the request's status filter and limit, because the handler
+// now relies on the query to do the filtering rather than sifting the rows
+// itself. A double that handed back every task whatever was asked for would
+// let a handler that forgot its filter pass.
 func (m *mockCrudCreateTask) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
-	return m.listTasksFunc(ctx, req)
+	rs, err := m.listTasksFunc(ctx, req)
+	if err != nil || rs == nil {
+		return rs, err
+	}
+	if len(req.Status) == 0 && req.Limit == 0 {
+		return rs, nil
+	}
+	wanted := make(map[string]bool, len(req.Status))
+	for _, s := range req.Status {
+		wanted[s] = true
+	}
+	kept := make([]entity.Task, 0, len(rs.Tasks))
+	for _, t := range rs.Tasks {
+		if len(wanted) > 0 && !wanted[t.Status] {
+			continue
+		}
+		if req.Limit > 0 && len(kept) == req.Limit {
+			break
+		}
+		kept = append(kept, t)
+	}
+	return &entity.ListTasksResponse{Tasks: kept}, nil
 }
 
 // A human creating a task for an idle agent is the common case, and the one
@@ -358,6 +383,236 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
 	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
 		t.Fatalf("calls = %v, want %v (clearContextFor's own no-op branch decides whether to actually clear, not the handler)", srv.calls, wantCalls)
+	}
+}
+
+// The reported bug, at the handler end (task 0j1wvKhUB5V). A task already
+// waiting in the queue used to suppress the push for the task created behind
+// it — and StartPoller only ever offered the queue's oldest task, so the newer
+// one was never sent by anything. One task the agent ignored hid every task
+// created after it.
+func TestCreateTask_PushesEvenWhenAnotherTaskIsAlreadyPending(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          47,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Created behind a stuck one",
+	}
+	stuck := entity.Task{ID: 46, WorkspaceID: 1, Assignee: "agent", Status: "notstarted", Title: "Never picked up"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{stuck, created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Created behind a stuck one","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if srv.notifiedTaskID != created.ID {
+		t.Fatalf("notified task %d, want %d — a queued task must not hide the one created behind it", srv.notifiedTaskID, created.ID)
+	}
+}
+
+// Still held back while the agent is actually working: that one is not a
+// starvation risk, because the poller offers the queue again the moment the
+// ongoing task is done.
+func TestCreateTask_DoesNotPushWhileAnotherTaskIsOngoing(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          48,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Created mid-work",
+	}
+	working := entity.Task{ID: 49, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "In progress"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{working, created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Created mid-work","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(srv.calls) != 0 {
+		t.Fatalf("calls = %v, want none while another task is ongoing", srv.calls)
+	}
+}
+
+// The gate is the agent's own concurrency limit, not "is anything running".
+// A gateway that will run four tasks at once and is running one has room, and
+// withholding the task until it finished made the concurrency control
+// meaningless from the push side.
+func TestCreateTask_PushesWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{ID: 50, WorkspaceID: 1, CreatedBy: "human", Assignee: "agent", Status: "notstarted", Title: "Third of four"}
+	running := []entity.Task{
+		{ID: 51, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "One"},
+		{ID: 52, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "Two"},
+	}
+	var asked entity.ListTasksRequest
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			asked = req
+			return &entity.ListTasksResponse{Tasks: append(append([]entity.Task{}, running...), created)}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	mgr := &fakeMCPManager{server: srv, concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 4}}
+	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Third of four","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if srv.notifiedTaskID != created.ID {
+		t.Fatalf("notified task %d, want %d — two of four slots busy is room", srv.notifiedTaskID, created.ID)
+	}
+	// The query has to do the work: statuses named, and bounded by the limit
+	// rather than fetching the workspace to count two rows.
+	if len(asked.Status) != 1 || asked.Status[0] != "ongoing" {
+		t.Errorf("asked for status %v, want exactly [ongoing]", asked.Status)
+	}
+	if asked.Limit != 5 {
+		t.Errorf("asked for limit %d, want 5 (the limit, plus one for the task being created)", asked.Limit)
+	}
+}
+
+// Full is full: every slot busy holds the push back, and the poller offers the
+// task as soon as one frees.
+func TestCreateTask_DoesNotPushWhenEverySlotIsBusy(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{ID: 53, WorkspaceID: 1, CreatedBy: "human", Assignee: "agent", Status: "notstarted", Title: "No room"}
+	running := []entity.Task{
+		{ID: 54, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "One"},
+		{ID: 55, WorkspaceID: 1, Assignee: "agent", Status: "ongoing", Title: "Two"},
+	}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: append(append([]entity.Task{}, running...), created)}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	mgr := &fakeMCPManager{server: srv, concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 2}}
+	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"No room","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(srv.calls) != 0 {
+		t.Fatalf("calls = %v, want none: both of two slots are busy", srv.calls)
+	}
+}
+
+// A task created directly as ongoing does not count itself out of its own
+// push. It sorts first on this query's `updated_at desc`, which is why one row
+// more than the limit is asked for — at a limit of one, asking for a single
+// row would return only this task and read as a workspace with no room.
+func TestCreateTask_DoesNotCountTheNewTaskAgainstTheLimit(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{ID: 56, WorkspaceID: 1, CreatedBy: "human", Assignee: "agent", Status: "ongoing", Title: "Starts as ongoing"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			// The only ongoing task in the workspace is the one just created.
+			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Starts as ongoing","createdBy":"human","assignee":"agent","status":"ongoing"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if srv.notifiedTaskID != created.ID {
+		t.Fatalf("notified task %d, want %d — the new task must not block its own push", srv.notifiedTaskID, created.ID)
+	}
+}
+
+// Nothing has reported a limit — a workspace with nothing attached, or a
+// gateway too old to say. One task at a time, which is what every workspace
+// did before a gateway could name a limit.
+func TestAgentTaskConcurrencyDefaultsToOne(t *testing.T) {
+	if got := agentTaskConcurrency(&fakeMCPManager{}, 1); got != 1 {
+		t.Errorf("no snapshot: got %d, want 1", got)
+	}
+	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &mcpctrl.AgentConcurrencySnapshot{}}, 1); got != 1 {
+		t.Errorf("snapshot reporting no limit: got %d, want 1", got)
+	}
+	if got := agentTaskConcurrency(nil, 1); got != 1 {
+		t.Errorf("no manager at all: got %d, want 1", got)
+	}
+	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 7}}, 1); got != 7 {
+		t.Errorf("reported limit: got %d, want 7", got)
 	}
 }
 

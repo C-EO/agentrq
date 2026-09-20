@@ -105,6 +105,21 @@ for `StartPoller`'s next tick. Both must call `ClearContextForTask` before
 `SendChannelNotification`, exactly like the poller does — clear after, and the
 clear wipes the task text the agent was just handed.
 
+**A pending task must never be able to hide the ones behind it.** The handler
+holds a push back only when the agent is already running its full
+`maxConcurrency` — never because another task is merely queued — and the poller
+moves on to a different pending task each tick instead of always offering the
+oldest. With both rules reversed, one task the agent ignored blocked every task
+created after it, permanently and silently: the handler skipped them and the
+poller re-offered the stuck one forever, which acp-gateway then dropped as a
+repeat.
+
+**Ask the database the question you actually have.** Both push paths used to
+list the workspace unfiltered to look at one or two statuses, which fetches a
+hundred whole tasks — bodies, responses, a JSON unmarshal of every attachment —
+and, worse, takes the hundred *most recent*, so an older ongoing or pending
+task falls outside the window and is simply not seen.
+
 **The push repeats and the clear does not.** A pending task is offered again on
 every tick until the agent moves it to `ongoing`, because a push is the only
 thing that starts an idle agent (a gateway asks for work itself only when a

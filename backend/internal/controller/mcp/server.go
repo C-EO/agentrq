@@ -195,6 +195,13 @@ type WorkspaceServer struct {
 	clearedTaskIDsMu sync.Mutex
 	clearedTaskIDs   map[int64]struct{}
 
+	// lastOfferedTaskID is the pending task the previous tick handed over, so
+	// the next one can move on to a different one. Without it every tick
+	// offered the oldest pending task and nothing else, and a task the agent
+	// never picked up hid every task created after it. Read and written only
+	// from the poller's own goroutine.
+	lastOfferedTaskID int64
+
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
 	// removed workspace server does not leak them for the lifetime of the process.
 	done      chan struct{}
@@ -1060,6 +1067,31 @@ func (ps *WorkspaceServer) reconcileClearedTaskIDs(stillNotStarted map[int64]str
 	}
 }
 
+// nextOfferIndex picks which pending task this tick hands over, moving on from
+// whichever one went last time.
+//
+// One task per tick, as before — handing an agent its whole backlog at once is
+// a different way to break it. What changed is that the tick no longer offers
+// the *same* task every time. It used to always take the oldest, so a task the
+// agent never picked up hid every task created after it: the newer ones were
+// never sent at all, for as long as the older one sat there. Moving on means a
+// stuck task costs a turn rather than the whole queue.
+//
+// Order still decides where it starts, so the oldest goes first and the rest
+// follow it in turn. A last offer that is no longer pending — taken, or
+// resolved some other way — falls back to the front of the queue rather than
+// stalling on a task that has gone.
+//
+// pendingTasks must already be sorted.
+func (ps *WorkspaceServer) nextOfferIndex(pendingTasks []model.Task) int {
+	for i, t := range pendingTasks {
+		if t.ID == ps.lastOfferedTaskID {
+			return (i + 1) % len(pendingTasks)
+		}
+	}
+	return 0
+}
+
 // taskLister is the one thing a poll asks of the repository. Named so that a
 // tick can be exercised without standing up the whole repository, which is the
 // only reason the body below is a method rather than a closure.
@@ -1098,22 +1130,36 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	req := entity.ListTasksRequest{WorkspaceID: ps.workspaceID, UserID: ps.userID}
+	// Only the two statuses a poll reads. Unfiltered, this pulled the hundred
+	// most recently created tasks of any status — a workspace with a hundred
+	// completed tasks could push its pending ones out of the window entirely,
+	// and the poll would see no work to hand over at all.
+	req := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"ongoing", "notstarted"},
+	}
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	tasks, err := repo.ListTasks(context.Background(), req, uid)
 	if err != nil {
 		return 0
 	}
 
-	hasOngoing := false
+	ongoingCount := 0
 	var ongoingTask model.Task
 	var pendingTasks []model.Task
 	notStartedIDs := make(map[int64]struct{})
+	// Every task is looked at, including those listed after an ongoing one.
+	// Stopping at the first ongoing task truncated the set handed to
+	// reconcileClearedTaskIDs below, which then forgot the clear of every
+	// pending task behind it and cleared it a second time later.
 	for _, t := range tasks {
 		if t.Status == "ongoing" {
-			hasOngoing = true
-			ongoingTask = t
-			break
+			ongoingCount++
+			if ongoingCount == 1 {
+				ongoingTask = t
+			}
+			continue
 		}
 		if t.Status == "notstarted" && t.Assignee == "agent" {
 			notStartedIDs[t.ID] = struct{}{}
@@ -1128,7 +1174,16 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	}
 	ps.reconcileClearedTaskIDs(notStartedIDs)
 
-	if hasOngoing {
+	// Full when the agent is already running everything it will run at once,
+	// which is what the gateway itself reports. One when it has reported
+	// nothing, which is the single-task behaviour every workspace had before
+	// the limit was something a gateway could name.
+	limit := 1
+	if c := ps.AgentConcurrency(); c != nil && c.MaxConcurrency > 0 {
+		limit = c.MaxConcurrency
+	}
+
+	if ongoingCount >= limit {
 		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
 			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
 			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
@@ -1149,7 +1204,8 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 			}
 			return pendingTasks[i].ID < pendingTasks[j].ID
 		})
-		nextTask := pendingTasks[0]
+		nextTask := pendingTasks[ps.nextOfferIndex(pendingTasks)]
+		ps.lastOfferedTaskID = nextTask.ID
 		// Asked for before the push, never after: the point is that the
 		// agent reads this task on a clean context, and clearing once it
 		// has already been handed the task would throw the task away.
