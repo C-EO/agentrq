@@ -53,7 +53,11 @@ type (
 	workspaceServer interface {
 		SendSetModelNotification(ctx context.Context, modelID string) error
 		SendSetConcurrencyNotification(ctx context.Context, limit int) error
-		SendChannelNotification(ctx context.Context, taskID int64, content string)
+		// SendChannelNotification reports whether a reachable agent received
+		// the message. A caller that marks a task pushed must test it: a push
+		// nobody received, recorded as a delivery, is a task StartPoller then
+		// never offers again.
+		SendChannelNotification(ctx context.Context, taskID int64, content string) bool
 		ClearContextForTask(ctx context.Context, taskID int64, clearContext bool)
 		MarkTaskPushed(taskID int64)
 		SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error

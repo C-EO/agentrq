@@ -138,9 +138,16 @@ func (h *handler) createTask() fiber.Handler {
 				// task pushed so the poller does not rediscover it as still
 				// notstarted and push (and clear) it again before the agent gets a
 				// chance to flip its status.
+				//
+				// Marked only if the push actually reached an agent. Nothing is
+				// listening while a gateway is between connections, and recording
+				// that as a delivery leaves the task marked pushed, skipped by the
+				// poller for as long as it stays notstarted, and never handed to
+				// anybody.
 				srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
-				srv.SendChannelNotification(ctx, rs.Task.ID, content)
-				srv.MarkTaskPushed(rs.Task.ID)
+				if srv.SendChannelNotification(ctx, rs.Task.ID, content) {
+					srv.MarkTaskPushed(rs.Task.ID)
+				}
 			}
 		}
 
@@ -439,10 +446,12 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 			srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
 			content := fmt.Sprintf("[Task reassigned to agent] %s", rs.Task.Title)
 			// Same reasoning as the immediate push in createTask: clear before
-			// pushing, and mark it pushed so StartPoller does not repeat both.
+			// pushing, and mark it pushed — only if it landed — so StartPoller
+			// neither repeats both nor stops offering a task nobody received.
 			srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
-			srv.SendChannelNotification(ctx, rs.Task.ID, content)
-			srv.MarkTaskPushed(rs.Task.ID)
+			if srv.SendChannelNotification(ctx, rs.Task.ID, content) {
+				srv.MarkTaskPushed(rs.Task.ID)
+			}
 		}
 
 		c.Status(http.StatusOK)

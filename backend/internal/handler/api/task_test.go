@@ -283,7 +283,9 @@ func TestCreateTask_ClearsBeforeNotifyingWhenPushedImmediately(t *testing.T) {
 			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
 		},
 	}
-	srv := &fakeWorkspaceServer{}
+	// Delivered: an agent is reachable, so the push lands and the task is
+	// recorded as handed over.
+	srv := &fakeWorkspaceServer{notifyDelivered: true}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -338,7 +340,9 @@ func TestCreateTask_SkipsClearWhenTheTaskDidNotAskForIt(t *testing.T) {
 			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
 		},
 	}
-	srv := &fakeWorkspaceServer{}
+	// Delivered: an agent is reachable, so the push lands and the task is
+	// recorded as handed over.
+	srv := &fakeWorkspaceServer{notifyDelivered: true}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -384,7 +388,9 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
 		},
 	}
-	srv := &fakeWorkspaceServer{}
+	// Delivered: an agent is reachable, so the push lands and the task is
+	// recorded as handed over.
+	srv := &fakeWorkspaceServer{notifyDelivered: true}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
 
 	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
@@ -416,5 +422,91 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 	}
 	if srv.pushedTaskID != reassigned.ID {
 		t.Errorf("marked task %d pushed, want %d", srv.pushedTaskID, reassigned.ID)
+	}
+}
+
+// The reported bug: a task created while nothing was reachable — a gateway
+// between connections is the ordinary case — was pushed into the void and
+// recorded as delivered anyway. StartPoller then skipped it for as long as it
+// stayed notstarted, and since a gateway only goes looking for work when a task
+// finishes or its concurrency limit moves, an idle one never asked either. The
+// task simply never arrived.
+func TestCreateTask_DoesNotMarkPushedWhenNothingReceivedIt(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{
+		ID:          45,
+		WorkspaceID: 1,
+		CreatedBy:   "human",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		Title:       "Nobody is listening",
+	}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
+		},
+	}
+	// Undelivered: nothing is attached to the workspace.
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Nobody is listening","createdBy":"human","assignee":"agent"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
+	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v: a push nobody received must leave the task for the poller to offer again", srv.calls, wantCalls)
+	}
+}
+
+// Reassignment pushes the same way and has to answer an undelivered push the
+// same way.
+func TestUpdateTaskAssignee_DoesNotMarkPushedWhenNothingReceivedIt(t *testing.T) {
+	app := fiber.New()
+	reassigned := entity.Task{ID: 46, WorkspaceID: 1, Title: "Pick this back up"}
+	crudCtrl := &mockCrudUpdateTaskAssignee{
+		updateTaskAssigneeFunc: func(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
+			return &entity.UpdateTaskAssigneeResponse{Task: reassigned}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Patch("/api/v1/workspaces/:id/tasks/:taskID/assignee", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.updateTaskAssignee()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(46).String()+"/assignee",
+		strings.NewReader(`{"assignee":{"value":"agent"}}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	if _, err := app.Test(req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantCalls := []string{"ClearContextForTask", "SendChannelNotification"}
+	if strings.Join(srv.calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v: a push nobody received must leave the task for the poller to offer again", srv.calls, wantCalls)
 	}
 }

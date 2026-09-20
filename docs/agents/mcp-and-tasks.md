@@ -110,3 +110,9 @@ wiping it and pushing the same task a second time. `wasTaskPushed`/
 `reconcilePushedTaskIDs` are what let the poller recognise a task it (or a
 handler) already delivered and leave it alone.
 
+**Only mark a task pushed when `SendChannelNotification` says it landed.** It
+returns false when no session still holding a stream received it, and marking
+such a push retires the task from the poller — the only retry there is — while
+an idle gateway never asks for work of its own accord either. That is a task
+that never arrives at all.
+

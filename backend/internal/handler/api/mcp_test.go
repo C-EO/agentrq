@@ -82,6 +82,12 @@ type fakeWorkspaceServer struct {
 	notifiedTaskID     int64
 	notifiedContent    string
 	pushedTaskID       int64
+
+	// notifyDelivered is what SendChannelNotification answers: whether a
+	// reachable agent received the push. False by default, like every other
+	// field here, because that is what a workspace with nothing connected
+	// says — and it is the case the handler has to get right.
+	notifyDelivered bool
 }
 
 func (f *fakeWorkspaceServer) SendSetModelNotification(ctx context.Context, modelID string) error {
@@ -103,10 +109,11 @@ func (f *fakeWorkspaceServer) SendCancelNotification(ctx context.Context, taskID
 // The rest of the interface, which these tests do not exercise. Present because
 // the handler needs them, not because anything here asserts on them.
 
-func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
+func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) bool {
 	f.calls = append(f.calls, "SendChannelNotification")
 	f.notifiedTaskID = taskID
 	f.notifiedContent = content
+	return f.notifyDelivered
 }
 
 func (f *fakeWorkspaceServer) ClearContextForTask(ctx context.Context, taskID int64, clearContext bool) {

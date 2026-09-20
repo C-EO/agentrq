@@ -652,9 +652,27 @@ func (ps *WorkspaceServer) IsAgentConnected() bool {
 	return ps.agentConnections.Load() > 0
 }
 
-// SendChannelNotification delivers a human-originated message to any connected LLM session.
-func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
+// SendChannelNotification delivers a human-originated message to any connected
+// LLM session, reporting whether a reachable one actually received it.
+//
+// The answer matters because a push is the only thing that starts an idle
+// agent: a gateway goes and asks for work of its own accord only when a task
+// finishes or its concurrency limit moves. So a caller that records a delivery
+// on a push nobody received retires the task from the only retry there is, and
+// it never arrives at all.
+//
+// Only a session still holding its stream counts as reached. An MCP session
+// outlives the stream that carried it, so the server's session list holds
+// gateways that have gone, and notifying one of those returns no error while
+// reaching nobody — the same reason SupportsStop and AgentConcurrency ask about
+// the stream rather than the session. Every session is still notified, as
+// before: what changed is only what counts as an answer.
+func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) bool {
 	zlog.Debug().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Msg("send MCP channel notification")
+
+	if ps.mcpServer == nil {
+		return false
+	}
 
 	params := map[string]any{
 		"content": content,
@@ -669,6 +687,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 
 	// as the official SDK does not yet expose a public API for generic notifications.
 	sessionCount := 0
+	delivered := false
 	for sess := range ps.mcpServer.Sessions() {
 		sessionCount++
 		sessID := sess.ID()
@@ -699,12 +718,15 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 					if len(results) > 0 && !results[0].IsNil() {
 						err := results[0].Interface().(error)
 						zlog.Error().Err(err).Msg("MCP notify error for session")
+					} else if ps.isStreaming(sessID) {
+						delivered = true
 					}
 				}
 			}
 		}
 	}
-	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
+	zlog.Debug().Int("sessions", sessionCount).Bool("delivered", delivered).Msg("MCP notification sent")
+	return delivered
 }
 
 // stopCapableClients names the MCP clients known to act on a stop request,
@@ -1037,10 +1059,22 @@ func (ps *WorkspaceServer) reconcilePushedTaskIDs(stillNotStarted map[int64]stru
 	}
 }
 
+// taskLister is the one thing a poll asks of the repository. Named so that a
+// tick can be exercised without standing up the whole repository, which is the
+// only reason the body below is a method rather than a closure.
+type taskLister interface {
+	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
+}
+
+// pollInterval is how often StartPoller goes looking for work. A var rather
+// than a const only so a test can drive a real tick instead of waiting a
+// minute for one.
+var pollInterval = 60 * time.Second
+
 // StartPoller checks for pending tasks periodically and pushes them if no ongoing tasks exist.
 func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 	go func() {
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -1048,81 +1082,92 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 				return
 			case <-ticker.C:
 			}
-			ps.metadataMu.RLock()
-			isArchived := ps.archivedAt != nil
-			ps.metadataMu.RUnlock()
-			if isArchived {
-				continue
-			}
-			req := entity.ListTasksRequest{WorkspaceID: ps.workspaceID, UserID: ps.userID}
-			uid := monoflake.IDFromBase62(ps.userID).Int64()
-			tasks, err := repo.ListTasks(context.Background(), req, uid)
-			if err != nil {
-				continue
-			}
-
-			hasOngoing := false
-			var ongoingTask model.Task
-			var pendingTasks []model.Task
-			notStartedIDs := make(map[int64]struct{})
-			for _, t := range tasks {
-				if t.Status == "ongoing" {
-					hasOngoing = true
-					ongoingTask = t
-					break
-				}
-				if t.Status == "notstarted" && t.Assignee == "agent" {
-					notStartedIDs[t.ID] = struct{}{}
-					// Already delivered, either by this same push a tick ago or by
-					// the REST handler that creates/reassigns it — skip it rather
-					// than pushing (and, if it wants one, clearing) it again while
-					// the agent simply hasn't flipped its status yet.
-					if ps.wasTaskPushed(t.ID) {
-						continue
-					}
-					pendingTasks = append(pendingTasks, t)
-				}
-			}
-			ps.reconcilePushedTaskIDs(notStartedIDs)
-
-			if hasOngoing {
-				if time.Since(ps.lastUpdateCheckAt) > time.Hour {
-					msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
-					ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
-					ps.lastUpdateCheckAt = time.Now()
-				}
-			} else if len(pendingTasks) > 0 {
-				sort.Slice(pendingTasks, func(i, j int) bool {
-					orderI := pendingTasks[i].SortOrder
-					if orderI == 0 {
-						orderI = float64(pendingTasks[i].CreatedAt.UnixMilli()) / 1000.0
-					}
-					orderJ := pendingTasks[j].SortOrder
-					if orderJ == 0 {
-						orderJ = float64(pendingTasks[j].CreatedAt.UnixMilli()) / 1000.0
-					}
-					if orderI != orderJ {
-						return orderI < orderJ
-					}
-					return pendingTasks[i].ID < pendingTasks[j].ID
-				})
-				nextTask := pendingTasks[0]
-				// Asked for before the push, never after: the point is that the
-				// agent reads this task on a clean context, and clearing once it
-				// has already been handed the task would throw the task away.
-				ps.clearContextFor(context.Background(), nextTask)
-				// The ID is part of the push because a task body can instruct the
-				// agent to quote it back when publishing an event, and this path
-				// is how workflow-step tasks are delivered.
-				msg := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s", monoflake.ID(nextTask.ID).String(), nextTask.Title, nextTask.Body)
-				if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
-					msg += "\n" + atts
-				}
-				ps.SendChannelNotification(context.Background(), nextTask.ID, msg)
-				ps.MarkTaskPushed(nextTask.ID)
-			}
+			ps.pollOnce(repo)
 		}
 	}()
+}
+
+// pollOnce is one tick of StartPoller: hand the agent its next task, or ask an
+// agent already working for a status update.
+func (ps *WorkspaceServer) pollOnce(repo taskLister) {
+	ps.metadataMu.RLock()
+	isArchived := ps.archivedAt != nil
+	ps.metadataMu.RUnlock()
+	if isArchived {
+		return
+	}
+	req := entity.ListTasksRequest{WorkspaceID: ps.workspaceID, UserID: ps.userID}
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	tasks, err := repo.ListTasks(context.Background(), req, uid)
+	if err != nil {
+		return
+	}
+
+	hasOngoing := false
+	var ongoingTask model.Task
+	var pendingTasks []model.Task
+	notStartedIDs := make(map[int64]struct{})
+	for _, t := range tasks {
+		if t.Status == "ongoing" {
+			hasOngoing = true
+			ongoingTask = t
+			break
+		}
+		if t.Status == "notstarted" && t.Assignee == "agent" {
+			notStartedIDs[t.ID] = struct{}{}
+			// Already delivered, either by this same push a tick ago or by
+			// the REST handler that creates/reassigns it — skip it rather
+			// than pushing (and, if it wants one, clearing) it again while
+			// the agent simply hasn't flipped its status yet.
+			if ps.wasTaskPushed(t.ID) {
+				continue
+			}
+			pendingTasks = append(pendingTasks, t)
+		}
+	}
+	ps.reconcilePushedTaskIDs(notStartedIDs)
+
+	if hasOngoing {
+		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
+			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
+			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
+			ps.lastUpdateCheckAt = time.Now()
+		}
+	} else if len(pendingTasks) > 0 {
+		sort.Slice(pendingTasks, func(i, j int) bool {
+			orderI := pendingTasks[i].SortOrder
+			if orderI == 0 {
+				orderI = float64(pendingTasks[i].CreatedAt.UnixMilli()) / 1000.0
+			}
+			orderJ := pendingTasks[j].SortOrder
+			if orderJ == 0 {
+				orderJ = float64(pendingTasks[j].CreatedAt.UnixMilli()) / 1000.0
+			}
+			if orderI != orderJ {
+				return orderI < orderJ
+			}
+			return pendingTasks[i].ID < pendingTasks[j].ID
+		})
+		nextTask := pendingTasks[0]
+		// Asked for before the push, never after: the point is that the
+		// agent reads this task on a clean context, and clearing once it
+		// has already been handed the task would throw the task away.
+		ps.clearContextFor(context.Background(), nextTask)
+		// The ID is part of the push because a task body can instruct the
+		// agent to quote it back when publishing an event, and this path
+		// is how workflow-step tasks are delivered.
+		msg := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s", monoflake.ID(nextTask.ID).String(), nextTask.Title, nextTask.Body)
+		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
+			msg += "\n" + atts
+		}
+		// Recorded only once the task has actually reached somebody. A push
+		// into a workspace with nothing attached delivers nothing, and marking
+		// it would retire the task from this very loop — the only thing that
+		// ever offers it again.
+		if ps.SendChannelNotification(context.Background(), nextTask.ID, msg) {
+			ps.MarkTaskPushed(nextTask.ID)
+		}
+	}
 }
 
 func (ps *WorkspaceServer) UpdateMetadata(name, description, icon string) {
