@@ -320,6 +320,70 @@ func TestPollOnceReconcilesEveryPendingTaskNotJustThoseBeforeAnOngoingOne(t *tes
 	}
 }
 
+// The poller reads the same limit the handler does: a gateway that will run
+// four tasks at once and is running one has room for another. Gating on "is
+// anything ongoing" made the concurrency control meaningless — the workspace
+// would hand over one task and then wait for it, whatever the agent said it
+// could take.
+func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
+	ps := pushServer(t)
+	ps.agentConcurrency = map[string]AgentConcurrencySnapshot{}
+	sessID := connectedServer(t, ps, "acp-gateway")
+	defer streamFor(ps, sessID)()
+	ps.agentConcurrency[sessID] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
+
+	got := ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
+	))
+
+	if got != 7 {
+		t.Fatalf("offered task %d while three of four slots were free, want 7", got)
+	}
+}
+
+// Full is full.
+func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
+	ps := pushServer(t)
+	ps.agentConcurrency = map[string]AgentConcurrencySnapshot{}
+	sessID := connectedServer(t, ps, "acp-gateway")
+	defer streamFor(ps, sessID)()
+	ps.agentConcurrency[sessID] = AgentConcurrencySnapshot{MaxConcurrency: 2, CanSet: true}
+
+	got := ps.pollOnce(pendingTaskRepo(
+		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
+		model.Task{ID: 2, Status: "ongoing", Assignee: "agent"},
+		model.Task{ID: 7, Status: "notstarted", Assignee: "agent"},
+	))
+
+	if got != 0 {
+		t.Fatalf("offered task %d with both slots busy, want none", got)
+	}
+}
+
+// A poll asks for the two statuses it reads and nothing else. Unfiltered, the
+// query returned the hundred most recent tasks of any status — so a workspace
+// with a hundred completed tasks could push its pending ones out of the
+// window, and the poll would find no work to hand over at all.
+func TestPollOnceAsksOnlyForTheStatusesItReads(t *testing.T) {
+	ps := pushServer(t)
+	var asked entity.ListTasksRequest
+	ps.pollOnce(listTasksFunc(func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
+		asked = req
+		return []model.Task{{ID: 7, Status: "notstarted", Assignee: "agent"}}, nil
+	}))
+
+	want := map[string]bool{"ongoing": true, "notstarted": true}
+	if len(asked.Status) != len(want) {
+		t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+	}
+	for _, s := range asked.Status {
+		if !want[s] {
+			t.Fatalf("asked for statuses %v, want exactly ongoing and notstarted", asked.Status)
+		}
+	}
+}
+
 // Nothing is offered while a task is ongoing: the agent already has work.
 func TestPollOnceOffersNothingWhileATaskIsOngoing(t *testing.T) {
 	ps := pushServer(t)

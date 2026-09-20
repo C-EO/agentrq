@@ -1130,14 +1130,22 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	if isArchived {
 		return 0
 	}
-	req := entity.ListTasksRequest{WorkspaceID: ps.workspaceID, UserID: ps.userID}
+	// Only the two statuses a poll reads. Unfiltered, this pulled the hundred
+	// most recently created tasks of any status — a workspace with a hundred
+	// completed tasks could push its pending ones out of the window entirely,
+	// and the poll would see no work to hand over at all.
+	req := entity.ListTasksRequest{
+		WorkspaceID: ps.workspaceID,
+		UserID:      ps.userID,
+		Status:      []string{"ongoing", "notstarted"},
+	}
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	tasks, err := repo.ListTasks(context.Background(), req, uid)
 	if err != nil {
 		return 0
 	}
 
-	hasOngoing := false
+	ongoingCount := 0
 	var ongoingTask model.Task
 	var pendingTasks []model.Task
 	notStartedIDs := make(map[int64]struct{})
@@ -1147,8 +1155,8 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	// pending task behind it and cleared it a second time later.
 	for _, t := range tasks {
 		if t.Status == "ongoing" {
-			if !hasOngoing {
-				hasOngoing = true
+			ongoingCount++
+			if ongoingCount == 1 {
 				ongoingTask = t
 			}
 			continue
@@ -1166,7 +1174,16 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	}
 	ps.reconcileClearedTaskIDs(notStartedIDs)
 
-	if hasOngoing {
+	// Full when the agent is already running everything it will run at once,
+	// which is what the gateway itself reports. One when it has reported
+	// nothing, which is the single-task behaviour every workspace had before
+	// the limit was something a gateway could name.
+	limit := 1
+	if c := ps.AgentConcurrency(); c != nil && c.MaxConcurrency > 0 {
+		limit = c.MaxConcurrency
+	}
+
+	if ongoingCount >= limit {
 		if time.Since(ps.lastUpdateCheckAt) > time.Hour {
 			msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
 			ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
