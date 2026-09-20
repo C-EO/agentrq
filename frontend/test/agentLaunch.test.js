@@ -10,6 +10,7 @@ import {
   machineEligibility,
   sessionEligibility,
   paramsEligibility,
+  launchParamsPayload,
   lastAcpGatewayChoice,
   rememberAcpGatewayChoice,
   KINDS,
@@ -169,6 +170,14 @@ describe('paramsEligibility', () => {
     expect(paramsEligibility('acp-gateway', { agent: '   ' }).ok).toBe(false)
   })
 
+  // The required field's shape check is its own branch, distinct from the
+  // optional one below — a bad model must not be the only way to reach it.
+  it('refuses a badly shaped agent, the one required field', () => {
+    const e = paramsEligibility('acp-gateway', { agent: 'a b' })
+    expect(e.ok).toBe(false)
+    expect(e.reason).toContain('will not accept')
+  })
+
   // A model left blank is "let the gateway decide", not a value that failed
   // validation — the field is optional, not merely tolerant of anything.
   it('treats a blank model as not chosen rather than as a bad one', () => {
@@ -201,6 +210,28 @@ describe('paramsEligibility', () => {
     const e = paramsEligibility('acp-gateway', { model: 'a b', agent: 'a' })
     expect(e.ok).toBe(false)
     expect(e.reason).toContain('will not accept')
+  })
+})
+
+describe('launchParamsPayload', () => {
+  it('sends nothing for a kind the daemon does not run', () => {
+    expect(launchParamsPayload('bash', {})).toEqual({})
+  })
+
+  it('needs nothing extra for claude-code', () => {
+    expect(launchParamsPayload('claude-code', {})).toEqual({})
+  })
+
+  // A key the caller never set at all (not merely blank) is the other way
+  // "no preference" arrives, and must be skipped the same as an empty string.
+  it('omits an optional field the caller never set at all', () => {
+    expect(launchParamsPayload('acp-gateway', { agent: 'a' })).toEqual({ agent: 'a' })
+  })
+
+  // A required field goes through the same nullish fallback as an optional
+  // one before it's trimmed — a missing key must not throw, just come out blank.
+  it('treats a missing required field as blank, not absent', () => {
+    expect(launchParamsPayload('acp-gateway', {})).toEqual({ agent: '' })
   })
 })
 
