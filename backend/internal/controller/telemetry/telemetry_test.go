@@ -235,6 +235,80 @@ func TestTelemetryController(t *testing.T) {
 	})
 }
 
+// A tool call and a method call for two different tools must not just persist
+// as generic ActionIDMCPToolCall/ActionIDMCPMethodCall rows — the whole point
+// of adding SubActionID was to tell them apart afterwards.
+func TestRecordMCP_PersistsSubActionID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Telemetry{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPubSub := mock_pubsub.NewMockService(ctrl)
+	mcpChan := make(chan any, 10)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).
+		Return(&pubsub.SubscribeResponse{Events: make(chan any)}, nil)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP}).
+		Return(&pubsub.SubscribeResponse{Events: mcpChan}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := New(Params{
+		DB:        &testDBConn{db: db},
+		PubSub:    mockPubSub,
+		BatchSize: 2,
+		Interval:  50 * time.Millisecond,
+	})
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("failed to start: %v", err)
+	}
+
+	mcpChan <- mcp.MCPEvent{
+		UserID: 1, WorkspaceID: 10,
+		Action: mcp.ActionMCPToolCall, ToolName: "getTask",
+		Actor: uint8(entity.ActorAgent),
+	}
+	mcpChan <- mcp.MCPEvent{
+		UserID: 1, WorkspaceID: 10,
+		Action: mcp.ActionMCPMethodCall, ToolName: "resource:new-workspace-guide",
+		Actor: uint8(entity.ActorAgent),
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	var records []model.Telemetry
+	db.Find(&records)
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+
+	var gotToolCall, gotMethodCall bool
+	for _, r := range records {
+		switch r.Action {
+		case model.ActionIDMCPToolCall:
+			gotToolCall = true
+			if r.SubActionID != model.SubActionIDMCPGetTask {
+				t.Errorf("tool call SubActionID = %d, want SubActionIDMCPGetTask (%d)", r.SubActionID, model.SubActionIDMCPGetTask)
+			}
+		case model.ActionIDMCPMethodCall:
+			gotMethodCall = true
+			if r.SubActionID != model.SubActionIDMCPResourceNewWorkspaceGuide {
+				t.Errorf("method call SubActionID = %d, want SubActionIDMCPResourceNewWorkspaceGuide (%d)", r.SubActionID, model.SubActionIDMCPResourceNewWorkspaceGuide)
+			}
+		}
+	}
+	if !gotToolCall || !gotMethodCall {
+		t.Fatalf("missing expected rows: toolCall=%v methodCall=%v", gotToolCall, gotMethodCall)
+	}
+}
+
 // The client-reported actions have to survive the whole path — pubsub event to
 // persisted row — with their scoping intact, since a row that loses its user or
 // workspace cannot be shown back to the user it belongs to.

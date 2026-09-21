@@ -602,6 +602,14 @@ func NewWorkspaceServer(
 	return ps
 }
 
+// MCPServer returns the underlying MCP server for introspection — currently
+// only controller/telemetry's SubActionID parity test, which lists what's
+// actually registered rather than trusting a hand-typed copy of it. Not for
+// handling requests directly; use Handler for that.
+func (ps *WorkspaceServer) MCPServer() *mcp.Server {
+	return ps.mcpServer
+}
+
 func (ps *WorkspaceServer) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := w.(http.Flusher); !ok {

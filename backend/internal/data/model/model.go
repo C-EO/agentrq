@@ -227,6 +227,12 @@ type (
 		Action      uint8 `gorm:"index:idx_telemetry_action"`
 		Actor       uint8 `gorm:"index:idx_telemetry_actor"`
 		ClientID    int64 `gorm:"index:idx_telemetry_client_id"` // xxhash64(name+version) of the MCP client (reinterpreted as int64; no unsigned bigint in Postgres), 0 if unknown; see MCPClient
+		// SubActionID names which tool, resource or prompt an
+		// ActionIDMCPToolCall/ActionIDMCPMethodCall row was for — see the
+		// SubActionID* constants. Zero (SubActionIDUnknown) on every other
+		// Action, including all CRUD rows: it has no meaning outside the MCP
+		// tool/resource/prompt breakdown.
+		SubActionID uint8 `gorm:"index:idx_telemetry_sub_action_id"`
 	}
 
 	// MCPClient is a lookup table of distinct MCP client identities seen on
@@ -468,4 +474,78 @@ const (
 	// A resource read or prompt get, on either MCP server — the non-tool
 	// counterpart to ActionIDMCPToolCall.
 	ActionIDMCPMethodCall
+)
+
+// SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
+// ActionIDMCPMethodCall row was for. It is its own enumeration, not a
+// continuation of ActionID above: the two columns are independent, and a
+// SubActionID value only means something alongside one of those two actions.
+//
+// Same-named tools on the two MCP servers (e.g. getTask, createTask,
+// getWorkspace, updateTaskStatus — one workspace-scoped, one account-wide)
+// share one constant: this column answers "which tool", not "which server",
+// and controller/telemetry/telemetry.go's recordMCP already doesn't
+// distinguish the two servers anywhere else.
+//
+// These values are stored in telemetry.sub_action_id, so new ones only ever
+// go on the end, same rule as ActionID above.
+const (
+	SubActionIDUnknown uint8 = iota
+	SubActionIDMCPCreateEnrolmentCode
+	SubActionIDMCPCreateEvent
+	SubActionIDMCPCreateEventTrigger
+	SubActionIDMCPCreateTask
+	SubActionIDMCPCreateWorkflow
+	SubActionIDMCPCreateWorkflowStep
+	SubActionIDMCPCreateWorkspace
+	SubActionIDMCPDeleteEvent
+	SubActionIDMCPDeleteEventTrigger
+	SubActionIDMCPDeleteMemory
+	SubActionIDMCPDeleteTask
+	SubActionIDMCPDeleteWorkflow
+	SubActionIDMCPDeleteWorkflowStep
+	SubActionIDMCPDownloadAttachment
+	SubActionIDMCPElicit
+	SubActionIDMCPGetAttachment
+	SubActionIDMCPGetEvent
+	SubActionIDMCPGetEventTrigger
+	SubActionIDMCPGetMemory
+	SubActionIDMCPGetTask
+	SubActionIDMCPGetWorkflow
+	SubActionIDMCPGetWorkflowText
+	SubActionIDMCPGetWorkspace
+	SubActionIDMCPGetWorkspaceStats
+	SubActionIDMCPListAllTasks
+	SubActionIDMCPListEvents
+	SubActionIDMCPListEventTasks
+	SubActionIDMCPListEventTriggers
+	SubActionIDMCPListMemories
+	SubActionIDMCPListTasks
+	SubActionIDMCPListWorkflows
+	SubActionIDMCPListWorkflowSteps
+	SubActionIDMCPListWorkflowTasks
+	SubActionIDMCPListWorkspaces
+	SubActionIDMCPLoadMemory
+	SubActionIDMCPPublishEvent
+	SubActionIDMCPReplaceWorkflowFromText
+	SubActionIDMCPReply
+	SubActionIDMCPReplyToTask
+	SubActionIDMCPRespondToTask
+	SubActionIDMCPSaveMemory
+	SubActionIDMCPUpdateEvent
+	SubActionIDMCPUpdateEventTrigger
+	SubActionIDMCPUpdateScheduledTask
+	SubActionIDMCPUpdateTaskAllowAll
+	SubActionIDMCPUpdateTaskAssignee
+	SubActionIDMCPUpdateTaskOrder
+	SubActionIDMCPUpdateTaskStatus
+	SubActionIDMCPUpdateWorkflow
+	SubActionIDMCPUpdateWorkspace
+	// CoreMCP's two reference resources — see internal/handler/coremcp/resources.go.
+	SubActionIDMCPResourceNewWorkspaceGuide
+	SubActionIDMCPResourceAgentrqdSetupGuide
+	// CoreMCP's three ready-made prompts — see internal/handler/coremcp/prompts.go.
+	SubActionIDMCPPromptNewWorkspace
+	SubActionIDMCPPromptSetupAgentrqd
+	SubActionIDMCPPromptWorkspaceStatus
 )
