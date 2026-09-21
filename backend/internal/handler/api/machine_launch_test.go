@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
@@ -231,5 +233,212 @@ func TestListAcpModelsFailsOpen(t *testing.T) {
 				t.Errorf("models = %+v, want none", got.Models)
 			}
 		})
+	}
+}
+
+// fakeConn is a no-op daemon socket: launchAgent only needs Send to succeed
+// (or fail, for the one test that wants that) to reach the code past it.
+type fakeConn struct {
+	sendErr error
+}
+
+func (f *fakeConn) Send(wire.Frame) error { return f.sendErr }
+func (f *fakeConn) Close() error          { return nil }
+
+// fakeLaunchCrud is the minimum crud.Controller launchAgent touches, on the
+// success path up to and including the telemetry call.
+type fakeLaunchCrud struct {
+	crud.Controller
+
+	workspace entity.Workspace
+	machine   entity.MachineView
+
+	recordTelemetryFunc func(ctx context.Context, rq entity.RecordTelemetryRequest) error
+}
+
+func (f *fakeLaunchCrud) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+	return &entity.GetWorkspaceResponse{Workspace: f.workspace}, nil
+}
+
+func (f *fakeLaunchCrud) ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error) {
+	return nil, nil
+}
+
+func (f *fakeLaunchCrud) GetMachine(ctx context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error) {
+	return &entity.GetMachineResponse{Machine: f.machine}, nil
+}
+
+func (f *fakeLaunchCrud) CreateSession(ctx context.Context, req entity.CreateSessionRequest) (*entity.CreateSessionResponse, error) {
+	return &entity.CreateSessionResponse{Session: entity.SessionView{
+		ID:        monoflake.ID(999).String(),
+		Kind:      req.Kind,
+		MachineID: req.MachineID,
+	}}, nil
+}
+
+func (f *fakeLaunchCrud) RecordTelemetry(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+	if f.recordTelemetryFunc == nil {
+		return nil
+	}
+	return f.recordTelemetryFunc(ctx, rq)
+}
+
+// launchTestHandler wires a handler whose launchAgent can run end to end: a
+// registry holding a fake connection for the one machine the test uses, a
+// real token service (minting is not what these tests are about), and a crud
+// fake that accepts the launch all the way through to sendStart.
+func launchTestHandler(t *testing.T, machineID int64, crudCtrl *fakeLaunchCrud, conn *fakeConn) *handler {
+	t.Helper()
+	registry := machinectrl.NewRegistry("test-instance")
+	registry.Add(machineID, conn)
+
+	return &handler{
+		crud:            crudCtrl,
+		mcpManager:      &fakeMCPManager{},
+		machineRegistry: registry,
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+	}
+}
+
+func launchApp(h *handler, userID string) *fiber.App {
+	app := fiber.New()
+	app.Post("/api/v1/workspaces/:id/agent", func(c *fiber.Ctx) error {
+		c.Locals("user_id", userID)
+		return h.launchAgent()(c)
+	})
+	return app
+}
+
+// Counted right after the start frame reaches the machine, once per kind, so
+// the two are directly comparable counts.
+func TestLaunchAgent_CountsByKind(t *testing.T) {
+	cases := []struct {
+		kind       string
+		wantAction entity.Action
+	}{
+		{"claude-code", entity.ActionAgentLaunchClaudeCode},
+		{"acp-gateway", entity.ActionAgentLaunchACPGateway},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			machineID := monoflake.ID(5)
+			crudCtrl := &fakeLaunchCrud{
+				workspace: entity.Workspace{ID: 1, Name: "agentrq", WorkingDirectory: "/srv/app"},
+				machine:   entity.MachineView{ID: machineID.String(), Enabled: true},
+			}
+			var counted []entity.Action
+			crudCtrl.recordTelemetryFunc = func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+				counted = append(counted, rq.Action)
+				return nil
+			}
+			h := launchTestHandler(t, machineID.Int64(), crudCtrl, &fakeConn{})
+			app := launchApp(h, monoflake.ID(100).String())
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent",
+				strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"`+tc.kind+`"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("expected 202, got %d", resp.StatusCode)
+			}
+			if len(counted) != 1 || counted[0] != tc.wantAction {
+				t.Errorf("counted %v, want one %v", counted, tc.wantAction)
+			}
+		})
+	}
+}
+
+// A kind neither server recognises is left uncounted rather than guessed at
+// — the daemon is the actual authority on valid kinds.
+func TestLaunchAgent_DoesNotCountAnUnrecognisedKind(t *testing.T) {
+	machineID := monoflake.ID(5)
+	crudCtrl := &fakeLaunchCrud{
+		workspace: entity.Workspace{ID: 1, Name: "agentrq", WorkingDirectory: "/srv/app"},
+		machine:   entity.MachineView{ID: machineID.String(), Enabled: true},
+	}
+	var counted []entity.Action
+	crudCtrl.recordTelemetryFunc = func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+		counted = append(counted, rq.Action)
+		return nil
+	}
+	h := launchTestHandler(t, machineID.Int64(), crudCtrl, &fakeConn{})
+	app := launchApp(h, monoflake.ID(100).String())
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent",
+		strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"something-else"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	if len(counted) != 0 {
+		t.Errorf("counted %v, want nothing counted for an unrecognised kind", counted)
+	}
+}
+
+// The launch happened; the count did not. Reporting that as a failed launch
+// would be a lie the caller acts on — the frame has already reached the
+// machine.
+func TestLaunchAgent_StillSucceedsWhenTheCountFails(t *testing.T) {
+	machineID := monoflake.ID(5)
+	crudCtrl := &fakeLaunchCrud{
+		workspace: entity.Workspace{ID: 1, Name: "agentrq", WorkingDirectory: "/srv/app"},
+		machine:   entity.MachineView{ID: machineID.String(), Enabled: true},
+		recordTelemetryFunc: func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+			return errors.New("the counter is down")
+		},
+	}
+	h := launchTestHandler(t, machineID.Int64(), crudCtrl, &fakeConn{})
+	app := launchApp(h, monoflake.ID(100).String())
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent",
+		strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"claude-code"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("expected 202, got %d", resp.StatusCode)
+	}
+}
+
+// agentLaunchAction is the pure lookup the emission site defers to; every
+// case it can return is worth asserting directly, without a live handler.
+func TestAgentLaunchAction(t *testing.T) {
+	cases := []struct {
+		kind       string
+		wantAction entity.Action
+		wantOK     bool
+	}{
+		{"claude-code", entity.ActionAgentLaunchClaudeCode, true},
+		{"acp-gateway", entity.ActionAgentLaunchACPGateway, true},
+		{"", 0, false},
+		{"something-else", 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := agentLaunchAction(tc.kind)
+		if got != tc.wantAction || ok != tc.wantOK {
+			t.Errorf("agentLaunchAction(%q) = (%v, %v), want (%v, %v)", tc.kind, got, ok, tc.wantAction, tc.wantOK)
+		}
 	}
 }

@@ -350,9 +350,38 @@ func (h *handler) launchAgent() fiber.Handler {
 				"could not reach that machine", http.StatusBadGateway))
 		}
 
+		// Counted on the frame actually being sent, not on the request coming
+		// in: a launch refused above never reached a machine, and a launch that
+		// timed out here is a delivery failure, not a spin-up.
+		if launchAction, ok := agentLaunchAction(payload.Kind); ok {
+			if err := h.crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
+				Action:      launchAction,
+				WorkspaceID: workspaceID,
+				UserID:      userID,
+			}); err != nil {
+				zlog.Warn().Err(err).Int64("workspace_id", workspaceID).
+					Str("kind", payload.Kind).
+					Msg("agent launch happened but was not counted")
+			}
+		}
+
 		c.Status(http.StatusAccepted)
 		return c.JSON(session)
 	}
+}
+
+// agentLaunchAction resolves a launch request's kind to the telemetry action
+// that counts it. The daemon is the actual authority on valid kinds
+// (supervisor.Resolve); a kind neither server recognises is left uncounted
+// rather than guessed at.
+func agentLaunchAction(kind string) (entity.Action, bool) {
+	switch kind {
+	case "claude-code":
+		return entity.ActionAgentLaunchClaudeCode, true
+	case "acp-gateway":
+		return entity.ActionAgentLaunchACPGateway, true
+	}
+	return 0, false
 }
 
 // sendStart delivers the start request to the daemon.

@@ -1313,6 +1313,14 @@ func TestSetAgentConcurrency_AsksTheConnectedGateway(t *testing.T) {
 			return true, nil
 		},
 	}
+	// Counted on the asking, not on the gateway's confirmation: the gateway
+	// may still clamp or ignore the value, and that is a different question
+	// from how often someone reaches for this control.
+	var counted []entity.Action
+	crudCtrl.recordTelemetryFunc = func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+		counted = append(counted, rq.Action)
+		return nil
+	}
 	srv := &fakeWorkspaceServer{}
 	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
 
@@ -1350,6 +1358,9 @@ func TestSetAgentConcurrency_AsksTheConnectedGateway(t *testing.T) {
 	}
 	if body.Requested != 8 {
 		t.Errorf("body named %d, want the requested limit", body.Requested)
+	}
+	if len(counted) != 1 || counted[0] != entity.ActionAgentConcurrencySelect {
+		t.Errorf("counted %v, want one agent-concurrency-select", counted)
 	}
 }
 
@@ -1530,5 +1541,44 @@ func TestSetAgentModel_StillSucceedsWhenTheCountFails(t *testing.T) {
 	}
 	if srv.modelCalls != 1 {
 		t.Errorf("asked the agent %d times, want exactly 1", srv.modelCalls)
+	}
+}
+
+// The limit change happened; the count did not. Reporting that as a failed
+// change would be a lie the caller acts on.
+func TestSetAgentConcurrency_StillSucceedsWhenTheCountFails(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+		recordTelemetryFunc: func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+			return errors.New("the counter is down")
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentConcurrency()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+		strings.NewReader(`{"maxConcurrency":8}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("expected 202, got %d", resp.StatusCode)
+	}
+	if srv.concurrencyCalls != 1 {
+		t.Errorf("asked the gateway %d times, want exactly 1", srv.concurrencyCalls)
 	}
 }

@@ -444,6 +444,9 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		// it, but it travels the same bus and needs the same mapping — an
 		// action that reaches here unmapped is dropped in silence.
 		{entity.ActionAgentModelSelect, model.ActionIDAgentModelSelect, "agent model select"},
+		{entity.ActionAgentConcurrencySelect, model.ActionIDAgentConcurrencySelect, "agent concurrency select"},
+		{entity.ActionAgentLaunchClaudeCode, model.ActionIDAgentLaunchClaudeCode, "agent launch claude-code"},
+		{entity.ActionAgentLaunchACPGateway, model.ActionIDAgentLaunchACPGateway, "agent launch acp-gateway"},
 	}
 
 	for _, tc := range cases {
