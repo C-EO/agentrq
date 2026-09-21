@@ -746,6 +746,18 @@ func (h *handler) setAgentConcurrency() fiber.Handler {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "failed to change the concurrency"})
 		}
 
+		// Counted on the asking, not on the gateway's confirmation, for the same
+		// reason as setAgentModel: the gateway has already been asked, and a
+		// failure here would report a change as failed that in fact happened.
+		if err := h.crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
+			Action:      entity.ActionAgentConcurrencySelect,
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+		}); err != nil {
+			zlog.Warn().Err(err).Int64("workspace_id", workspaceID).
+				Msg("concurrency change was made but not counted")
+		}
+
 		return c.Status(http.StatusAccepted).JSON(fiber.Map{"requested": *rq.MaxConcurrency})
 	}
 }

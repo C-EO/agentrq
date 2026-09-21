@@ -206,6 +206,12 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDMachineSessionKill
 	case entity.ActionMachineEnrolCodeCreate:
 		action = model.ActionIDMachineEnrolCodeCreate
+	case entity.ActionAgentConcurrencySelect:
+		action = model.ActionIDAgentConcurrencySelect
+	case entity.ActionAgentLaunchClaudeCode:
+		action = model.ActionIDAgentLaunchClaudeCode
+	case entity.ActionAgentLaunchACPGateway:
+		action = model.ActionIDAgentLaunchACPGateway
 	default:
 		return
 	}

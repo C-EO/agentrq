@@ -1141,6 +1141,18 @@ const (
 	// redeems it got stuck installing the daemon, and that is invisible if
 	// only the finished enrolments are counted.
 	ActionMachineEnrolCodeCreate Action = 70
+	// The gateway's task-concurrency limit changed from the interface.
+	// Counted on the asking, same as ActionAgentModelSelect and for the same
+	// reason: the gateway clamps or ignores the value and only its own
+	// notification says which, so the count answers "how often people reach
+	// for this", not "how often it took effect".
+	ActionAgentConcurrencySelect Action = 71
+	// Which kind of agent process was launched for a workspace. Two actions
+	// rather than one action with a kind attribute, so acp-gateway and
+	// claude-code are two directly comparable counts instead of a value
+	// buried inside one bucket.
+	ActionAgentLaunchClaudeCode Action = 72
+	ActionAgentLaunchACPGateway Action = 73
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1255,6 +1267,12 @@ func (a Action) String() string {
 		return "machine_session_kill"
 	case ActionMachineEnrolCodeCreate:
 		return "machine_enrol_code_create"
+	case ActionAgentConcurrencySelect:
+		return "agent_concurrency_select"
+	case ActionAgentLaunchClaudeCode:
+		return "agent_launch_claude_code"
+	case ActionAgentLaunchACPGateway:
+		return "agent_launch_acp_gateway"
 	}
 	return "unknown"
 }

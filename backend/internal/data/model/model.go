@@ -533,6 +533,14 @@ const (
 	// A resource read or prompt get, on either MCP server — the non-tool
 	// counterpart to ActionIDMCPToolCall.
 	ActionIDMCPMethodCall
+	// The gateway's task-concurrency limit changed from the interface. On the
+	// end like everything else here, for the reason recorded above.
+	ActionIDAgentConcurrencySelect
+	// Which kind of agent process was launched for a workspace: acp-gateway or
+	// claude-code, as two directly comparable counts rather than one action
+	// with a kind attribute.
+	ActionIDAgentLaunchClaudeCode
+	ActionIDAgentLaunchACPGateway
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
