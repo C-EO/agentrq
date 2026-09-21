@@ -39,9 +39,16 @@ makes them self-evidently true. A few happen entirely in the browser and are
   supervisor server). A tool call is `ActionMCPToolCall`; a resource read or
   prompt get is `ActionMCPMethodCall`, so a supervisor pulling a guide resource
   doesn't inflate the same count as it calling a tool. Neither server
-  distinguishes itself in the stored row, so per-tool or per-server breakdowns
-  aren't possible from `model.Telemetry` alone. CoreMCP calls that aren't
-  scoped to one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
+  distinguishes *itself* in the stored row — a `getTask` call looks the same
+  whether it came from the workspace server or CoreMCP — but *which* tool,
+  resource or prompt it was is in `Telemetry.SubActionID`
+  (`model.SubActionIDMCP*`, its own append-only enumeration, meaningful only
+  alongside `ActionIDMCPToolCall`/`ActionIDMCPMethodCall`). Adding a tool,
+  resource or prompt to either server means adding its name to
+  `subActionIDByToolName` in `controller/telemetry/telemetry.go` — skip it and
+  `sub_action_test.go` fails, because it lists what the live servers actually
+  registered rather than trusting this doc. CoreMCP calls that aren't scoped to
+  one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
 

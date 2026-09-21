@@ -84,6 +84,14 @@ func (s *WorkspaceServer) Handler() *mcp.StreamableHTTPHandler {
 	return s.streamServer
 }
 
+// MCPServer returns the underlying MCP server for introspection — currently
+// only controller/telemetry's SubActionID parity test, which lists what's
+// actually registered rather than trusting a hand-typed copy of it. Not for
+// handling requests directly; use Handler for that.
+func (s *WorkspaceServer) MCPServer() *mcp.Server {
+	return s.server
+}
+
 func textResponse(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{

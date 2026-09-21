@@ -219,13 +219,85 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 	}
 }
 
+// subActionIDByToolName maps every tool/resource/prompt name either MCP
+// server can emit as MCPEvent.ToolName to the model.SubActionID that records
+// which one it was. Resources and prompts keep the "resource:"/"prompt:"
+// prefix emitTelemetry gives them, so this map's keys are exactly what
+// ToolName carries on the wire.
+//
+// sub_action_test.go checks this against the tools/resources/prompts each
+// live server actually registers, so a new one left out here fails that test
+// instead of silently recording SubActionIDUnknown.
+var subActionIDByToolName = map[string]uint8{
+	"createEnrolmentCode":     model.SubActionIDMCPCreateEnrolmentCode,
+	"createEvent":             model.SubActionIDMCPCreateEvent,
+	"createEventTrigger":      model.SubActionIDMCPCreateEventTrigger,
+	"createTask":              model.SubActionIDMCPCreateTask,
+	"createWorkflow":          model.SubActionIDMCPCreateWorkflow,
+	"createWorkflowStep":      model.SubActionIDMCPCreateWorkflowStep,
+	"createWorkspace":         model.SubActionIDMCPCreateWorkspace,
+	"deleteEvent":             model.SubActionIDMCPDeleteEvent,
+	"deleteEventTrigger":      model.SubActionIDMCPDeleteEventTrigger,
+	"deleteMemory":            model.SubActionIDMCPDeleteMemory,
+	"deleteTask":              model.SubActionIDMCPDeleteTask,
+	"deleteWorkflow":          model.SubActionIDMCPDeleteWorkflow,
+	"deleteWorkflowStep":      model.SubActionIDMCPDeleteWorkflowStep,
+	"downloadAttachment":      model.SubActionIDMCPDownloadAttachment,
+	"elicit":                  model.SubActionIDMCPElicit,
+	"getAttachment":           model.SubActionIDMCPGetAttachment,
+	"getEvent":                model.SubActionIDMCPGetEvent,
+	"getEventTrigger":         model.SubActionIDMCPGetEventTrigger,
+	"getMemory":               model.SubActionIDMCPGetMemory,
+	"getTask":                 model.SubActionIDMCPGetTask,
+	"getWorkflow":             model.SubActionIDMCPGetWorkflow,
+	"getWorkflowText":         model.SubActionIDMCPGetWorkflowText,
+	"getWorkspace":            model.SubActionIDMCPGetWorkspace,
+	"getWorkspaceStats":       model.SubActionIDMCPGetWorkspaceStats,
+	"listAllTasks":            model.SubActionIDMCPListAllTasks,
+	"listEvents":              model.SubActionIDMCPListEvents,
+	"listEventTasks":          model.SubActionIDMCPListEventTasks,
+	"listEventTriggers":       model.SubActionIDMCPListEventTriggers,
+	"listMemories":            model.SubActionIDMCPListMemories,
+	"listTasks":               model.SubActionIDMCPListTasks,
+	"listWorkflows":           model.SubActionIDMCPListWorkflows,
+	"listWorkflowSteps":       model.SubActionIDMCPListWorkflowSteps,
+	"listWorkflowTasks":       model.SubActionIDMCPListWorkflowTasks,
+	"listWorkspaces":          model.SubActionIDMCPListWorkspaces,
+	"loadMemory":              model.SubActionIDMCPLoadMemory,
+	"publishEvent":            model.SubActionIDMCPPublishEvent,
+	"replaceWorkflowFromText": model.SubActionIDMCPReplaceWorkflowFromText,
+	"reply":                   model.SubActionIDMCPReply,
+	"replyToTask":             model.SubActionIDMCPReplyToTask,
+	"respondToTask":           model.SubActionIDMCPRespondToTask,
+	"saveMemory":              model.SubActionIDMCPSaveMemory,
+	"updateEvent":             model.SubActionIDMCPUpdateEvent,
+	"updateEventTrigger":      model.SubActionIDMCPUpdateEventTrigger,
+	"updateScheduledTask":     model.SubActionIDMCPUpdateScheduledTask,
+	"updateTaskAllowAll":      model.SubActionIDMCPUpdateTaskAllowAll,
+	"updateTaskAssignee":      model.SubActionIDMCPUpdateTaskAssignee,
+	"updateTaskOrder":         model.SubActionIDMCPUpdateTaskOrder,
+	"updateTaskStatus":        model.SubActionIDMCPUpdateTaskStatus,
+	"updateWorkflow":          model.SubActionIDMCPUpdateWorkflow,
+	"updateWorkspace":         model.SubActionIDMCPUpdateWorkspace,
+
+	"resource:new-workspace-guide":  model.SubActionIDMCPResourceNewWorkspaceGuide,
+	"resource:agentrqd-setup-guide": model.SubActionIDMCPResourceAgentrqdSetupGuide,
+
+	"prompt:new-workspace":    model.SubActionIDMCPPromptNewWorkspace,
+	"prompt:setup-agentrqd":   model.SubActionIDMCPPromptSetupAgentrqd,
+	"prompt:workspace-status": model.SubActionIDMCPPromptWorkspaceStatus,
+}
+
 func (c *controller) recordMCP(event mcp.MCPEvent) {
 	var action uint8
+	var subAction uint8
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
 		action = model.ActionIDMCPToolCall
+		subAction = subActionIDByToolName[event.ToolName]
 	case mcp.ActionMCPMethodCall:
 		action = model.ActionIDMCPMethodCall
+		subAction = subActionIDByToolName[event.ToolName]
 	case mcp.ActionMCPConnect:
 		action = model.ActionIDMCPConnect
 	case mcp.ActionMCPClearContext:
@@ -258,6 +330,7 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		Action:      action,
 		Actor:       uint8(event.Actor),
 		ClientID:    event.ClientID,
+		SubActionID: subAction,
 	}
 }
 
