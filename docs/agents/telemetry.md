@@ -51,4 +51,13 @@ makes them self-evidently true. A few happen entirely in the browser and are
   one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
+- **Rollups live in three separate tables** (`internal/service/telemetryaggregator`):
+  hourly sums the raw `telemetries` table, daily sums hourly, monthly sums
+  daily — never the raw table twice. Monthly re-runs **every day**, not once
+  at month end, so the current month's row stays current; its upsert key is
+  therefore the day it ran, not the month, or the daily-shaped key would
+  collide with daily's own claim row. A `telemetry_aggregations` row is
+  claimed (`ON CONFLICT DO NOTHING`) before each run so two backend instances
+  polling the same schedule don't double-count a period — skip the claim and
+  a duplicate run doubles every number downstream of it silently.
 

@@ -54,6 +54,7 @@ import (
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/telemetryaggregator"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -219,6 +220,10 @@ func New(cfg Config) (*App, error) {
 		&model.Machine{},
 		&model.EnrolmentCode{},
 		&model.Session{},
+		&model.HourlyTelemetry{},
+		&model.DailyTelemetry{},
+		&model.MonthlyTelemetry{},
+		&model.TelemetryAggregation{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
@@ -333,6 +338,10 @@ func New(cfg Config) (*App, error) {
 	// ── Scheduler ─────────────────────────────────────────────────────────────
 	schedSvc := scheduler.New(repo, ids, bus, pubsubSvc)
 	schedSvc.Start(context.Background())
+
+	// ── Telemetry aggregator ─────────────────────────────────────────────────
+	telemetryAggSvc := telemetryaggregator.New(repo)
+	telemetryAggSvc.Start(context.Background())
 
 	// ── Auth ──────────────────────────────────────────────────────────
 	authSvc := auth.NewGoogle(cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, fmt.Sprintf("%s/api/v1/auth/google/callback", cfg.App.BaseURL))

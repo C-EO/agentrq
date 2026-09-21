@@ -82,6 +82,7 @@ mocks:
 		backend/internal/service/mocks/smtp \
 		backend/internal/service/mocks/idgen \
 		backend/internal/service/mocks/scheduler \
+		backend/internal/service/mocks/telemetryaggregator \
 		backend/internal/service/mocks/image \
 		backend/internal/service/mocks/storage \
 		backend/internal/service/mocks/auth \
@@ -93,6 +94,7 @@ mocks:
 		mockgen -source=internal/service/smtp/smtp.go -destination=internal/service/mocks/smtp/mock_smtp.go -package=smtp && \
 		mockgen -source=internal/service/idgen/idgen.go -destination=internal/service/mocks/idgen/mock_idgen.go -package=idgen && \
 		mockgen -source=internal/service/scheduler/scheduler.go -destination=internal/service/mocks/scheduler/mock_scheduler.go -package=scheduler && \
+		mockgen -source=internal/service/telemetryaggregator/telemetryaggregator.go -destination=internal/service/mocks/telemetryaggregator/mock_telemetryaggregator.go -package=telemetryaggregator && \
 		mockgen -source=internal/service/image/image.go -destination=internal/service/mocks/image/mock_image.go -package=image && \
 		mockgen -source=internal/service/storage/storage.go -destination=internal/service/mocks/storage/mock_storage.go -package=storage && \
 		mockgen -source=internal/service/auth/auth.go -destination=internal/service/mocks/auth/mock_auth.go -package=auth && \
