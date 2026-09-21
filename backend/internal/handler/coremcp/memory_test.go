@@ -134,7 +134,7 @@ func TestGetMemory_ReportsAMissingMemory(t *testing.T) {
 }
 
 func TestMemoryToolsAreRegistered(t *testing.T) {
-	srv := NewServer(&mockMemoryCrud{}, "https://agentrq.example")
+	srv := NewServer(&mockMemoryCrud{}, "https://agentrq.example", nil)
 
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

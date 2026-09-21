@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -50,6 +51,7 @@ func promptMessage(text string) *mcp.PromptMessage {
 }
 
 func (s *WorkspaceServer) promptNewWorkspace(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "prompt:new-workspace", 0)
 	name := req.Params.Arguments["name"]
 	if name == "" {
 		return nil, errors.New("new-workspace: the \"name\" argument is required")
@@ -77,6 +79,7 @@ func (s *WorkspaceServer) promptNewWorkspace(ctx context.Context, req *mcp.GetPr
 }
 
 func (s *WorkspaceServer) promptSetupAgentrqd(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "prompt:setup-agentrqd", 0)
 	platform := req.Params.Arguments["platform"]
 	target := "a machine"
 	if platform != "" {
@@ -100,6 +103,7 @@ func (s *WorkspaceServer) promptSetupAgentrqd(ctx context.Context, req *mcp.GetP
 }
 
 func (s *WorkspaceServer) promptWorkspaceStatus(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "prompt:workspace-status", 0)
 	text := "Give me a status report across every workspace.\n\n" +
 		"1. Call listWorkspaces.\n" +
 		"2. For each workspace, call getWorkspaceStats (range 7d) and listTasks for anything ongoing or blocked.\n" +

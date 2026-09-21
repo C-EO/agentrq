@@ -6,6 +6,7 @@ package coremcp
 import (
 	"context"
 
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
@@ -169,6 +170,7 @@ func (s *WorkspaceServer) registerWorkflowTools() {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) handleListWorkflows(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listWorkflows", 0)
 	res, err := s.crud.ListWorkflows(ctx, entity.ListWorkflowsRequest{UserID: getUserID(ctx)})
 	if err != nil {
 		return errorResponse(err), nil, nil
@@ -177,6 +179,7 @@ func (s *WorkspaceServer) handleListWorkflows(ctx context.Context, req *mcp.Call
 }
 
 func (s *WorkspaceServer) handleCreateWorkflow(ctx context.Context, req *mcp.CallToolRequest, args CreateWorkflowParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createWorkflow", 0)
 	res, err := s.crud.CreateWorkflow(ctx, entity.CreateWorkflowRequest{
 		UserID:       getUserID(ctx),
 		Name:         args.Name,
@@ -190,6 +193,7 @@ func (s *WorkspaceServer) handleCreateWorkflow(ctx context.Context, req *mcp.Cal
 }
 
 func (s *WorkspaceServer) handleGetWorkflow(ctx context.Context, req *mcp.CallToolRequest, args GetWorkflowParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getWorkflow", 0)
 	res, err := s.crud.GetWorkflow(ctx, entity.GetWorkflowRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.WorkflowID),
@@ -201,6 +205,7 @@ func (s *WorkspaceServer) handleGetWorkflow(ctx context.Context, req *mcp.CallTo
 }
 
 func (s *WorkspaceServer) handleUpdateWorkflow(ctx context.Context, req *mcp.CallToolRequest, args UpdateWorkflowParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateWorkflow", 0)
 	update := entity.UpdateWorkflowRequest{
 		UserID:      getUserID(ctx),
 		ID:          parseID(args.WorkflowID),
@@ -225,6 +230,7 @@ func (s *WorkspaceServer) handleUpdateWorkflow(ctx context.Context, req *mcp.Cal
 }
 
 func (s *WorkspaceServer) handleDeleteWorkflow(ctx context.Context, req *mcp.CallToolRequest, args DeleteWorkflowParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "deleteWorkflow", 0)
 	if err := s.crud.DeleteWorkflow(ctx, entity.DeleteWorkflowRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.WorkflowID),
@@ -235,6 +241,7 @@ func (s *WorkspaceServer) handleDeleteWorkflow(ctx context.Context, req *mcp.Cal
 }
 
 func (s *WorkspaceServer) handleCreateWorkflowStep(ctx context.Context, req *mcp.CallToolRequest, args CreateWorkflowStepParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createWorkflowStep", parseID(args.WorkspaceID))
 	res, err := s.crud.CreateWorkflowStep(ctx, entity.CreateWorkflowStepRequest{
 		UserID:           getUserID(ctx),
 		WorkflowID:       parseID(args.WorkflowID),
@@ -253,6 +260,7 @@ func (s *WorkspaceServer) handleCreateWorkflowStep(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleListWorkflowSteps(ctx context.Context, req *mcp.CallToolRequest, args ListWorkflowStepsParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listWorkflowSteps", 0)
 	res, err := s.crud.ListWorkflowSteps(ctx, entity.ListWorkflowStepsRequest{
 		UserID:     getUserID(ctx),
 		WorkflowID: parseID(args.WorkflowID),
@@ -264,6 +272,7 @@ func (s *WorkspaceServer) handleListWorkflowSteps(ctx context.Context, req *mcp.
 }
 
 func (s *WorkspaceServer) handleDeleteWorkflowStep(ctx context.Context, req *mcp.CallToolRequest, args DeleteWorkflowStepParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "deleteWorkflowStep", 0)
 	if err := s.crud.DeleteWorkflowStep(ctx, entity.DeleteWorkflowStepRequest{
 		UserID:     getUserID(ctx),
 		WorkflowID: parseID(args.WorkflowID),
@@ -275,6 +284,7 @@ func (s *WorkspaceServer) handleDeleteWorkflowStep(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleListWorkflowTasks(ctx context.Context, req *mcp.CallToolRequest, args ListWorkflowTasksParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listWorkflowTasks", 0)
 	res, err := s.crud.ListTasksFromWorkflow(ctx, entity.ListTasksFromWorkflowRequest{
 		UserID:     getUserID(ctx),
 		WorkflowID: parseID(args.WorkflowID),
@@ -286,6 +296,7 @@ func (s *WorkspaceServer) handleListWorkflowTasks(ctx context.Context, req *mcp.
 }
 
 func (s *WorkspaceServer) handleGetWorkflowText(ctx context.Context, req *mcp.CallToolRequest, args GetWorkflowTextParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getWorkflowText", 0)
 	res, err := s.crud.GetWorkflowText(ctx, entity.GetWorkflowTextRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.WorkflowID),
@@ -300,6 +311,7 @@ func (s *WorkspaceServer) handleGetWorkflowText(ctx context.Context, req *mcp.Ca
 }
 
 func (s *WorkspaceServer) handleReplaceWorkflowFromText(ctx context.Context, req *mcp.CallToolRequest, args ReplaceWorkflowFromTextParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "replaceWorkflowFromText", 0)
 	res, err := s.crud.ReplaceWorkflowFromText(ctx, entity.ReplaceWorkflowFromTextRequest{
 		UserID: getUserID(ctx),
 		ID:     parseID(args.WorkflowID),

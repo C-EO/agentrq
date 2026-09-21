@@ -9,9 +9,11 @@ import (
 	"net/http"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
@@ -21,10 +23,11 @@ type WorkspaceServer struct {
 	streamServer *mcp.StreamableHTTPHandler
 	crud         crud.Controller
 	baseURL      string
+	pubsub       pubsub.Service
 }
 
 // NewServer creates a single MCP server instance with tools that span all user-accessible endpoints.
-func NewServer(crudCtrl crud.Controller, baseURL string) *WorkspaceServer {
+func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Service) *WorkspaceServer {
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "agentrq",
 		Version: "1.0.0",
@@ -45,10 +48,36 @@ func NewServer(crudCtrl crud.Controller, baseURL string) *WorkspaceServer {
 		streamServer: streamHandler,
 		crud:         crudCtrl,
 		baseURL:      baseURL,
+		pubsub:       pubsubSvc,
 	}
 
 	ws.registerTools()
 	return ws
+}
+
+// emitTelemetry reports a tool call or a resource/prompt read on
+// PubSubTopicMCP, the same topic and event shape the per-workspace MCP server
+// uses (see controller/mcp/event.go) — the telemetry controller's recordMCP
+// switch doesn't care which server an MCPEvent came from.
+//
+// workspaceID is 0 when the call has no single workspace to attribute to
+// (listWorkspaces, an account-wide machine tool, a resource or prompt read),
+// mirroring the machine-action convention in controller/telemetry.
+func (s *WorkspaceServer) emitTelemetry(ctx context.Context, action mcpevent.Action, toolOrMethod string, workspaceID int64) {
+	if s.pubsub == nil {
+		return
+	}
+	s.pubsub.Publish(ctx, pubsub.PublishRequest{
+		PubSubID: entity.PubSubTopicMCP,
+		Event: mcpevent.MCPEvent{
+			Action:      action,
+			WorkspaceID: workspaceID,
+			UserID:      monoflake.IDFromBase62(getUserID(ctx)).Int64(),
+			ToolName:    toolOrMethod,
+			Method:      toolOrMethod,
+			Actor:       2, // Agent — coremcp is reached only from a workspace's own agent session.
+		},
+	})
 }
 
 func (s *WorkspaceServer) Handler() *mcp.StreamableHTTPHandler {
@@ -289,6 +318,7 @@ func (s *WorkspaceServer) registerTools() {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) handleListWorkspaces(ctx context.Context, req *mcp.CallToolRequest, args ListWorkspacesParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listWorkspaces", 0)
 	userID := getUserID(ctx)
 	if userID == "" {
 		return errorResponse(context.Canceled), nil, nil
@@ -307,6 +337,7 @@ func (s *WorkspaceServer) handleListWorkspaces(ctx context.Context, req *mcp.Cal
 }
 
 func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.CallToolRequest, args CreateWorkspaceParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createWorkspace", 0)
 	userID := getUserID(ctx)
 	workspace := entity.Workspace{
 		Name: args.Name,
@@ -339,6 +370,7 @@ func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.Ca
 }
 
 func (s *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, args GetWorkspaceParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getWorkspace", parseID(args.ID))
 	userID := getUserID(ctx)
 	res, err := s.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
 		UserID: userID,
@@ -353,6 +385,7 @@ func (s *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallT
 }
 
 func (s *WorkspaceServer) handleUpdateWorkspace(ctx context.Context, req *mcp.CallToolRequest, args UpdateWorkspaceParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateWorkspace", parseID(args.ID))
 	userID := getUserID(ctx)
 	existing, err := s.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
 		UserID: userID,
@@ -393,6 +426,7 @@ func (s *WorkspaceServer) handleUpdateWorkspace(ctx context.Context, req *mcp.Ca
 }
 
 func (s *WorkspaceServer) handleGetWorkspaceStats(ctx context.Context, req *mcp.CallToolRequest, args GetWorkspaceStatsParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getWorkspaceStats", parseID(args.ID))
 	userID := getUserID(ctx)
 	rng := args.Range
 	if rng == "" {
@@ -414,6 +448,7 @@ func (s *WorkspaceServer) handleGetWorkspaceStats(ctx context.Context, req *mcp.
 }
 
 func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallToolRequest, args ListTasksParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listTasks", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 
 	var statuses []string
@@ -447,6 +482,7 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 }
 
 func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallToolRequest, args ListAllTasksParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listAllTasks", 0)
 	userID := getUserID(ctx)
 
 	var statuses []string
@@ -480,6 +516,7 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 }
 
 func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, args CreateTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	assignee := args.Assignee
 	if assignee == "" {
@@ -508,6 +545,7 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 }
 
 func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRequest, args GetTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.GetTask(ctx, entity.GetTaskRequest{
 		UserID:      userID,
@@ -523,6 +561,7 @@ func (s *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRe
 }
 
 func (s *WorkspaceServer) handleRespondToTask(ctx context.Context, req *mcp.CallToolRequest, args RespondToTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "respondToTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.RespondToTask(ctx, entity.RespondToTaskRequest{
 		UserID:      userID,
@@ -540,6 +579,7 @@ func (s *WorkspaceServer) handleRespondToTask(ctx context.Context, req *mcp.Call
 }
 
 func (s *WorkspaceServer) handleReplyToTask(ctx context.Context, req *mcp.CallToolRequest, args ReplyToTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "replyToTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.ReplyToTask(ctx, entity.ReplyToTaskRequest{
 		UserID:      userID,
@@ -556,6 +596,7 @@ func (s *WorkspaceServer) handleReplyToTask(ctx context.Context, req *mcp.CallTo
 }
 
 func (s *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskStatusParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateTaskStatus", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateTaskStatus(ctx, entity.UpdateTaskStatusRequest{
 		UserID:      userID,
@@ -572,6 +613,7 @@ func (s *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.C
 }
 
 func (s *WorkspaceServer) handleUpdateTaskOrder(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskOrderParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateTaskOrder", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateTaskOrder(ctx, entity.UpdateTaskOrderRequest{
 		UserID:      userID,
@@ -588,6 +630,7 @@ func (s *WorkspaceServer) handleUpdateTaskOrder(ctx context.Context, req *mcp.Ca
 }
 
 func (s *WorkspaceServer) handleUpdateTaskAssignee(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskAssigneeParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateTaskAssignee", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateTaskAssignee(ctx, entity.UpdateTaskAssigneeRequest{
 		UserID:      userID,
@@ -604,6 +647,7 @@ func (s *WorkspaceServer) handleUpdateTaskAssignee(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleUpdateTaskAllowAll(ctx context.Context, req *mcp.CallToolRequest, args UpdateTaskAllowAllParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateTaskAllowAll", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateTaskAllowAllCommands(ctx, entity.UpdateTaskAllowAllCommandsRequest{
 		UserID:           userID,
@@ -620,6 +664,7 @@ func (s *WorkspaceServer) handleUpdateTaskAllowAll(ctx context.Context, req *mcp
 }
 
 func (s *WorkspaceServer) handleUpdateScheduledTask(ctx context.Context, req *mcp.CallToolRequest, args UpdateScheduledTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "updateScheduledTask", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.UpdateScheduledTask(ctx, entity.UpdateScheduledTaskRequest{
 		UserID:       userID,
@@ -638,6 +683,7 @@ func (s *WorkspaceServer) handleUpdateScheduledTask(ctx context.Context, req *mc
 }
 
 func (s *WorkspaceServer) handleDeleteTask(ctx context.Context, req *mcp.CallToolRequest, args DeleteTaskParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "deleteTask", parseID(args.WorkspaceID))
 	if _, err := s.crud.DeleteTask(ctx, entity.DeleteTaskRequest{
 		UserID:      getUserID(ctx),
 		WorkspaceID: parseID(args.WorkspaceID),
@@ -649,6 +695,7 @@ func (s *WorkspaceServer) handleDeleteTask(ctx context.Context, req *mcp.CallToo
 }
 
 func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, args GetAttachmentParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getAttachment", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.GetAttachment(ctx, entity.GetAttachmentRequest{
 		UserID:       userID,
@@ -663,6 +710,7 @@ func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Call
 }
 
 func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallToolRequest, args ListMemoriesParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listMemories", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.ListMemories(ctx, entity.ListMemoriesRequest{
 		UserID:      userID,
@@ -677,6 +725,7 @@ func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallT
 }
 
 func (s *WorkspaceServer) handleGetMemory(ctx context.Context, req *mcp.CallToolRequest, args GetMemoryParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getMemory", parseID(args.WorkspaceID))
 	userID := getUserID(ctx)
 	res, err := s.crud.GetMemory(ctx, entity.GetMemoryRequest{
 		UserID:      userID,

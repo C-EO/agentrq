@@ -6,6 +6,7 @@ package coremcp
 import (
 	"context"
 
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -45,6 +46,7 @@ func (s *WorkspaceServer) registerResources() {
 }
 
 func (s *WorkspaceServer) readNewWorkspaceGuide(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:new-workspace-guide", 0)
 	text := "# Creating a new workspace\n\n" +
 		"A workspace is where a single agent runs, with its own tasks and memory.\n\n" +
 		"1. Call **listWorkspaces** first — check one for the same purpose doesn't already exist.\n" +
@@ -62,6 +64,7 @@ func (s *WorkspaceServer) readNewWorkspaceGuide(ctx context.Context, req *mcp.Re
 }
 
 func (s *WorkspaceServer) readAgentrqdSetupGuide(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:agentrqd-setup-guide", 0)
 	server := s.baseURL
 	if server == "" {
 		server = "<server>"

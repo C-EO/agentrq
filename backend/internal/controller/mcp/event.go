@@ -11,6 +11,9 @@ type Action int
 
 const (
 	ActionMCPToolCall Action = iota + 1
+	// A protocol method that isn't a tool call — a resource read or a prompt
+	// get. Kept separate from ActionMCPToolCall so a supervisor agent reading a
+	// guide resource doesn't inflate the same count as it calling a tool.
 	ActionMCPMethodCall
 	ActionMCPNotification
 	ActionMCPConnect

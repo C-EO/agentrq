@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -26,6 +27,7 @@ type Params struct {
 	BaseURL string
 	Domain  string
 	Mux     *http.ServeMux
+	PubSub  pubsub.Service
 }
 
 type Handler interface{}
@@ -67,7 +69,7 @@ func New(p Params) (Handler, error) {
 	}
 
 	h := &handler{
-		coremcpServer: NewServer(p.Crud, p.BaseURL),
+		coremcpServer: NewServer(p.Crud, p.BaseURL, p.PubSub),
 		tokenSvc:      p.TokenSvc,
 		cimd:          cimd,
 		baseURL:       p.BaseURL,

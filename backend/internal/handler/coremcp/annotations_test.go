@@ -18,7 +18,7 @@ import (
 // none is indistinguishable from a read.
 func listedTools(t *testing.T) []*mcp.Tool {
 	t.Helper()
-	srv := NewServer(&mockEventCrud{}, "https://agentrq.example")
+	srv := NewServer(&mockEventCrud{}, "https://agentrq.example", nil)
 
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

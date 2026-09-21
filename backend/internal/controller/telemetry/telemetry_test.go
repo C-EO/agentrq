@@ -127,12 +127,20 @@ func TestTelemetryController(t *testing.T) {
 			Actor:       uint8(entity.ActorAgent),
 		}
 
+		// Send MCP Method Call (a resource or prompt read, e.g. from coremcp)
+		mcpChan <- mcp.MCPEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      mcp.ActionMCPMethodCall,
+			Actor:       uint8(entity.ActorAgent),
+		}
+
 		time.Sleep(300 * time.Millisecond)
 
 		var count int64
 		db.Model(&model.Telemetry{}).Count(&count)
-		if count != 8 {
-			t.Errorf("expected 8 telemetry records, got %d", count)
+		if count != 9 {
+			t.Errorf("expected 9 telemetry records, got %d", count)
 		}
 
 		var records []model.Telemetry
@@ -142,6 +150,7 @@ func TestTelemetryController(t *testing.T) {
 		denyFound := false
 		connectFound := false
 		clearFound := false
+		methodCallFound := false
 		for _, r := range records {
 			if r.Action == model.ActionIDMCPPermissionManual {
 				manualFound = true
@@ -158,6 +167,9 @@ func TestTelemetryController(t *testing.T) {
 			if r.Action == model.ActionIDMCPClearContext {
 				clearFound = true
 			}
+			if r.Action == model.ActionIDMCPMethodCall {
+				methodCallFound = true
+			}
 		}
 		if !manualFound {
 			t.Errorf("expected model.ActionIDMCPPermissionManual record, but not found")
@@ -173,6 +185,9 @@ func TestTelemetryController(t *testing.T) {
 		}
 		if !clearFound {
 			t.Errorf("expected model.ActionIDMCPClearContext record, but not found")
+		}
+		if !methodCallFound {
+			t.Errorf("expected model.ActionIDMCPMethodCall record, but not found")
 		}
 	})
 

@@ -557,7 +557,7 @@ func TestEventToolsAreRegistered(t *testing.T) {
 	// NewServer is what an agent actually talks to, and it is also where the
 	// SDK builds each tool's input schema from its params struct — a malformed
 	// one fails here rather than at the first call.
-	srv := NewServer(&mockEventCrud{}, "https://agentrq.example")
+	srv := NewServer(&mockEventCrud{}, "https://agentrq.example", nil)
 
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

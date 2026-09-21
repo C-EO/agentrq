@@ -27,6 +27,11 @@ tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an
 own test (list it, read/get it) the way `resources_test.go`/`prompts_test.go`
 do; nothing else needs to be told it exists.
 
+**A new tool, resource or prompt here needs a telemetry line too** — see
+[telemetry.md](telemetry.md)'s MCP section; `emitTelemetry` is on
+`WorkspaceServer` in `server.go`, first line of the handler, same as the
+per-workspace server.
+
 **Don't put install/enrol prose in a resource.** The agentrqd install steps
 already live in three places kept in sync by hand — see
 [machines-and-daemon.md](machines-and-daemon.md), "Installation is answered in
