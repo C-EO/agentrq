@@ -92,6 +92,14 @@ type Repository interface {
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
 	GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error)
+
+	// Telemetry aggregation — hourly/daily/monthly rollups (see
+	// model.HourlyTelemetry) and the claim row that stops two backend
+	// instances aggregating the same period twice.
+	ClaimTelemetryAggregation(ctx context.Context, aggregationType, periodKey string) (bool, error)
+	AggregateHourlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
+	AggregateDailyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
+	AggregateMonthlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
@@ -826,6 +834,126 @@ func (r *repository) GetTelemetryActionCounts(ctx context.Context) (map[uint8]in
 		m[rr.Action] = rr.Count
 	}
 	return m, err
+}
+
+// ClaimTelemetryAggregation is the distributed lock for the telemetry
+// aggregator: it inserts the claim row and reports whether *this* call
+// created it. With several backend instances polling the same schedule, only
+// the one whose INSERT wins the unique index gets true; every other sees
+// RowsAffected == 0 from the ON CONFLICT DO NOTHING and skips the run.
+func (r *repository) ClaimTelemetryAggregation(ctx context.Context, aggregationType, periodKey string) (bool, error) {
+	result := r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.TelemetryAggregation{
+		CreatedAt:       time.Now(),
+		AggregationType: aggregationType,
+		PeriodKey:       periodKey,
+	})
+	return result.RowsAffected > 0, result.Error
+}
+
+// telemetryCounts groups source rows in [periodStart, periodEnd) by the
+// dimensions every rollup shares. table names the model to scan ("telemetries"
+// for the hourly source, "hourly_telemetries" for the daily source, and so
+// on), which is safe to interpolate because it is always one of our own
+// constant table names, never caller input.
+func (r *repository) telemetryCounts(ctx context.Context, table string, periodStart, periodEnd int64) ([]entity.TelemetryCount, error) {
+	var counts []entity.TelemetryCount
+	err := r.conn(ctx).Table(table).
+		Select("user_id, workspace_id, action, sub_action_id, actor, sum(count) as count").
+		Where("period_start >= ? AND period_start < ?", periodStart, periodEnd).
+		Group("user_id, workspace_id, action, sub_action_id, actor").
+		Scan(&counts).Error
+	return counts, err
+}
+
+// AggregateHourlyTelemetry rolls the raw telemetries table up into one
+// hourly_telemetries row per (user, workspace, action, sub-action, actor) for
+// [periodStart, periodEnd) — normally one complete hour. OnConflict DoNothing
+// makes a re-run over the same period a no-op rather than doubling counts;
+// ClaimTelemetryAggregation is what stops that re-run from happening at all
+// under normal operation.
+func (r *repository) AggregateHourlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error {
+	var counts []entity.TelemetryCount
+	err := r.conn(ctx).Model(&model.Telemetry{}).
+		Select("user_id, workspace_id, action, sub_action_id, actor, count(*) as count").
+		Where("occurred_at >= ? AND occurred_at < ?", periodStart, periodEnd).
+		Group("user_id, workspace_id, action, sub_action_id, actor").
+		Scan(&counts).Error
+	if err != nil || len(counts) == 0 {
+		return err
+	}
+
+	rows := make([]model.HourlyTelemetry, len(counts))
+	for i, c := range counts {
+		rows[i] = model.HourlyTelemetry{
+			PeriodStart: periodStart,
+			UserID:      c.UserID,
+			WorkspaceID: c.WorkspaceID,
+			Action:      c.Action,
+			SubActionID: c.SubActionID,
+			Actor:       c.Actor,
+			Count:       c.Count,
+		}
+	}
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// AggregateDailyTelemetry rolls hourly_telemetries up into one
+// daily_telemetries row per dimension set for [periodStart, periodEnd) —
+// normally one complete day — so the raw event log is never rescanned for a
+// day-or-wider report.
+func (r *repository) AggregateDailyTelemetry(ctx context.Context, periodStart, periodEnd int64) error {
+	counts, err := r.telemetryCounts(ctx, "hourly_telemetries", periodStart, periodEnd)
+	if err != nil || len(counts) == 0 {
+		return err
+	}
+
+	rows := make([]model.DailyTelemetry, len(counts))
+	for i, c := range counts {
+		rows[i] = model.DailyTelemetry{
+			PeriodStart: periodStart,
+			UserID:      c.UserID,
+			WorkspaceID: c.WorkspaceID,
+			Action:      c.Action,
+			SubActionID: c.SubActionID,
+			Actor:       c.Actor,
+			Count:       c.Count,
+		}
+	}
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// AggregateMonthlyTelemetry rolls daily_telemetries up into
+// monthly_telemetries for [periodStart, periodEnd) — periodStart is the
+// month's first instant and periodEnd is "today", so the sum only ever covers
+// complete days. Unlike the hourly/daily rollups this one runs once a day for
+// as long as the month is open, so the row for a given dimension set is
+// upserted (its count replaced with the freshly summed total) rather than
+// inserted once.
+func (r *repository) AggregateMonthlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error {
+	counts, err := r.telemetryCounts(ctx, "daily_telemetries", periodStart, periodEnd)
+	if err != nil || len(counts) == 0 {
+		return err
+	}
+
+	rows := make([]model.MonthlyTelemetry, len(counts))
+	for i, c := range counts {
+		rows[i] = model.MonthlyTelemetry{
+			PeriodStart: periodStart,
+			UserID:      c.UserID,
+			WorkspaceID: c.WorkspaceID,
+			Action:      c.Action,
+			SubActionID: c.SubActionID,
+			Actor:       c.Actor,
+			Count:       c.Count,
+		}
+	}
+	return r.conn(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "period_start"}, {Name: "user_id"}, {Name: "workspace_id"},
+			{Name: "action"}, {Name: "sub_action_id"}, {Name: "actor"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{"count"}),
+	}).Create(&rows).Error
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────

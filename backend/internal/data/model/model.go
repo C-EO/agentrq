@@ -235,6 +235,65 @@ type (
 		SubActionID uint8 `gorm:"index:idx_telemetry_sub_action_id"`
 	}
 
+	// HourlyTelemetry, DailyTelemetry and MonthlyTelemetry are rollups of
+	// Telemetry, one row per (period, user, workspace, action, sub-action,
+	// actor) so a stats query never has to scan the raw event log for a wide
+	// date range. Like Telemetry, they carry no primary key — the unique
+	// index below is both the dedup key and the upsert target, and nothing
+	// ever references a row by id.
+	//
+	// PeriodStart is the bucket's start (UTC, unix seconds): the top of the
+	// hour, midnight, or the first of the month. DailyTelemetry is built by
+	// summing HourlyTelemetry, and MonthlyTelemetry by summing DailyTelemetry
+	// — neither re-scans the raw table — see internal/service/telemetryaggregator.
+
+	HourlyTelemetry struct {
+		PeriodStart int64 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:1"`
+		UserID      int64 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:2"`
+		WorkspaceID int64 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:3;index:idx_hourly_telemetries_workspace_id"`
+		Action      uint8 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:4"`
+		SubActionID uint8 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:5"`
+		Actor       uint8 `gorm:"uniqueIndex:uk_hourly_telemetries_dims,priority:6"`
+		Count       int64
+	}
+
+	DailyTelemetry struct {
+		PeriodStart int64 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:1"`
+		UserID      int64 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:2"`
+		WorkspaceID int64 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:3;index:idx_daily_telemetries_workspace_id"`
+		Action      uint8 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:4"`
+		SubActionID uint8 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:5"`
+		Actor       uint8 `gorm:"uniqueIndex:uk_daily_telemetries_dims,priority:6"`
+		Count       int64
+	}
+
+	// MonthlyTelemetry is recomputed every day for the current, still-open
+	// month (see the aggregator note above), so its rows are upserted rather
+	// than inserted once: the unique index below is the ON CONFLICT target.
+	MonthlyTelemetry struct {
+		PeriodStart int64 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:1"`
+		UserID      int64 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:2"`
+		WorkspaceID int64 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:3;index:idx_monthly_telemetries_workspace_id"`
+		Action      uint8 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:4"`
+		SubActionID uint8 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:5"`
+		Actor       uint8 `gorm:"uniqueIndex:uk_monthly_telemetries_dims,priority:6"`
+		Count       int64
+	}
+
+	// TelemetryAggregation claims one aggregation run so that only one
+	// backend instance performs it even with several instances polling the
+	// same schedule: the first INSERT (see ClaimTelemetryAggregation) wins
+	// the unique index below, every other instance sees zero rows affected
+	// and skips. AggregationType is "hourly"/"daily"/"monthly"; PeriodKey
+	// identifies which run — the hour or day being aggregated for hourly and
+	// daily, and the day it ran (not the month) for monthly, since monthly
+	// aggregation re-runs once per day. No row is ever read back by id.
+	TelemetryAggregation struct {
+		CreatedAt       time.Time
+		AggregationType string `gorm:"type:varchar(16);uniqueIndex:uk_telemetry_aggregations_type_period,priority:1"`
+		PeriodKey       string `gorm:"type:varchar(32);uniqueIndex:uk_telemetry_aggregations_type_period,priority:2"`
+	}
+
 	// MCPClient is a lookup table of distinct MCP client identities seen on
 	// requests, keyed by xxhash64(name+"@"+version) reinterpreted as int64 so
 	// Telemetry rows can reference "which agent" (Claude Code, Codex, ...)

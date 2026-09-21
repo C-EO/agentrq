@@ -440,6 +440,18 @@ type (
 		ScheduledTasks int64 `json:"scheduledTasks"`
 	}
 
+	// TelemetryCount is one grouped row out of a telemetry rollup source
+	// query — never serialized over the API, so it carries no json tags.
+	// See internal/service/telemetryaggregator.
+	TelemetryCount struct {
+		UserID      int64
+		WorkspaceID int64
+		Action      uint8
+		SubActionID uint8
+		Actor       uint8
+		Count       int64
+	}
+
 	GetWorkspaceTaskCountsRequest struct {
 		WorkspaceID int64
 		UserID      string
