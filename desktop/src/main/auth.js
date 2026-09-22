@@ -29,6 +29,19 @@ const OAUTH_LOGIN_PATTERN = new RegExp(`^/api/v1/auth/(${OAUTH_PROVIDERS.join('|
 /** Name of the session cookie the backend sets on a successful login. */
 export const AUTH_COOKIE = 'at'
 
+/** Everything the sign-in round trip touches lives under this path. */
+export const AUTH_PATH_PREFIX = '/api/v1/auth/'
+
+/**
+ * Is this path part of a sign-in?
+ *
+ * Also read by `links.js`, which uses it to keep the one flow that must stay in
+ * the app out of the system browser.
+ */
+export function isAuthPath(pathname) {
+  return String(pathname ?? '').startsWith(AUTH_PATH_PREFIX)
+}
+
 /**
  * Is this the start of an OAuth sign-in?
  *
@@ -58,7 +71,7 @@ export function isOAuthReturn(url, serverUrl) {
   }
 
   if (target.origin !== server.origin) return false
-  return !target.pathname.startsWith('/api/v1/auth/')
+  return !isAuthPath(target.pathname)
 }
 
 /**

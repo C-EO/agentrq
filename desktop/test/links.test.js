@@ -3,10 +3,11 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { LinkTarget, classifyLink, linkWindowBounds } from '../src/main/links.js'
+import { LinkTarget, classifyLink } from '../src/main/links.js'
 
 const APP_ORIGIN = 'app://agentrq'
-const classify = (url) => classifyLink(url, { appOrigin: APP_ORIGIN })
+const SERVER_URL = 'https://app.agentrq.com'
+const classify = (url) => classifyLink(url, { appOrigin: APP_ORIGIN, serverUrl: SERVER_URL })
 
 describe('classifyLink', () => {
   it('leaves the app to its own router', () => {
@@ -20,12 +21,47 @@ describe('classifyLink', () => {
     expect(classify('app://elsewhere/tasks/123')).toBe(LinkTarget.Blocked)
   })
 
-  it('opens web content in a window', () => {
+  it('sends web content to the browser', () => {
     // The links the interface actually renders: docs, terms, privacy, and the
     // URL attached to a message.
-    expect(classify('https://agentrq.com/docs')).toBe(LinkTarget.Window)
-    expect(classify('https://agentrq.com/tos')).toBe(LinkTarget.Window)
-    expect(classify('http://192.168.1.10:3000/report')).toBe(LinkTarget.Window)
+    expect(classify('https://agentrq.com/docs')).toBe(LinkTarget.System)
+    expect(classify('https://agentrq.com/tos')).toBe(LinkTarget.System)
+    expect(classify('http://192.168.1.10:3000/report')).toBe(LinkTarget.System)
+  })
+
+  it('keeps signing in to AgentRQ inside the app', () => {
+    // The browser would earn the cookie in its own jar and leave the app
+    // signed out, so this one flow may not leave.
+    expect(classify(`${SERVER_URL}/api/v1/auth/google/login`)).toBe(LinkTarget.SignIn)
+    expect(classify(`${SERVER_URL}/api/v1/auth/github/callback?code=abc`)).toBe(LinkTarget.SignIn)
+  })
+
+  it('does not treat an ordinary page on the server as signing in', () => {
+    expect(classify(`${SERVER_URL}/tasks/123`)).toBe(LinkTarget.System)
+    expect(classify(`${SERVER_URL}/api/v1/workspaces`)).toBe(LinkTarget.System)
+  })
+
+  it('will not keep somebody else’s auth page in the app', () => {
+    // The path alone is not the test: an attacker controls their own paths.
+    expect(classify('https://evil.example/api/v1/auth/google/login')).toBe(LinkTarget.System)
+    expect(classify('http://app.agentrq.com/api/v1/auth/google/login')).toBe(LinkTarget.System)
+    expect(classify('https://app.agentrq.com.evil.example/api/v1/auth/google/login')).toBe(
+      LinkTarget.System
+    )
+  })
+
+  it('has no sign-in exception before a server is chosen', () => {
+    // The connection screen runs with no server configured, and nothing may
+    // claim to be its sign-in.
+    expect(classifyLink(`${SERVER_URL}/api/v1/auth/google/login`, { appOrigin: APP_ORIGIN })).toBe(
+      LinkTarget.System
+    )
+    expect(
+      classifyLink(`${SERVER_URL}/api/v1/auth/google/login`, {
+        appOrigin: APP_ORIGIN,
+        serverUrl: 'not a url',
+      })
+    ).toBe(LinkTarget.System)
   })
 
   it('hands schemes a browser cannot render to the system', () => {
@@ -45,7 +81,7 @@ describe('classifyLink', () => {
 
   it('is not fooled by an unusual spelling of the scheme', () => {
     expect(classify('JavaScript:alert(1)')).toBe(LinkTarget.Blocked)
-    expect(classify('HTTPS://agentrq.com/docs')).toBe(LinkTarget.Window)
+    expect(classify('HTTPS://agentrq.com/docs')).toBe(LinkTarget.System)
   })
 
   it('refuses anything that is not a URL', () => {
@@ -58,30 +94,5 @@ describe('classifyLink', () => {
   it('treats app:// as ordinary when no app origin is given', () => {
     // Without an origin to compare against, nothing may claim to be the app.
     expect(classifyLink('app://agentrq/tasks')).toBe(LinkTarget.Blocked)
-  })
-})
-
-describe('linkWindowBounds', () => {
-  it('follows the main window without copying it exactly', () => {
-    const { width, height } = linkWindowBounds({ width: 1400, height: 1000 })
-    expect(width).toBe(1120)
-    expect(height).toBe(850)
-  })
-
-  it('stays usable beside a very small main window', () => {
-    const { width, height } = linkWindowBounds({ width: 400, height: 300 })
-    expect(width).toBe(640)
-    expect(height).toBe(480)
-  })
-
-  it('stops growing beside a very large one', () => {
-    const { width, height } = linkWindowBounds({ width: 5120, height: 2880 })
-    expect(width).toBe(1200)
-    expect(height).toBe(900)
-  })
-
-  it('has an answer when the parent has no bounds yet', () => {
-    expect(linkWindowBounds(null)).toEqual({ width: 819, height: 653 })
-    expect(linkWindowBounds(undefined)).toEqual({ width: 819, height: 653 })
   })
 })

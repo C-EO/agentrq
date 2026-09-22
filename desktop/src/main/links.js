@@ -4,19 +4,22 @@
 /**
  * Where a link should open.
  *
- * The shell used to hand every link that was not the app itself to the system
- * browser. Reading the docs, the terms, or a URL attached to a message threw
- * the user out of AgentRQ entirely, with nothing to come back to — the PWA
- * opens the same links in a window of its own that can simply be closed, and
- * this is what restores that.
+ * A link out of the app goes to the user's real browser. That is where their
+ * extensions, their bookmarks, their other tabs and their existing sessions are,
+ * and a second Chromium with none of them is not a browser anyone asked for.
  *
- * Not everything belongs in a window, which is why this is a classification
- * rather than a boolean:
+ * The one exception is signing in to AgentRQ, and it is not a preference: the
+ * `at` cookie has to land in *this* profile's jar for the app to become
+ * authenticated. Handed to the system browser, the sign-in would succeed
+ * somewhere the app cannot read, and the app would still be signed out.
+ *
+ * So this is a classification rather than a boolean:
  *
  * - `app://` is the application; the router already handles those in place.
- * - http(s) is web content, and an in-app window can show it.
+ * - An AgentRQ auth URL is the sign-in flow, and stays in the app.
+ * - Everything else on http(s) is the web, and belongs in the browser.
  * - `mailto:`, `tel:` and their siblings address a program that is not a
- *   browser. A BrowserWindow cannot render them, so they go to the OS.
+ *   browser, and go to the OS the same way.
  * - `javascript:`, `data:` and `file:` are never opened from a link at all.
  *   Handing any of those to `shell.openExternal` is the well-worn way for
  *   injected markup in a message body to reach the machine it is running on.
@@ -25,12 +28,14 @@
  * and this decision is the part worth testing.
  */
 
+import { isAuthPath } from './auth.js'
+
 export const LinkTarget = {
   /** The app itself; let the renderer's router handle it. */
   App: 'app',
-  /** Web content, shown in a closable window belonging to the app. */
-  Window: 'window',
-  /** Hand to the operating system: mail client, dialler, and so on. */
+  /** Signing in to AgentRQ; run it in the app, on this profile's session. */
+  SignIn: 'signin',
+  /** Hand to the operating system: browser, mail client, dialler, and so on. */
   System: 'system',
   /** Refuse. */
   Blocked: 'blocked',
@@ -53,11 +58,29 @@ function originOf(url) {
 }
 
 /**
+ * Is this an AgentRQ sign-in on the server this app is connected to?
+ *
+ * The origin has to match as well as the path: `/api/v1/auth/…` on somebody
+ * else's host is a stranger's page, and keeping it in the app would hand it the
+ * profile's cookie jar.
+ */
+function isSignIn(url, serverUrl) {
+  if (!serverUrl) return false
+  let server
+  try {
+    server = new URL(serverUrl)
+  } catch {
+    return false
+  }
+  return originOf(url) === originOf(server) && isAuthPath(url.pathname)
+}
+
+/**
  * @param {string} rawUrl
- * @param {{ appOrigin?: string }} [options]
+ * @param {{ appOrigin?: string, serverUrl?: string }} [options]
  * @returns {typeof LinkTarget[keyof typeof LinkTarget]}
  */
-export function classifyLink(rawUrl, { appOrigin = '' } = {}) {
+export function classifyLink(rawUrl, { appOrigin = '', serverUrl = '' } = {}) {
   let url
   try {
     url = new URL(String(rawUrl ?? ''))
@@ -67,19 +90,9 @@ export function classifyLink(rawUrl, { appOrigin = '' } = {}) {
   }
 
   if (appOrigin && originOf(url) === appOrigin) return LinkTarget.App
-  if (url.protocol === 'http:' || url.protocol === 'https:') return LinkTarget.Window
+  if (url.protocol === 'http:' || url.protocol === 'https:') {
+    return isSignIn(url, serverUrl) ? LinkTarget.SignIn : LinkTarget.System
+  }
   if (SYSTEM_SCHEMES.has(url.protocol)) return LinkTarget.System
   return LinkTarget.Blocked
-}
-
-/**
- * Size for a link window, derived from the parent so the result is usable on a
- * laptop and not comically small beside a large main window.
- *
- * @param {{ width: number, height: number } | null | undefined} parentBounds
- */
-export function linkWindowBounds(parentBounds) {
-  const width = Math.round(Math.min(Math.max((parentBounds?.width ?? 1024) * 0.8, 640), 1200))
-  const height = Math.round(Math.min(Math.max((parentBounds?.height ?? 768) * 0.85, 480), 900))
-  return { width, height }
 }
