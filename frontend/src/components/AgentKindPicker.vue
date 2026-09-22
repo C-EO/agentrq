@@ -36,10 +36,14 @@ const description = computed(() => KINDS.find((k) => k.id === props.modelValue)?
     <p :id="`${idPrefix}-label`" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">
       {{ label }}
     </p>
+    <!-- `max-w-full` here and `min-w-0` on the options are load-bearing: an
+         inline-flex is otherwise never narrower than its options want, so in a
+         container too small for it — a narrow card, a phone — it does not
+         shrink, it spills through whatever padding is around it. -->
     <div
       role="radiogroup"
       :aria-labelledby="`${idPrefix}-label`"
-      class="inline-flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg"
+      class="inline-flex max-w-full p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg"
     >
       <button
         v-for="k in KINDS"
@@ -54,7 +58,7 @@ const description = computed(() => KINDS.find((k) => k.id === props.modelValue)?
             ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm'
             : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'
         "
-        class="px-6 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all"
+        class="min-w-0 px-6 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all"
       >
         {{ k.label }}
       </button>
