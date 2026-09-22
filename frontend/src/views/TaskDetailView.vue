@@ -499,20 +499,26 @@
         </div>
 
         <!-- Human message — right aligned -->
-        <div v-else class="group flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-full md:max-w-[90%]" :class="m._pending ? 'opacity-80' : ''">
+        <div v-else class="group flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-full md:max-w-[90%]" :class="m._pending || m._queued ? 'opacity-80' : ''">
           <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center shrink-0 mt-0.5 overflow-hidden">
              <svg class="w-4 h-4 text-gray-600 dark:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
           </div>
           <div class="flex flex-col items-end min-w-0 max-w-full">
              <div class="text-gray-900 dark:text-zinc-100 border rounded-sm p-3.5 shadow-sm min-w-0 max-w-full"
-                  :class="m._pending ? 'bg-gray-100 dark:bg-zinc-800/60 border-dashed border-gray-300 dark:border-zinc-600' : 'bg-gray-200 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700'">
+                  :class="m._pending || m._queued ? 'bg-gray-100 dark:bg-zinc-800/60 border-dashed border-gray-300 dark:border-zinc-600' : 'bg-gray-200 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700'">
                <div class="flex items-center justify-between mb-1.5">
                  <span v-if="m._pending" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right flex items-center gap-1.5">
                    <span class="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white animate-pulse shrink-0"></span>
                    Sending in {{ m._secondsLeft }}s&hellip;
                  </span>
+                 <!-- Says what it is waiting for, not just that it is waiting:
+                      a message parked with no stated end looks lost. -->
+                 <span v-else-if="m._queued" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right flex items-center gap-1.5">
+                   <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500 shrink-0"></span>
+                   Queued · sends when the agent finishes
+                 </span>
                  <span v-else class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
-                 <div v-if="!m._pending" class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                 <div v-if="!m._pending && !m._queued" class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
                    <button type="button" @click.stop="toggleMessageRender(m.id)"
                            :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                            class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -523,13 +529,33 @@
                    </button>
                  </div>
                </div>
-               <div v-if="m._pending" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <!-- A queued message is edited in place. It has not been sent,
+                    so this is a rewrite rather than a correction, and the
+                    bubble is where the message already is. -->
+               <textarea v-if="m._queued && editingQueuedId === m._queuedId"
+                         v-model="editingQueuedText"
+                         rows="3"
+                         dir="auto"
+                         class="w-full sm:min-w-[340px] text-[13px] font-medium leading-relaxed bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white resize-none custom-scrollbar"></textarea>
+               <div v-else-if="m._pending || m._queued" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
                <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
                <div v-if="m._pending" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
                  <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
                  <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+               </div>
+               <!-- Edit / Delete on a queued message. No "send now": posting it
+                    mid-turn is exactly what the queue exists to prevent. -->
+               <div v-else-if="m._queued" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
+                 <template v-if="editingQueuedId === m._queuedId">
+                   <button type="button" @click="cancelEditingQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
+                   <button type="button" @click="saveEditedQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Save</button>
+                 </template>
+                 <template v-else>
+                   <button type="button" @click="discardQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Delete</button>
+                   <button type="button" @click="startEditingQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Edit</button>
+                 </template>
                </div>
                <!-- Attachments on human message -->
                <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-300 dark:border-zinc-600 justify-end">
@@ -610,8 +636,8 @@
             @keydown.ctrl.enter="submitReply"
             @keydown="onComposerKeydown"
             rows="1"
-            :disabled="offline || composerLocked || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-            :placeholder="offline ? 'Offline — reconnect to reply' : composerLocked ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
+            :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+            :placeholder="offline ? 'Offline — reconnect to reply' : agentWorking ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
             class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
           ></textarea>
 
@@ -620,7 +646,7 @@
             <!-- Left actions (Attachment paperclip & Mode info badge) -->
             <div class="flex items-center gap-2">
               <button type="button" @click="$refs.fileInput.click()"
-                      :disabled="composerLocked || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+                      :disabled="!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending'"
                       class="h-6 w-6 rounded-sm text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-105 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center disabled:opacity-30"
                       title="Attach files">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -629,7 +655,7 @@
               </button>
               <!-- Speech-to-Text Mic -->
               <button v-if="sttSupported" type="button" @click="sttToggle"
-                      :disabled="composerLocked || sttTranscribing || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+                      :disabled="sttTranscribing || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
                       @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoading ? `Loading model... ${sttProgress}%` : 'Transcribing...') : 'Voice input', 'top')"
                       @mouseleave="tooltipStore.hide()"
                       :class="[
@@ -676,21 +702,19 @@
               </div>
             </div>
 
-            <!-- Right action: one button, which is Stop while the agent is
-                 working and Send the rest of the time.
+            <!-- Right actions: Stop, while the agent is working, and Send,
+                 always.
 
-                 One rather than two, because they are not both useful at once.
-                 The ACP gateway does not interrupt — a message sent mid-turn is
-                 queued behind it rather than reaching the agent — so a Send
-                 offered here would look like a way to redirect the agent and be
-                 a way to talk to it after it has finished. The stop is the only
-                 thing that acts now, so it is the only thing offered.
+                 Both, because both now do something. The ACP gateway does not
+                 interrupt — a message posted mid-turn is chained behind it
+                 rather than read — so Send holds the message in the browser
+                 instead of posting it, and the queue goes out when the turn
+                 ends. Stop is still the only thing that acts on the agent now.
 
                  Stopping travels over a notification only the ACP gateway acts
-                 on, which is why this never appears for Claude Code speaking
-                 MCP directly: there, Send keeps working, because there is
-                 nothing to stop and taking it away would leave no way to say
-                 anything at all.
+                 on, which is why it never appears for Claude Code speaking MCP
+                 directly: there a turn is not a thing that can be stopped, and
+                 Send posts immediately as it always has.
 
                  type="button" on the stop is load-bearing — this sits inside
                  the reply form, and a button without it submits the form.
@@ -710,11 +734,10 @@
               </button>
 
               <!-- Right circular send button -->
-              <button v-else
-                      type="submit"
+              <button type="submit"
+                      :title="agentWorking ? 'Queue this message until the agent finishes' : 'Send Message'"
                       :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
-                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
-                      title="Send Message">
+                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
                 </svg>
@@ -729,12 +752,12 @@
              <p class="text-[10px] text-red-700 dark:text-red-400 font-bold">Agent Offline. Messages cannot be delivered.</p>
         </div>
 
-        <!-- Said rather than left to the greyed-out box: an input that stops
-             accepting text without explaining itself reads as a broken page,
-             and the explanation is also the instruction. -->
+        <!-- Said rather than left for someone to work out: a Send that does
+             not send needs to say where the message went, and the queue is
+             only trustworthy if its rule is stated. -->
         <div v-else-if="agentWorking" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
              <span class="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-zinc-500 animate-pulse shrink-0"></span>
-             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Anything sent now waits until it finishes — press stop to interrupt it.</p>
+             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Messages are queued here — editable until the turn ends, then sent together. Press stop to interrupt it.</p>
         </div>
 
         <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex items-center gap-3 mt-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm">
@@ -807,6 +830,7 @@ import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
 import { useSpeechToText } from '../composables/useSpeechToText';
 import { usePendingSend } from '../composables/usePendingSend';
+import { useQueuedMessages } from '../composables/useQueuedMessages';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -906,6 +930,23 @@ const {
   flush: flushHeldMessage,
   cancel: takeBackHeldMessage,
 } = usePendingSend({ deliver: (held) => deliverReply(held.text, held.atts, held.target) });
+
+// Messages written while the agent is mid-turn. They stay in the browser until
+// the turn ends — nothing is pushed — which is what makes them editable.
+const {
+  queued: queuedMessages,
+  enqueue: queueMessage,
+  edit: editQueuedMessage,
+  remove: removeQueuedMessage,
+  flush: takeQueuedMessages,
+} = useQueuedMessages({
+  target: () => ({ workspaceId: workspaceId.value, taskId: taskId.value }),
+});
+
+// Which queued message is being rewritten, and what it currently says. Held
+// apart from the queue so abandoning an edit leaves the original alone.
+const editingQueuedId = ref(null);
+const editingQueuedText = ref('');
 
 const {
   isRecording: sttRecording,
@@ -1111,27 +1152,34 @@ const agentWorking = computed(() => agentIsWorking({
   messages: sortedMessages.value,
 }));
 
-// One expression, used by every control in the composer: while the agent is
-// working there is nothing any of them can usefully do.
-const composerLocked = computed(() => agentWorking.value);
+// Everything queued for this task, as bubbles the thread can render.
+const queuedBubbles = computed(() => queuedMessages.value.map((m) => ({
+  id: `__queued-${m.id}__`,
+  sender: 'human',
+  text: m.text,
+  attachments: m.atts,
+  _queued: true,
+  _queuedId: m.id,
+})));
 
 // The session's context and cost as they stand, or null until an agent reports
 // them. Only a connected ACP gateway sends these.
 const contextUsage = computed(() => contextGauge(latestUsageMessage(sortedMessages.value)));
 
-// Appends a synthetic, not-yet-sent message bubble while a delayed send is
-// counting down, so the human can see and cancel exactly what's about to go
-// out instead of it disappearing into the composer footer.
+// The thread, plus the messages that have not been sent yet: one counting down
+// behind the send delay, and any held back while the agent works. Both are
+// shown where the conversation is rather than tucked under the composer, so
+// what is about to go out can be read, changed or taken back in place.
 const displayMessages = computed(() => {
-  if (!pendingSend.value) return threadMessages.value;
-  return [...threadMessages.value, {
+  const held = pendingSend.value ? [{
     id: '__pending-send__',
     sender: 'human',
     text: pendingSend.value.text,
     attachments: pendingSend.value.atts,
     _pending: true,
     _secondsLeft: pendingSend.value.secondsLeft,
-  }];
+  }] : [];
+  return [...threadMessages.value, ...held, ...queuedBubbles.value];
 });
 
 const activeView = ref('chat');
@@ -1205,6 +1253,23 @@ watch(() => !!pendingSend.value, (isPending) => {
   if (isPending) scrollToBottom();
 });
 
+// Queuing a message appends a bubble below the thread, and the watcher above
+// does not fire for it: `sortedMessages` is the server's list, which a queued
+// message is deliberately not part of. Without this the bubble lands under the
+// fold and Send looks like it did nothing. On growth only, so removing one
+// does not yank the view down.
+watch(() => queuedMessages.value.length, (now, before) => {
+  if (now > before) scrollToBottom();
+});
+
+// The queue goes out when the turn ends — the usage footer, including the one
+// a stop produces. Watched on the transition rather than on the value, because
+// `agentWorking` is also false while the task is still loading, and flushing
+// then would post into a turn that is in fact running.
+watch(agentWorking, (working, wasWorking) => {
+  if (wasWorking && !working) flushQueuedMessages();
+});
+
 async function load() {
   try {
     // The first frame, and only the first frame. Everything below replaces
@@ -1227,6 +1292,10 @@ async function load() {
     connect();
     nextTick(() => {
       scrollToBottom();
+      // A queue restored from the last session has no turn-end to wait for if
+      // the turn ended while the page was closed. This is the only other
+      // moment it can be known, and by now the task is real rather than null.
+      if (!agentWorking.value) flushQueuedMessages();
     });
   } catch(err) {
     console.error(err);
@@ -1424,10 +1493,6 @@ async function submitReply() {
   // The keyboard shortcuts reach this without touching the disabled textarea,
   // so the guard lives here too rather than only in the markup.
   if (offline.value) return;
-  // Cmd+Enter does not go through the button, so the one thing that makes the
-  // swap mean anything has to be checked here as well: a message sent now is
-  // queued behind the turn rather than read by the agent.
-  if (composerLocked.value) return;
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
   const text = replyText.value;
   const atts = [...replyAttachments.value];
@@ -1436,6 +1501,16 @@ async function submitReply() {
   nextTick(() => {
     adjustTextareaHeight();
   });
+
+  // Mid-turn the message is held here rather than posted. The gateway would
+  // chain it behind the running turn, out of sight and out of reach; queued it
+  // stays visible and editable until the turn ends. The send delay is skipped
+  // for the same reason — a countdown is a window to change your mind, and the
+  // queue is a larger one.
+  if (agentWorking.value) {
+    queueMessage({ text, atts });
+    return;
+  }
 
   // Captured now, while we know which task this was typed into.
   const target = { workspaceId: workspaceId.value, taskId: taskId.value };
@@ -1447,6 +1522,41 @@ async function submitReply() {
   }
 
   holdMessage({ text, atts, seconds: delaySeconds, target });
+}
+
+/**
+ * Send everything queued, as one message.
+ *
+ * One rather than several because the gateway gives a session one turn at a
+ * time: posting them separately would start a turn each and chain them behind
+ * one another, which is the thing the queue exists to avoid.
+ */
+async function flushQueuedMessages() {
+  if (offline.value) return;
+  const merged = takeQueuedMessages();
+  if (!merged) return;
+  editingQueuedId.value = null;
+  await deliverReply(merged.text, merged.atts, merged.target);
+}
+
+/** Rewrite a queued message in place. Nothing has been sent, so this is safe. */
+function startEditingQueued(m) {
+  editingQueuedId.value = m._queuedId;
+  editingQueuedText.value = m.text;
+}
+
+function saveEditedQueued() {
+  editQueuedMessage(editingQueuedId.value, editingQueuedText.value);
+  editingQueuedId.value = null;
+}
+
+function cancelEditingQueued() {
+  editingQueuedId.value = null;
+}
+
+function discardQueued(m) {
+  if (editingQueuedId.value === m._queuedId) editingQueuedId.value = null;
+  removeQueuedMessage(m._queuedId);
 }
 
 function sendPendingNow() {

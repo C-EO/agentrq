@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { agentIsWorking, composerAction, workingPlaceholder } from '../src/composables/useAgentTurn'
+import { agentIsWorking, workingPlaceholder } from '../src/composables/useAgentTurn'
 
 const gateway = { agentSupportsStop: true, agentConnected: true }
 const ongoing = { status: 'ongoing', assignee: 'agent' }
@@ -155,16 +155,11 @@ describe('agentIsWorking', () => {
   })
 })
 
-describe('what the composer offers', () => {
-  it('offers the stop while the agent is working, and the send otherwise', () => {
-    expect(composerAction(true)).toBe('stop')
-    expect(composerAction(false)).toBe('send')
-  })
-
-  // An input that stops accepting text without saying why reads as a broken
-  // page, and the explanation is also the instruction.
-  it('says why it is not taking anything and what to do about it', () => {
+describe('what the composer says', () => {
+  // A Send that does not send has to say where the message went, or the box
+  // reads as broken: it takes the text and nothing visibly happens.
+  it('says the agent is working and that the message will be queued', () => {
     expect(workingPlaceholder()).toMatch(/working/i)
-    expect(workingPlaceholder()).toMatch(/stop/i)
+    expect(workingPlaceholder()).toMatch(/queued/i)
   })
 })

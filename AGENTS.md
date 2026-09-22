@@ -57,8 +57,9 @@ Each line says what the note will stop you getting wrong.
   `frontend/src/api.js` function for function, and a test fails when it stops
   doing so. Read it before adding an API function.
 - **[A turn ends at the usage footer](docs/agents/agent-turns.md)** — a reply
-  does **not** end an agent's turn. Unlocking the composer on one hands it back
-  mid-turn and queues the next message, which is the bug the rule exists to fix.
+  does **not** end an agent's turn, and the turn's end is when the composer's
+  held messages are sent. Taking a reply for it posts them into the running
+  turn, which is the bug the rule exists to fix.
 - **[Telemetry](docs/agents/telemetry.md)** — a new action is four places or it
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one
