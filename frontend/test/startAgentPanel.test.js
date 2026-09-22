@@ -95,10 +95,31 @@ describe('StartAgentPanel', () => {
   it('asks which machine when there are several, and says so before the button', async () => {
     const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
     await open()
-    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-machine'])
+    // Every machine is on the page to be picked, rather than behind a dropdown.
+    expect([...el.querySelectorAll('input[name=start-agent-machine]')].map((i) => i.id)).toEqual([
+      'start-agent-machine-m1',
+      'start-agent-machine-m2',
+    ])
+    expect(el.querySelectorAll('select')).toHaveLength(0)
     expect(text()).toMatch(/on the machine you pick/)
     expect(text()).toMatch(/Pick a machine to run on/)
     expect(el.querySelector('button[disabled]')).toBeTruthy()
+  })
+
+  it('launches on the machine that was picked', async () => {
+    // None is preselected with several to choose from, so the choice made here
+    // is the one that has to reach the daemon.
+    const { el, open } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
+    await open()
+    const second = el.querySelector('#start-agent-machine-m2')
+    second.checked = true
+    second.dispatchEvent(new Event('change'))
+    await settle()
+
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ machineId: 'm2' }))
   })
 
   it('opens straight into the form on the setup page, with nothing to cancel back to', async () => {
