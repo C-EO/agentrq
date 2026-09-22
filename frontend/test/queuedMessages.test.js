@@ -5,7 +5,6 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { ref, nextTick } from 'vue'
 
 import {
-  mergeQueued,
   queueStorageKey,
   useQueuedMessages,
 } from '../src/composables/useQueuedMessages'
@@ -47,40 +46,6 @@ describe('queueStorageKey', () => {
 
   it('names no key without a task', () => {
     expect(queueStorageKey('ws1', '')).toBeNull()
-  })
-})
-
-describe('mergeQueued', () => {
-  it('returns null for nothing queued', () => {
-    expect(mergeQueued([])).toBeNull()
-  })
-
-  it('leaves a single message exactly as it was written', () => {
-    expect(mergeQueued([{ id: 1, text: 'only this', atts: [] }]).text).toBe('only this')
-  })
-
-  it('joins several messages with a blank line, in the order they were written', () => {
-    const merged = mergeQueued([
-      { id: 1, text: 'first', atts: [] },
-      { id: 2, text: 'second', atts: [] },
-    ])
-    expect(merged.text).toBe('first\n\nsecond')
-  })
-
-  it('contributes no empty paragraph for a message that is only an attachment', () => {
-    const merged = mergeQueued([
-      { id: 1, text: 'look at this', atts: [] },
-      { id: 2, text: '', atts: [{ filename: 'one.png' }] },
-    ])
-    expect(merged.text).toBe('look at this')
-  })
-
-  it('collects the attachments of every message it merges', () => {
-    const merged = mergeQueued([
-      { id: 1, text: 'a', atts: [{ filename: 'one.png' }] },
-      { id: 2, text: 'b', atts: [{ filename: 'two.png' }] },
-    ])
-    expect(merged.atts.map((a) => a.filename)).toEqual(['one.png', 'two.png'])
   })
 })
 
@@ -157,39 +122,62 @@ describe('removing a queued message', () => {
   })
 })
 
-describe('flushing', () => {
-  it('hands back one merged message addressed to the task it was written in', () => {
+describe('taking the next message', () => {
+  it('hands back the first one alone, addressed to the task it was written in', () => {
     queue.enqueue({ text: 'first' })
     queue.enqueue({ text: 'second' })
-    expect(queue.flush()).toEqual({
-      text: 'first\n\nsecond',
+    expect(queue.dequeue()).toEqual({
+      text: 'first',
       atts: [],
       target: TASK_A,
     })
   })
 
-  it('empties the queue', () => {
+  // The point of one-at-a-time: everything behind the head is still waiting,
+  // and still somebody's to change.
+  it('leaves the rest queued', () => {
     queue.enqueue({ text: 'first' })
-    queue.flush()
-    expect(queue.queued.value).toEqual([])
+    queue.enqueue({ text: 'second' })
+    queue.dequeue()
+    expect(queue.queued.value.map((m) => m.text)).toEqual(['second'])
   })
 
-  it('forgets the stored copy, so a reload does not send it twice', () => {
+  it('hands back the next one the time after', () => {
     queue.enqueue({ text: 'first' })
-    queue.flush()
+    queue.enqueue({ text: 'second' })
+    queue.dequeue()
+    expect(queue.dequeue().text).toBe('second')
+  })
+
+  it('carries that message\'s own attachments and no other\'s', () => {
+    queue.enqueue({ text: 'first', atts: [{ filename: 'one.png' }] })
+    queue.enqueue({ text: 'second', atts: [{ filename: 'two.png' }] })
+    expect(queue.dequeue().atts.map((a) => a.filename)).toEqual(['one.png'])
+  })
+
+  it('keeps the shortened queue in storage, so a reload does not resend it', () => {
+    queue.enqueue({ text: 'first' })
+    queue.enqueue({ text: 'second' })
+    queue.dequeue()
+    expect(JSON.parse(storage.getItem(KEY_A)).map((m) => m.text)).toEqual(['second'])
+  })
+
+  it('forgets the stored copy once the last one is taken', () => {
+    queue.enqueue({ text: 'first' })
+    queue.dequeue()
     expect(storage.getItem(KEY_A)).toBeNull()
   })
 
   it('hands back nothing when nothing is queued', () => {
-    expect(queue.flush()).toBeNull()
+    expect(queue.dequeue()).toBeNull()
   })
 
-  it('addresses the flush to the task the queue was loaded for', async () => {
+  it('addresses it to the task the queue was loaded for', async () => {
     queue.enqueue({ text: 'for A' })
     target.value = TASK_B
     await nextTick()
     queue.enqueue({ text: 'for B' })
-    expect(queue.flush().target).toEqual(TASK_B)
+    expect(queue.dequeue().target).toEqual(TASK_B)
   })
 })
 

@@ -281,22 +281,45 @@ describe('changing a queued message', () => {
 })
 
 describe('when the turn ends', () => {
-  it('sends the queue as one message, so it starts one turn and not three', async () => {
-    const { send, endTheTurn } = await mount()
+  // One per turn, not all at once. Sending the rest now would chain them
+  // behind the turn this one starts — the thing the queue exists to prevent —
+  // and take away the chance to change them.
+  it('sends only the first, and leaves the rest queued', async () => {
+    const { send, endTheTurn, queuedBubbles } = await mount()
     await send('first thought')
     await send('second thought')
     await endTheTurn()
 
     expect(respondToTask).toHaveBeenCalledTimes(1)
+    expect(respondToTask.mock.calls[0][3]).toBe('first thought')
+    expect(queuedBubbles()).toHaveLength(1)
   })
 
-  it('sends what was queued, in the order it was written', async () => {
+  it('sends the next one when the next turn ends', async () => {
     const { send, endTheTurn } = await mount()
     await send('first thought')
     await send('second thought')
     await endTheTurn()
+    await endTheTurn()
 
-    expect(respondToTask.mock.calls[0][3]).toBe('first thought\n\nsecond thought')
+    expect(respondToTask.mock.calls.map((c) => c[3])).toEqual(['first thought', 'second thought'])
+  })
+
+  // The whole reason for one at a time: what is still queued is still yours.
+  it('sends a message rewritten after the one before it had gone', async () => {
+    const { el, send, click, endTheTurn } = await mount()
+    await send('first thought')
+    await send('second thought')
+    await endTheTurn()
+
+    await click('Edit')
+    const box = [...el.querySelectorAll('textarea')].find((t) => t.value === 'second thought')
+    box.value = 'on reflection, this instead'
+    box.dispatchEvent(new Event('input'))
+    await click('Save')
+    await endTheTurn()
+
+    expect(respondToTask.mock.calls[1][3]).toBe('on reflection, this instead')
   })
 
   it('sends it to the task it was written in', async () => {
