@@ -134,6 +134,11 @@ agentrq://workflows
 
 Useful in a Slack message, a calendar invite, or a script.
 
+**Web links.** A link to the web — the docs, a URL an agent put in a message —
+opens in your own browser, where your extensions, bookmarks and signed-in tabs
+already are. Signing in to AgentRQ is the exception and stays in the app: the
+session it earns has to belong to the app to be any use.
+
 **Local file links.** A `file:///…` link in a task or a message is clickable
 here. Documents, images, source files and media open in whatever application you
 normally use for them. Anything that would *run* — a script, a `.app`, an `.exe`,

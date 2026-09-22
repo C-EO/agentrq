@@ -551,6 +551,7 @@ src/renderer/main.js        bootstrap — connection screen, or createAgentRQApp
 src/main/protocol.js        app:// handler and API proxy — the core of the design
 src/main/server-config.js   which server to talk to: normalisation, storage, probing
 src/main/auth.js            OAuth sign-in taken over from the login view's links
+src/main/links.js           where a link opens: the browser, or the sign-in exception
 src/main/menu.js            application menu (switch server, log out)
 src/main/sse.js             event-stream client for the main process
 src/main/notifications.js   events -> native notifications, mute rules, badge

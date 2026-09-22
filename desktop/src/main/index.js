@@ -48,7 +48,7 @@ import {
 } from './notifications.js'
 import { createProcessGoneHandler } from './network-service.js'
 import { createEventStreamClient } from './sse.js'
-import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
+import { LinkTarget, classifyLink } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
 import { createDiscovery } from './extensions/discovery.js'
@@ -306,58 +306,24 @@ function reloadToRoot(win) {
 }
 
 /**
- * Show a link in a window belonging to the app.
+ * Send a link where it belongs — which, for anything on the web, is the user's
+ * own browser rather than a second Chromium wearing the app's name.
  *
- * Hardened exactly like the OAuth window below, and for the same reason: this
- * is rendering a page the app does not control, so it gets no preload, no node
- * and a sandbox. It also gets its own session partition — the default session
- * is where the `at` cookie lives, and an arbitrary website has no business
- * sharing that jar.
+ * Signing in to AgentRQ is the exception, and it runs the same flow the login
+ * view's buttons do, on this profile's session: sent to the browser instead, it
+ * would earn a cookie in a jar the app cannot read.
  *
- * No `parent`, deliberately: a child window is pinned above its parent, which
- * is the wrong behaviour for something the user may want to read beside the
- * app rather than on top of it.
- */
-function openLinkWindow(url, parentWin) {
-  const alive = parentWin && !parentWin.isDestroyed()
-  const { width, height } = linkWindowBounds(alive ? parentWin.getBounds() : null)
-
-  const child = new BrowserWindow({
-    width,
-    height,
-    autoHideMenuBar: true,
-    ...windowIconOptions(WINDOW_ICON),
-    backgroundColor: backgroundColorFor(currentTheme),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      partition: 'persist:agentrq-links',
-    },
-  })
-
-  // A page opened this way must not be able to spawn further app windows. Its
-  // own popups go to the real browser, where an unfamiliar site belongs.
-  child.webContents.setWindowOpenHandler(({ url: next }) => {
-    const target = classifyLink(next, { appOrigin: APP_ORIGIN })
-    if (target === LinkTarget.Window || target === LinkTarget.System) shell.openExternal(next)
-    return { action: 'deny' }
-  })
-
-  child.loadURL(url)
-  return child
-}
-
-/**
- * Send a link where it belongs. Blocked targets fall through to nothing on
- * purpose: a javascript: or file: URL in a message body is not a link the user
- * meant to follow, and reporting it would only teach them to click through.
+ * Blocked targets fall through to nothing on purpose: a javascript: or file:
+ * URL in a message body is not a link the user meant to follow, and reporting
+ * it would only teach them to click through.
  */
 function routeLink(url, parentWin) {
-  switch (classifyLink(url, { appOrigin: APP_ORIGIN })) {
-    case LinkTarget.Window:
-      openLinkWindow(url, parentWin)
+  switch (classifyLink(url, { appOrigin: APP_ORIGIN, serverUrl })) {
+    case LinkTarget.SignIn: {
+      const { pathname, search } = new URL(url)
+      startOAuth(parentWin, pathname, search)
       break
+    }
     case LinkTarget.System:
       shell.openExternal(url)
       break
@@ -431,7 +397,9 @@ async function startOAuth(win, pathname, search) {
     startUrl: oauthStartUrl(serverUrl, pathname, search),
     createWindow: () =>
       new BrowserWindow({
-        parent: win,
+        // A destroyed window cannot be a parent, and a link can outlive the
+        // window it was clicked in.
+        parent: win && !win.isDestroyed() ? win : undefined,
         width: 520,
         height: 720,
         title: 'Sign in to AgentRQ',
@@ -638,10 +606,8 @@ function createWindow() {
     win.webContents.send('agentrq:navigate', route)
   })
 
-  // A link out of the app opens in a window of the app's own, which the user
-  // closes to get straight back to what they were doing. Handing these to the
-  // system browser instead put the docs, the terms and any URL on a message
-  // behind a context switch with nothing to come back to.
+  // A link out of the app opens in the user's browser; nothing here ever opens
+  // a second window onto the web. `routeLink` knows the one exception.
   win.webContents.setWindowOpenHandler(({ url }) => {
     routeLink(url, win)
     return { action: 'deny' }

@@ -8,6 +8,7 @@ import {
   OAUTH_PROVIDERS,
   AUTH_COOKIE,
   matchOAuthLogin,
+  isAuthPath,
   isOAuthReturn,
   oauthStartUrl,
   runOAuthFlow,
@@ -56,6 +57,25 @@ describe('matchOAuthLogin', () => {
 
   it('exports the providers it recognises', () => {
     expect(OAUTH_PROVIDERS).toEqual(['google', 'github'])
+  })
+})
+
+describe('isAuthPath', () => {
+  it('covers the whole sign-in round trip, not just the login links', () => {
+    // `links.js` uses this to decide what may not be sent to the browser, so
+    // the callback counts as much as the start of the flow.
+    expect(isAuthPath('/api/v1/auth/google/login')).toBe(true)
+    expect(isAuthPath('/api/v1/auth/github/callback')).toBe(true)
+    expect(isAuthPath('/api/v1/auth/root/login')).toBe(true)
+  })
+
+  it('is not satisfied by a path that merely contains it', () => {
+    expect(isAuthPath('/tasks/123')).toBe(false)
+    expect(isAuthPath('/prefix/api/v1/auth/google/login')).toBe(false)
+    expect(isAuthPath('/api/v1/authorize')).toBe(false)
+    expect(isAuthPath('')).toBe(false)
+    expect(isAuthPath(null)).toBe(false)
+    expect(isAuthPath(undefined)).toBe(false)
   })
 })
 

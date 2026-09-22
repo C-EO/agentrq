@@ -42,6 +42,10 @@ Consequences worth knowing before changing anything here:
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.
+- **Links leave for the real browser; the AgentRQ sign-in may not.** `classifyLink`
+  keeps auth URLs on the configured server in-app because the `at` cookie has to
+  land in this profile's jar — sent out, sign-in "succeeds" and the app stays
+  signed out.
 - **Never make a `file:` URL followable.** `classifyLink` blocks the scheme on
   purpose — message bodies are agent-written, and a followed `file:` link is how
   one reaches the machine. Rendered markdown therefore strips the href and
