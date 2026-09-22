@@ -515,7 +515,7 @@
                       a message parked with no stated end looks lost. -->
                  <span v-else-if="m._queued" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right flex items-center gap-1.5">
                    <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500 shrink-0"></span>
-                   Queued · sends when the agent finishes
+                   {{ m._queuedNext ? 'Queued · sends when the agent finishes' : 'Queued · sends after the one before it' }}
                  </span>
                  <span v-else class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
                  <div v-if="!m._pending && !m._queued" class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
@@ -708,8 +708,8 @@
                  Both, because both now do something. The ACP gateway does not
                  interrupt — a message posted mid-turn is chained behind it
                  rather than read — so Send holds the message in the browser
-                 instead of posting it, and the queue goes out when the turn
-                 ends. Stop is still the only thing that acts on the agent now.
+                 instead of posting it, and the queue goes out a message per
+                 turn. Stop is still the only thing that acts on the agent now.
 
                  Stopping travels over a notification only the ACP gateway acts
                  on, which is why it never appears for Claude Code speaking MCP
@@ -757,7 +757,7 @@
              only trustworthy if its rule is stated. -->
         <div v-else-if="agentWorking" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
              <span class="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-zinc-500 animate-pulse shrink-0"></span>
-             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Messages are queued here — editable until the turn ends, then sent together. Press stop to interrupt it.</p>
+             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Messages are queued here and sent one at a time, each editable until its turn to go. Press stop to interrupt it.</p>
         </div>
 
         <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex items-center gap-3 mt-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm">
@@ -931,14 +931,15 @@ const {
   cancel: takeBackHeldMessage,
 } = usePendingSend({ deliver: (held) => deliverReply(held.text, held.atts, held.target) });
 
-// Messages written while the agent is mid-turn. They stay in the browser until
-// the turn ends — nothing is pushed — which is what makes them editable.
+// Messages written while the agent is mid-turn. They stay in the browser —
+// nothing is pushed — and leave one at a time, one per turn, which is what
+// keeps every one of them editable until its own turn to go.
 const {
   queued: queuedMessages,
   enqueue: queueMessage,
   edit: editQueuedMessage,
   remove: removeQueuedMessage,
-  flush: takeQueuedMessages,
+  dequeue: takeNextQueued,
 } = useQueuedMessages({
   target: () => ({ workspaceId: workspaceId.value, taskId: taskId.value }),
 });
@@ -1152,14 +1153,16 @@ const agentWorking = computed(() => agentIsWorking({
   messages: sortedMessages.value,
 }));
 
-// Everything queued for this task, as bubbles the thread can render.
-const queuedBubbles = computed(() => queuedMessages.value.map((m) => ({
+// Everything queued for this task, as bubbles the thread can render. Only the
+// first goes when the turn ends, so only the first can say so.
+const queuedBubbles = computed(() => queuedMessages.value.map((m, i) => ({
   id: `__queued-${m.id}__`,
   sender: 'human',
   text: m.text,
   attachments: m.atts,
   _queued: true,
   _queuedId: m.id,
+  _queuedNext: i === 0,
 })));
 
 // The session's context and cost as they stand, or null until an agent reports
@@ -1262,12 +1265,14 @@ watch(() => queuedMessages.value.length, (now, before) => {
   if (now > before) scrollToBottom();
 });
 
-// The queue goes out when the turn ends — the usage footer, including the one
-// a stop produces. Watched on the transition rather than on the value, because
-// `agentWorking` is also false while the task is still loading, and flushing
-// then would post into a turn that is in fact running.
+// One queued message goes out each time a turn ends — the usage footer,
+// including the one a stop produces. That send starts the next turn, so the
+// rest of the queue drains through this same watcher, one per turn. Watched on
+// the transition rather than on the value, because `agentWorking` is also
+// false while the task is still loading, and sending then would post into a
+// turn that is in fact running.
 watch(agentWorking, (working, wasWorking) => {
-  if (wasWorking && !working) flushQueuedMessages();
+  if (wasWorking && !working) sendNextQueued();
 });
 
 async function load() {
@@ -1295,7 +1300,9 @@ async function load() {
       // A queue restored from the last session has no turn-end to wait for if
       // the turn ended while the page was closed. This is the only other
       // moment it can be known, and by now the task is real rather than null.
-      if (!agentWorking.value) flushQueuedMessages();
+      // Still one message: it starts a turn, and the watcher takes it from
+      // there.
+      if (!agentWorking.value) sendNextQueued();
     });
   } catch(err) {
     console.error(err);
@@ -1525,18 +1532,23 @@ async function submitReply() {
 }
 
 /**
- * Send everything queued, as one message.
+ * Send the message at the head of the queue, and only that one.
  *
- * One rather than several because the gateway gives a session one turn at a
- * time: posting them separately would start a turn each and chain them behind
- * one another, which is the thing the queue exists to avoid.
+ * The gateway gives a session one turn at a time, so this send starts a turn
+ * of its own and whatever is still queued waits for *that* turn to end. One
+ * per turn, in the order they were written — and a message still waiting is
+ * still editable, which is the point of not sending them together.
  */
-async function flushQueuedMessages() {
+async function sendNextQueued() {
   if (offline.value) return;
-  const merged = takeQueuedMessages();
-  if (!merged) return;
-  editingQueuedId.value = null;
-  await deliverReply(merged.text, merged.atts, merged.target);
+  const next = takeNextQueued();
+  if (!next) return;
+  // Only the message that just left stops being editable. Someone rewriting a
+  // later one must not have the box closed under them.
+  if (!queuedMessages.value.some((m) => m.id === editingQueuedId.value)) {
+    editingQueuedId.value = null;
+  }
+  await deliverReply(next.text, next.atts, next.target);
 }
 
 /** Rewrite a queued message in place. Nothing has been sent, so this is safe. */

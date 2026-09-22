@@ -19,12 +19,13 @@ import { ref, watch } from 'vue';
  * Two rules the tests exist to hold:
  *
  * - **A queued message belongs to the task it was written in.** The task view
- *   is reused across tasks, so the queue is keyed by task and a flush is
+ *   is reused across tasks, so the queue is keyed by task and a send is
  *   addressed to the task the queue was loaded for, never to whatever is on
  *   screen when it fires. `usePendingSend` learned this the hard way.
- * - **Several queued messages leave as one.** Delivering them separately would
- *   start a turn each and chain them behind one another, which is the problem
- *   this exists to avoid.
+ * - **They leave one at a time, one per turn.** The head goes when a turn ends
+ *   and starts a turn of its own; the rest wait for that one to end. Which is
+ *   what keeps them editable — a message only stops being yours to change at
+ *   the moment it is actually its turn to go.
  */
 
 const KEY_PREFIX = 'agentrq:queued';
@@ -33,23 +34,6 @@ const KEY_PREFIX = 'agentrq:queued';
 export function queueStorageKey(workspaceId, taskId) {
   if (!workspaceId || !taskId) return null;
   return `${KEY_PREFIX}:${workspaceId}:${taskId}`;
-}
-
-/**
- * Everything queued, as the single message that will be sent.
- *
- * Texts are joined by a blank line so they read as the separate thoughts they
- * were typed as. A message carrying only an attachment contributes no text and
- * no blank line, rather than an empty paragraph.
- *
- * @returns {{text: string, atts: Array} | null} null when nothing is queued
- */
-export function mergeQueued(entries) {
-  if (entries.length === 0) return null;
-  return {
-    text: entries.map((m) => m.text).filter((t) => t.trim()).join('\n\n'),
-    atts: entries.flatMap((m) => m.atts),
-  };
 }
 
 /**
@@ -136,22 +120,26 @@ export function useQueuedMessages({ target, storage = globalThis.localStorage })
   }
 
   /**
-   * Take everything queued as one message, addressed to its own task.
+   * Take the message at the head of the queue, addressed to its own task.
    *
-   * The queue is emptied here rather than by the caller once the send
-   * succeeds: a delivery that fails puts its text back in the composer, and
-   * leaving a copy queued as well would send it twice.
+   * One, not all of them: each starts a turn of its own, so the next is taken
+   * when that turn ends. Everything still queued therefore stays editable
+   * until its own moment comes.
+   *
+   * It leaves the queue here rather than when the caller's send succeeds: a
+   * delivery that fails puts its text back in the composer, and leaving a copy
+   * queued as well would send it twice.
    *
    * @returns {{text: string, atts: Array, target: object} | null}
    */
-  function flush() {
-    const merged = mergeQueued(queued.value);
-    if (!merged) return null;
+  function dequeue() {
+    const [head, ...rest] = queued.value;
+    if (!head) return null;
     const to = loadedTarget;
-    queued.value = [];
+    queued.value = rest;
     persist();
-    return { ...merged, target: to };
+    return { text: head.text, atts: head.atts, target: to };
   }
 
-  return { queued, enqueue, edit, remove, flush };
+  return { queued, enqueue, edit, remove, dequeue };
 }

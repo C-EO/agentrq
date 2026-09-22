@@ -9,21 +9,22 @@ not read — so the composer does not post it. Mid-turn, Send holds the message
 in the browser instead (`useQueuedMessages.js`, kept in `localStorage`), where
 it stays editable, and Stop appears alongside Send rather than replacing it.
 
-**The queue leaves as one message.** Delivering several would start a turn each
-and chain them behind one another, which is the thing being avoided.
+**The queue leaves one message per turn, head first.** Sending the rest
+alongside it would chain them behind the turn it starts, and would take away
+the point of queuing: a message still waiting is still editable.
 
-Which makes "when does a turn end" load-bearing — it is also when the queue is
-sent — and the obvious answer is wrong. **A reply does not end a turn.** The
-server's own instructions tell agents to report progress with `reply` every few
-steps, so a reply arriving is usually the agent talking while it works; taking
-one as the end posts the queue into the running turn, which is the bug this
-exists to fix.
+Which makes "when does a turn end" load-bearing — it is also when the next
+queued message is sent — and the obvious answer is wrong. **A reply does not
+end a turn.** The server's own instructions tell agents to report progress with
+`reply` every few steps, so a reply arriving is usually the agent talking while
+it works; taking one as the end posts a queued message into the running turn,
+which is the bug this exists to fix.
 
 What ends a turn is the **usage footer**. The gateway flushes it from
 `flushReply`, which runs when the ACP prompt resolves — "the last usage
 snapshot of the turn", one per turn, including a turn cancelled by the Stop
-button, since a cancel resolves the prompt too. That is what sends the queue on
-its own after a stop.
+button, since a cancel resolves the prompt too. That is what drains the queue
+on its own after a stop.
 
 The footer is only sent when the agent reported usage at all, so for a task
 that has never seen one — and only then — a plain reply is taken as the end
@@ -31,7 +32,8 @@ instead. Worse, but the old behaviour rather than a queue that is never sent.
 The rule lives in `useAgentTurn.js`, with the cases as tests.
 
 A queue also has no turn-end to wait for if the turn finished while the page
-was closed, so the task view sends it once after loading too.
+was closed, so the task view sends its head once after loading too; that send
+starts a turn, and the rest follow it as usual.
 
 Everything is gated on `agentSupportsStop`: Claude Code speaking MCP directly
 does not chain turns and cannot be stopped, so there is nothing to queue
