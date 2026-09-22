@@ -11,8 +11,12 @@
  * that happens, and its comment says exactly why: two prompts on one session
  * are refused or interleave. Someone who types "no, stop, do the other thing"
  * has therefore not stopped anything; they have added to the list of things it
- * will do afterwards. The honest interface offers the stop instead of the send,
- * and says so.
+ * will do afterwards.
+ *
+ * So the composer offers the stop as well as the send, and what the send does
+ * changes: mid-turn it holds the message in the browser rather than posting
+ * it. Nothing reaches the gateway until the turn ends, which is what makes a
+ * queued message editable — see `useQueuedMessages`.
  *
  * ## Why this is derived rather than reported
  *
@@ -112,23 +116,12 @@ export function agentIsWorking({ task, workspace, messages } = {}) {
 }
 
 /**
- * What the composer says while it is not accepting anything.
+ * What the composer says while the agent is mid-turn.
  *
- * Names the reason rather than going quietly grey, because an input that stops
- * working without saying why reads as a broken page.
+ * Says where the message will go, because a Send that does not send is worse
+ * than a Send that is missing: the box still accepts text, and nothing else
+ * on screen would explain why nothing happened.
  */
 export function workingPlaceholder() {
-  return 'The agent is working — stop it to send a message'
-}
-
-/**
- * What the button does right now.
- *
- * Returned as a word rather than a boolean so the template reads as what it
- * is, and so a third state later is an addition rather than a rewrite.
- *
- * @returns {'stop' | 'send'}
- */
-export function composerAction(working) {
-  return working ? 'stop' : 'send'
+  return 'The agent is working — your message will be queued until it finishes'
 }

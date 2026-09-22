@@ -63,6 +63,7 @@ export default defineConfig({
         'src/composables/useTrajectory.js',
         'src/composables/useWorkflowLabels.js',
         'src/composables/usePendingSend.js',
+        'src/composables/useQueuedMessages.js',
         'src/composables/useDirectoryPicker.js',
         'src/composables/useProfileDisplay.js',
         'src/composables/useAuthedFetch.js',
