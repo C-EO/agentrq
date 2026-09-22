@@ -55,6 +55,14 @@ and a list that is merely *mostly* complete fails silently — the agent works
 until its first call to the one missing tool, then stalls waiting on a human
 who is not watching.
 
+## This server is stateful, so it cannot serve 2026-07-28
+
+Never set `StreamableHTTPOptions.Stateless = true` here to "add" protocol
+revision 2026-07-28: stateless 405s the GET/SSE stream, and that stream is how
+`SendChannelNotification` and `SendPermissionVerdict` reach a connected agent.
+We advertise `2025-11-25` downwards and refuse the newer revision with a
+JSON-RPC `-32022` naming those versions, so clients renegotiate down.
+
 ## Annotations, and why `Name:` stays first
 
 Every tool on both servers declares annotations, built by
