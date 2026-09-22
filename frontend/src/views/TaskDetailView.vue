@@ -693,16 +693,20 @@
                  anything at all.
 
                  type="button" on the stop is load-bearing — this sits inside
-                 the reply form, and a button without it submits the form. -->
+                 the reply form, and a button without it submits the form.
+
+                 The stop wears the toolbar's own chip surface with a red mark,
+                 not Send's filled circle: two filled circles in one corner read
+                 as two states of the same control rather than opposite acts. -->
             <div class="flex items-center gap-2 shrink-0">
               <button v-if="agentWorking"
                       type="button"
                       @click.stop="stopRunningTask"
                       @mouseenter="tooltipStore.show($event, 'Stop the agent working on this task', 'top')"
                       @mouseleave="tooltipStore.hide()"
-                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-all flex items-center justify-center shrink-0 shadow-sm"
+                      class="h-6 w-6 rounded-full bg-gray-100 dark:bg-zinc-700/50 text-red-500 dark:text-red-400 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center shrink-0"
                       title="Stop the agent working on this task">
-                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect></svg>
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
               </button>
 
               <!-- Right circular send button -->
