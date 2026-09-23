@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/golang/mock/gomock"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"

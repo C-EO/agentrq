@@ -13,8 +13,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/glebarez/sqlite"
 	"github.com/golang/mock/gomock"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
