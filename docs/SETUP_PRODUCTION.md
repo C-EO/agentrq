@@ -176,6 +176,26 @@ Set in `.env`:
 AGENTRQ_APP_ATTACHMENT_RETENTION=30d
 ```
 
+Skill files are not attachments: cleanup never deletes them.
+
+### Skill Storage
+
+Skill file content is kept in the local `storage/` directory by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…). Objects are written privately under the `skills/` prefix, and the server refuses to start on any other value.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_SKILLS_STORAGE` | `local` | `local` or `s3`. |
+| `AGENTRQ_S3_ENDPOINT` | | The S3 endpoint URL, e.g. `https://s3.us-east-1.amazonaws.com`. Addressed path-style. |
+| `AGENTRQ_S3_ACCESS_KEY` | | Access key id. |
+| `AGENTRQ_S3_SECRET_ACCESS_KEY` | | Secret access key. |
+| `AGENTRQ_S3_REGION` | `us-east-1` | Bucket region. |
+| `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
+| `AGENTRQ_S3_PUBLIC_BUCKET_URL` | | Optional public base URL for the bucket. |
+| `AGENTRQ_LOCKSMITH_ENCRYPTION_KEY` | | Optional. 64 hex characters (32 bytes). |
+| `AGENTRQ_LOCKSMITH_SALT` | | Optional salt used with the key. |
+
+Switching an existing deployment does not move skills already saved, so re-import them, or copy the `skill-*` files from `storage/` to `skills/` in the bucket first.
+
 ## Reverse Proxy Setup (Nginx Example)
 
 ```nginx

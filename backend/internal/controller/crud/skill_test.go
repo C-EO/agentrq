@@ -84,12 +84,19 @@ func newSkillEnv(t *testing.T) *skillEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Attachments get a store of their own, so a skill blob written to the
+	// wrong one shows up in blobs as missing.
+	attachments, err := storage.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	imp := &fakeImporter{}
 	c := &controller{
-		repository:  base.New(&realDB{db: db}),
-		idgen:       &seqIDGen{n: 5000},
-		storage:     store,
-		skillImport: imp,
+		repository:   base.New(&realDB{db: db}),
+		idgen:        &seqIDGen{n: 5000},
+		storage:      attachments,
+		skillStorage: store,
+		skillImport:  imp,
 	}
 	return &skillEnv{c: c, db: db, dir: dir, importer: imp, ctx: context.Background()}
 }
@@ -544,7 +551,7 @@ func TestSkills_ImportErrors(t *testing.T) {
 func TestSkills_ImportStorageFailureLeavesNothing(t *testing.T) {
 	e := newSkillEnv(t)
 	e.importer.res = githubResult(importedSkill("a", "A.", skillimport.File{Path: "b.md", Content: []byte("b")}))
-	e.c.storage = &failingStorage{Service: e.c.storage, failAfter: 1}
+	e.c.skillStorage = &failingStorage{Service: e.c.skillStorage, failAfter: 1}
 	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
 	if err != nil || len(rs.Imported) != 0 || !strings.Contains(rs.Skipped[len(rs.Skipped)-1].Reason, "could not be saved") {
 		t.Fatalf("got %+v, %v", rs, err)
@@ -570,7 +577,7 @@ func (f *failingStorage) Save(id, data string) error {
 
 func TestSkills_SaveStorageFailure(t *testing.T) {
 	e := newSkillEnv(t)
-	e.c.storage = &failingStorage{Service: e.c.storage}
+	e.c.skillStorage = &failingStorage{Service: e.c.skillStorage}
 	_, err := e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", Path: "SKILL.md", Content: md("tdd", "d")})
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("got %v", err)
@@ -874,5 +881,16 @@ func TestSkills_SearchRefusesBadInput(t *testing.T) {
 	// Exactly the minimum is a search.
 	if _, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, Query: "tdd"}); err != nil {
 		t.Errorf("three characters: %v", err)
+	}
+}
+
+func TestNew_SkillStorage(t *testing.T) {
+	local, _ := storage.New(t.TempDir())
+	skills, _ := storage.New(t.TempDir())
+	if c := New(Params{Storage: local}).(*controller); c.skillStorage != local {
+		t.Error("with no SkillStorage, skills should use Storage")
+	}
+	if c := New(Params{Storage: local, SkillStorage: skills}).(*controller); c.skillStorage != skills || c.storage != local {
+		t.Error("SkillStorage was not used for skills alone")
 	}
 }

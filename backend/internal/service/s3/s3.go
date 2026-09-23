@@ -1,0 +1,210 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
+package s3
+
+import (
+	"bytes"
+	"context"
+	"time"
+
+	"github.com/agentrq/agentrq/backend/internal/service/config"
+	"github.com/agentrq/agentrq/backend/internal/service/locksmith"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	zlog "github.com/rs/zerolog/log"
+)
+
+type (
+	Params struct {
+		Config    config.Service
+		Locksmith locksmith.Service
+	}
+	Service interface {
+		CreateNamespace(ctx context.Context, namespace string) error
+		Put(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error)
+		PutPrivate(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error)
+		Get(ctx context.Context, namespace, key string) ([]byte, error)
+		Delete(ctx context.Context, namespace, key string) error
+		GetPublicURL(ctx context.Context, namespace, key string) (string, error)
+	}
+	S3API interface {
+		CreateBucket(ctx context.Context, params *s3.CreateBucketInput, optFns ...func(*s3.Options)) (*s3.CreateBucketOutput, error)
+		PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+		GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+		DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	}
+	S3PresignAPI interface {
+		PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+	}
+	service struct {
+		client          S3API
+		presigner       S3PresignAPI
+		locksmith       locksmith.Service
+		bucket          string
+		publicBucketURL string
+	}
+	s3Config struct {
+		Enabled         bool   `yaml:"enabled"`
+		Endpoint        string `yaml:"endpoint"`
+		AccessKey       string `yaml:"accessKey"`
+		SecretAccessKey string `yaml:"secretAccessKey"`
+		Region          string `yaml:"region"`
+		Bucket          string `yaml:"bucket"`
+		PublicBucketURL string `yaml:"publicBucketURL"`
+	}
+)
+
+const (
+	cfgKey     = "s3"
+	_ttlOneDay = time.Hour * 24
+)
+
+var loadAWSConfig = awsconfig.LoadDefaultConfig
+
+// New init a new s3 service
+func New(p Params) (Service, error) {
+	var cfg s3Config
+	err := p.Config.Populate(cfgKey, &cfg)
+	if err != nil {
+		return nil, err
+	}
+	fn := newCredentialsProvider(cfg.AccessKey, cfg.SecretAccessKey)
+	ctx := context.Background()
+	acfg, err := loadAWSConfig(
+		ctx,
+		awsconfig.WithCredentialsProvider(fn),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := s3.NewFromConfig(acfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(cfg.Endpoint)
+		o.UsePathStyle = true
+		// The SDK's default flexible checksums are refused by some S3-compatible stores.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+	})
+	return &service{
+		client:          client,
+		presigner:       s3.NewPresignClient(client),
+		locksmith:       p.Locksmith,
+		bucket:          cfg.Bucket,
+		publicBucketURL: cfg.PublicBucketURL,
+	}, nil
+}
+
+func (s *service) GetPublicURL(ctx context.Context, namespace, key string) (string, error) {
+	if s.publicBucketURL != "" {
+		return s.publicBucketURL + "/" + namespace + "/" + key, nil
+	}
+	actualKey := namespace + "/" + key
+	req, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(actualKey),
+	}, s3.WithPresignExpires(_ttlOneDay))
+	if err != nil {
+		zlog.Error().Err(err).Str("bucket", s.bucket).Str("key", actualKey).Msg("S3 GetPublicURL presign failed")
+		return "", err
+	}
+	return req.URL, nil
+}
+
+func (s *service) CreateNamespace(ctx context.Context, namespace string) error {
+	_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Put stores the data in s3
+func (s *service) Put(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error) {
+	actualKey := namespace + "/" + key
+	zlog.Info().Str("bucket", s.bucket).Str("key", actualKey).Int("size", len(data)).Msg("S3 Put initiated")
+	o, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(actualKey),
+		Body:        bytes.NewReader(data),
+		ACL:         types.ObjectCannedACLPublicRead,
+		ContentType: &contentType,
+	})
+	if err != nil {
+		zlog.Error().Err(err).Str("bucket", s.bucket).Str("key", actualKey).Msg("S3 Put failed")
+		return "", err
+	}
+	etag := ""
+	if o.ETag != nil {
+		etag = *o.ETag
+	}
+	zlog.Info().Str("etag", etag).Msg("S3 Put succeeded")
+	return etag, nil
+}
+
+// PutPrivate stores the data in s3
+func (s *service) PutPrivate(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error) {
+	actualKey := namespace + "/" + key
+	zlog.Info().Str("bucket", s.bucket).Str("key", actualKey).Int("size", len(data)).Msg("S3 PutPrivate initiated")
+	o, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(actualKey),
+		Body:        bytes.NewReader(data),
+		ContentType: &contentType,
+	})
+	if err != nil {
+		zlog.Error().Err(err).Str("bucket", s.bucket).Str("key", actualKey).Msg("S3 PutPrivate failed")
+		return "", err
+	}
+	etag := ""
+	if o.ETag != nil {
+		etag = *o.ETag
+	}
+	zlog.Info().Str("etag", etag).Msg("S3 PutPrivate succeeded")
+	return etag, nil
+}
+
+// Get retrieves the data from s3
+func (s *service) Get(ctx context.Context, namespace, key string) ([]byte, error) {
+	actualKey := namespace + "/" + key
+	o, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(actualKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer o.Body.Close()
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(o.Body); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Delete removes the data from s3
+func (s *service) Delete(ctx context.Context, namespace, key string) error {
+	actualKey := namespace + "/" + key
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(actualKey),
+	})
+	if err != nil {
+		zlog.Error().Err(err).Str("bucket", s.bucket).Str("key", actualKey).Msg("S3 Delete failed")
+	}
+	return err
+}
+
+func newCredentialsProvider(accessKey, secretKey string) aws.CredentialsProviderFunc {
+	return func(ctx context.Context) (aws.Credentials, error) {
+		return aws.Credentials{
+			AccessKeyID:     accessKey,
+			SecretAccessKey: secretKey,
+		}, nil
+	}
+}

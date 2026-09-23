@@ -21,9 +21,11 @@ type (
 		IDGen      idgen.Service
 		Repository base.Repository
 		Storage    storage.Service
-		Image      image.Service
-		PubSub     pubsub.Service
-		Limiter    ratelimit.Limiter
+		// SkillStorage holds skill file content. Nil falls back to Storage.
+		SkillStorage storage.Service
+		Image        image.Service
+		PubSub       pubsub.Service
+		Limiter      ratelimit.Limiter
 		// SkillImport reads skills from GitHub. Nil turns importing off.
 		SkillImport skillimport.Service
 	}
@@ -53,11 +55,16 @@ type (
 		pubsub     pubsub.Service
 		limiter    ratelimit.Limiter
 
-		skillImport skillimport.Service
+		skillStorage storage.Service
+		skillImport  skillimport.Service
 	}
 )
 
 func New(p Params) Controller {
+	skillStorage := p.SkillStorage
+	if skillStorage == nil {
+		skillStorage = p.Storage
+	}
 	return &controller{
 		idgen:      p.IDGen,
 		repository: p.Repository,
@@ -66,7 +73,8 @@ func New(p Params) Controller {
 		pubsub:     p.PubSub,
 		limiter:    p.Limiter,
 
-		skillImport: p.SkillImport,
+		skillStorage: skillStorage,
+		skillImport:  p.SkillImport,
 	}
 }
 

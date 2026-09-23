@@ -19,6 +19,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/gorm"
 )
@@ -213,7 +214,7 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, err
 	}
-	content, err := c.storage.LoadRaw(f.StorageID)
+	content, err := c.skillStorage.LoadRaw(f.StorageID)
 	if err != nil {
 		return nil, fmt.Errorf("load skill file content: %w", err)
 	}
@@ -284,14 +285,14 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	saved, replaced, err := c.repository.UpsertSkillFile(ctx, s, f)
 	if err != nil {
-		_ = c.storage.Delete(f.StorageID)
+		_ = c.skillStorage.Delete(f.StorageID)
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return nil, skillErr(SkillConflict, "skill %q was created by someone else a moment ago; try again", name)
 		}
 		return nil, err
 	}
 	if replaced != "" {
-		_ = c.storage.Delete(replaced)
+		_ = c.skillStorage.Delete(replaced)
 	}
 	return &entity.SaveSkillFileResponse{
 		Skill: fromModelSkill(saved, 0),
@@ -311,9 +312,9 @@ func (c *controller) storeSkillFile(path string, content []byte, now time.Time) 
 		Path:      path,
 		SizeBytes: len(content),
 		SHA256:    hex.EncodeToString(sum[:]),
-		StorageID: "skill-" + monoflake.ID(c.idgen.NextID()).String(),
+		StorageID: storage.SkillPrefix + monoflake.ID(c.idgen.NextID()).String(),
 	}
-	if err := c.storage.Save(f.StorageID, base64.StdEncoding.EncodeToString(content)); err != nil {
+	if err := c.skillStorage.Save(f.StorageID, base64.StdEncoding.EncodeToString(content)); err != nil {
 		return model.SkillFile{}, fmt.Errorf("store skill file: %w", err)
 	}
 	return f, nil
@@ -582,7 +583,7 @@ func (c *controller) shareTarget(ctx context.Context, req entity.ShareSkillReque
 func (c *controller) purge(storageIDs []string) {
 	for _, id := range storageIDs {
 		if id != "" {
-			_ = c.storage.Delete(id)
+			_ = c.skillStorage.Delete(id)
 		}
 	}
 }

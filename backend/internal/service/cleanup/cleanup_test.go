@@ -75,6 +75,7 @@ func TestRunOnce(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "agentrq.db"), old)                       // must be kept
 	writeTestFile(t, filepath.Join(dir, "OTHER.DB"), old)                         // uppercase .DB — must be kept
 	writeTestFile(t, filepath.Join(dir, "recent-file"), now.Add(-3*24*time.Hour)) // 3 days old, within 7d
+	writeTestFile(t, filepath.Join(dir, "skill-0abc"), old)                       // a skill lives until deleted
 
 	svc := &service{storageDir: dir, retentionPeriod: 7 * 24 * time.Hour}
 	if err := svc.RunOnce(context.Background()); err != nil {
@@ -86,6 +87,7 @@ func TestRunOnce(t *testing.T) {
 	assertPresent(t, filepath.Join(dir, "agentrq.db"))
 	assertPresent(t, filepath.Join(dir, "OTHER.DB"))
 	assertPresent(t, filepath.Join(dir, "recent-file"))
+	assertPresent(t, filepath.Join(dir, "skill-0abc"))
 }
 
 func TestRunOnce_MissingDir(t *testing.T) {

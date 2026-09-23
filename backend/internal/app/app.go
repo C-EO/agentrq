@@ -264,6 +264,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
 
+	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, storageSvc)
+	if err != nil {
+		return nil, fmt.Errorf("skill storage: %w", err)
+	}
+
 	cfg.Storage.StorageDir = "./_storage"
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
@@ -322,13 +327,14 @@ func New(cfg Config) (*App, error) {
 	rateLimiter := svclimit.New()
 
 	crudCtrl := crud.New(crud.Params{
-		IDGen:       ids,
-		Repository:  repo,
-		Storage:     storageSvc,
-		Image:       imgSvc,
-		PubSub:      pubsubSvc,
-		Limiter:     rateLimiter,
-		SkillImport: skillimport.New(),
+		IDGen:        ids,
+		Repository:   repo,
+		Storage:      storageSvc,
+		SkillStorage: skillStorageSvc,
+		Image:        imgSvc,
+		PubSub:       pubsubSvc,
+		Limiter:      rateLimiter,
+		SkillImport:  skillimport.New(),
 	})
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
