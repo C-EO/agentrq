@@ -6,6 +6,7 @@ package base
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -46,6 +47,36 @@ func (r *repository) ListSkillsSharedInto(ctx context.Context, userID, workspace
 		Find(&skills).Error
 	return skills, err
 }
+
+// SearchSkills returns the skills a workspace can use — its own and those
+// shared into it — whose name or description contains q, ignoring case, by
+// name; and how many match in all. A limit of 0 returns every match.
+func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64, q string, limit, offset int) ([]model.Skill, int64, error) {
+	shared := r.conn(ctx).Model(&model.SkillShare{}).Select("skill_id").
+		Where("user_id = ? AND target_workspace_id = ?", userID, workspaceID)
+	query := r.conn(ctx).Model(&model.Skill{}).
+		Where("user_id = ? AND (workspace_id = ? OR id IN (?))", userID, workspaceID, shared)
+	if q != "" {
+		// LIKE's own wildcards in q are matched literally.
+		pattern := "%" + likeEscaper.Replace(strings.ToLower(q)) + "%"
+		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	page := query.Order("name asc").Offset(offset)
+	if limit > 0 {
+		page = page.Limit(limit)
+	}
+	var skills []model.Skill
+	if err := page.Find(&skills).Error; err != nil {
+		return nil, 0, err
+	}
+	return skills, total, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 
 // ReplaceSkill writes a skill and exactly the given files, creating the skill
 // when s.ID is not stored yet. It returns the storage ids of the files it

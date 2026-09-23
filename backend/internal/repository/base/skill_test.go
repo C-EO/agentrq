@@ -182,3 +182,18 @@ func TestDeleteWorkspace_FailsWhenSkillsDeleteFails(t *testing.T) {
 		t.Errorf("rollback failed: %d skill files left, want 2", files)
 	}
 }
+
+// Both statements a search runs, the count and the page, report a failure.
+// Statement 2 is the dry run that builds the page's shares subquery, whose own
+// error is never returned, so it is skipped.
+func TestSearchSkills_ReportsFailures(t *testing.T) {
+	for _, n := range []int{1, 3} {
+		db := skillDB(t)
+		r := New(&mockDB{db: db})
+		seedSkill(t, r)
+		failNth(db, n)
+		if _, _, err := r.SearchSkills(context.Background(), skUser, skWS, "tdd", 1, 0); !errors.Is(err, errInjected) {
+			t.Errorf("statement %d: got %v", n, err)
+		}
+	}
+}

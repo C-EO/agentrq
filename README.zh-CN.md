@@ -269,7 +269,22 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
 - `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。
 - `deleteMemory`：删除某一条 Workspace 记忆。
+- `searchSkills`：搜索 Workspace 可用的技能（Skill），包括自身的和其他 Workspace 共享进来的，附带描述和 `skill://` URI；可选 `q`（至少 3 个字符）按名称或描述匹配，可选 `limit`/`offset` 分页。
+- `loadSkill`：按 `skill://<name>/<path>` URI 读取技能中的一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI。
+- `saveSkill`：写入本 Workspace 自有技能的一个文件；写入 `SKILL.md` 即创建或更新该技能。
+- `deleteSkill`：删除本 Workspace 的某个技能，或其中的一个文件。
 - `elicit`：向人类提问并等待回答，支持表单模式和链接确认模式。
+
+### 技能（Skills）
+
+技能是 Agent 在任务匹配时加载的 `SKILL.md` 操作手册，可附带它所引用的其他文件。每个 Workspace 拥有自己的技能，可以从公开的 GitHub 仓库（如 [obra/superpowers](https://github.com/obra/superpowers)）导入，也可以共享给同一账号下的其他 Workspace（共享为只读的实时引用）。
+
+- `SKILL.md` 须以 YAML frontmatter 开头，`description` 必填（最多 1024 个字符）；`name` 可选，默认取目录名。
+- `SKILL.md` 最大 16 KiB，其他文件每个最大 64 KiB；超限的文件会被拒绝而不是截断，导入时会在报告中列出被跳过的内容及原因。
+- 导入只保留 `SKILL.md` 直接或间接引用到的文件；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
+- 文件地址形如 `skill://<name>/<path>`，`skill://<name>` 即该技能的 `SKILL.md`。界面中不单独列出子文件，点击 `SKILL.md` 中的引用即可打开。
+
+详见 [docs/SKILLS.md](docs/SKILLS.md)（英文）。
 
 ### ACP Gateway（Antigravity / Codex）
 

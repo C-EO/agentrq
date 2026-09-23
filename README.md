@@ -380,6 +380,10 @@ Add a `.claude/settings.local.json` file in the same project directory to pre-ap
       "mcp__agentrq-WORKSPACE_ID__loadMemory",
       "mcp__agentrq-WORKSPACE_ID__saveMemory",
       "mcp__agentrq-WORKSPACE_ID__deleteMemory",
+      "mcp__agentrq-WORKSPACE_ID__searchSkills",
+      "mcp__agentrq-WORKSPACE_ID__loadSkill",
+      "mcp__agentrq-WORKSPACE_ID__saveSkill",
+      "mcp__agentrq-WORKSPACE_ID__deleteSkill",
       "mcp__agentrq-WORKSPACE_ID__elicit"
     ]
   },
@@ -410,8 +414,15 @@ When connected, the AI agent has access to:
 - `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
 - `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
 - `deleteMemory`: Remove one of the workspace's notes.
+- `searchSkills`: Find the skills the workspace can use — its own and those shared into it — with each one's description and `skill://` URI. Optional `q` (at least 3 characters) matches name or description; optional `limit`/`offset` page through the results.
+- `loadSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; a `SKILL.md` comes with the URIs of the skill's other files.
+- `saveSkill`: Write one file of one of the workspace's own skills. Writing `SKILL.md` creates or updates the skill.
+- `deleteSkill`: Delete one of the workspace's own skills, or one of its files.
 - `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
+
+### Skills
+Skills are `SKILL.md` playbooks that agents load when a task matches one. Each workspace has its own, can import them from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and can share them with the account's other workspaces. See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
 
 ## 🌉 ACP Gateway (Bridge for ACP Agents)
 
@@ -520,6 +531,10 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 **Workspace Memory**
 - `listMemories`: List a workspace's memories — name, size and when each changed.
 - `getMemory`: Read one memory in full. `MEMORY.md` is the index the others hang off.
+
+**Workspace Skills**
+- `searchSkills`: Find the skills a workspace can use, its own and those shared into it, by name or description (`q`, at least 3 characters), with `limit`/`offset` paging and a `total`. Content is not included.
+- `getSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`.
 
 **Machine Setup**
 - `createEnrolmentCode`: Mint a one-time code for enrolling a new machine with `agentrqd`. Shown once and expires shortly — there is no remote enrolment, so it hands back a ready-to-run command rather than acting on the machine itself.

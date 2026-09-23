@@ -118,6 +118,7 @@ type WorkspaceServer struct {
 	loadMemory            LoadMemoryFunc
 	saveMemory            SaveMemoryFunc
 	deleteMemory          DeleteMemoryFunc
+	skills                SkillStore
 	recordToolCall        RecordToolCallFunc
 	updateToolCallStatus  UpdateToolCallStatusFunc
 	bus                   *eventbus.Bus
@@ -387,6 +388,7 @@ func NewWorkspaceServer(
 	loadMemory LoadMemoryFunc,
 	saveMemory SaveMemoryFunc,
 	deleteMemory DeleteMemoryFunc,
+	skills SkillStore,
 	recordToolCall RecordToolCallFunc,
 	updateToolCallStatus UpdateToolCallStatusFunc,
 	bus *eventbus.Bus,
@@ -418,6 +420,7 @@ func NewWorkspaceServer(
 		loadMemory:             loadMemory,
 		saveMemory:             saveMemory,
 		deleteMemory:           deleteMemory,
+		skills:                 skills,
 		recordToolCall:         recordToolCall,
 		updateToolCallStatus:   updateToolCallStatus,
 		bus:                    bus,
@@ -495,7 +498,10 @@ func NewWorkspaceServer(
 					"6. **REMEMBER**: This workspace has a memory that outlives the task. Call `loadMemory` before you start — with no arguments it reads "+
 					"`memory.md`, the index of everything this workspace remembers, and it may already answer what you were about to ask. The index links "+
 					"its entries as `memory://<name>`; load the ones that look relevant. When you learn something that would save the next agent the same "+
-					"detour, `saveMemory` it and link it from the index. The memory belongs to the workspace, so everyone working here shares it.\n",
+					"detour, `saveMemory` it and link it from the index. The memory belongs to the workspace, so everyone working here shares it.\n\n"+
+					"7. **SKILLS**: This workspace may have skills, playbooks for kinds of task. Call `searchSkills` at the start of a task, and `loadSkill` "+
+					"the SKILL.md of any skill whose description matches it, then follow it. Load a skill's other files only when its SKILL.md points you to "+
+					"them, by their `skill://` URI. When you improve one of this workspace's own skills, save it with `saveSkill`.\n",
 				workspaceIDStr,
 			),
 		},
@@ -576,6 +582,42 @@ func NewWorkspaceServer(
 			"Deleting a name nobody wrote under (or one already deleted) is not an error; it just says there was nothing to remove.",
 		Annotations: mcphint.Overwrite("Delete a memory"),
 	}, ps.handleDeleteMemory)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "searchSkills",
+		Description: "Find the skills this workspace can use — its own and those shared into it — with each one's description and the skill:// URI of its SKILL.md. " +
+			"With q (at least 3 characters) only skills whose name or description contains it are returned, ignoring case; without it, every skill. " +
+			"limit and offset page through the matches. " +
+			"Call this at the start of a task, then loadSkill the SKILL.md of any skill whose description matches the task. Bodies are not included.",
+		Annotations: mcphint.Read("Search skills"),
+	}, ps.handleSearchSkills)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "loadSkill",
+		Description: "Read one file of a skill by its URI, skill://<name>/<path>; skill://<name> alone reads its SKILL.md. " +
+			"A SKILL.md comes with the URIs of the skill's other files; load those only when the SKILL.md points you to them. " +
+			"A skill or file that does not exist is not an error.",
+		Annotations: mcphint.Read("Read a skill"),
+	}, ps.handleLoadSkill)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "saveSkill",
+		Description: "Write one file of one of this workspace's skills, replacing it completely — there is no append. " +
+			"Writing skill://<name>/SKILL.md creates or updates the skill: it must start with YAML frontmatter holding a description of at most 1024 characters (what the skill does and when to use it) " +
+			"and, if it has a name, one equal to <name>. Names are lowercase letters and digits joined by single hyphens, at most 64 characters. " +
+			"Writing any other path adds or replaces a file in an existing skill, such as skill://<name>/references/guide.md. " +
+			"Limits: SKILL.md at most 16 KiB, any other file at most 64 KiB, UTF-8 text only, at most 64 files per skill. " +
+			"A skill shared into this workspace from another is read-only here.",
+		Annotations: mcphint.Overwrite("Write a skill file"),
+	}, ps.handleSaveSkill)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "deleteSkill",
+		Description: "Delete one of this workspace's skills: skill://<name> deletes the whole skill, skill://<name>/<path> one of its files. " +
+			"A SKILL.md cannot be deleted on its own; delete the skill. A skill shared into this workspace is read-only here. " +
+			"Deleting something that does not exist is not an error.",
+		Annotations: mcphint.Overwrite("Delete a skill"),
+	}, ps.handleDeleteSkill)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "elicit",

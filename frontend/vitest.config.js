@@ -78,6 +78,7 @@ export default defineConfig({
         'src/composables/useCacheRetention.js',
         'src/composables/useMarkdownLinks.js',
         'src/composables/useMemories.js',
+        'src/composables/useSkills.js',
         'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
         'src/composables/useAgentSummary.js',

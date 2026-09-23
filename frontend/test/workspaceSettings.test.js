@@ -177,6 +177,10 @@ describe('useWorkspaceSettings', () => {
         'loadMemory',
         'saveMemory',
         'deleteMemory',
+        'searchSkills',
+        'loadSkill',
+        'saveSkill',
+        'deleteSkill',
         'elicit',
       ]);
     });
@@ -211,6 +215,10 @@ describe('useWorkspaceSettings', () => {
         'mcp__agentrq-ws1__loadMemory',
         'mcp__agentrq-ws1__saveMemory',
         'mcp__agentrq-ws1__deleteMemory',
+        'mcp__agentrq-ws1__searchSkills',
+        'mcp__agentrq-ws1__loadSkill',
+        'mcp__agentrq-ws1__saveSkill',
+        'mcp__agentrq-ws1__deleteSkill',
         'mcp__agentrq-ws1__elicit',
       ]);
     });

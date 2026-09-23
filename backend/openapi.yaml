@@ -479,11 +479,28 @@ paths:
       - $ref: '#/components/parameters/WorkspaceId'
     get:
       tags: [Workspaces]
-      summary: The skills this workspace can use
+      summary: Search the skills this workspace can use
       description: >
         Its own skills and those other workspaces of the same account shared
-        into it, by name. A shared-in skill carries `sharedFromWorkspaceId` and
-        is read-only here. `files` is omitted from the list.
+        into it, by name. With `q`, only skills whose name or description
+        contains it, ignoring case. A shared-in skill carries
+        `sharedFromWorkspaceId` and is read-only here. `files` is omitted.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string, minLength: 3, maxLength: 256 }
+          description: Text to find in a skill's name or description. Leave it out to list every skill.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 100 }
+          description: How many skills to return; larger values are capped at 100. Leave it out, or 0, to return every match.
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+          description: How many matches to skip.
       responses:
         '200':
           description: OK
@@ -495,6 +512,9 @@ paths:
                   skills:
                     type: array
                     items: { $ref: '#/components/schemas/Skill' }
+                  total:
+                    type: integer
+                    description: How many skills match in all, across every page.
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 

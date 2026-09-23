@@ -1,0 +1,215 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+
+/**
+ * A workspace's skills, as the settings screen shows them.
+ *
+ * A skill is a SKILL.md and the files it points to. The list shows only the
+ * skills themselves — a skill's other files are reached by following its own
+ * references, the way an agent reaches them — so most of what is worth testing
+ * here is how a reference turns into a file: which spellings count, where a
+ * relative path lands, and which inline code is really a file name.
+ */
+
+import { formatMemorySize } from './useMemories';
+
+/** The file every skill has, and the one opened first. */
+export const SKILL_FILE = 'SKILL.md';
+
+/** What SKILL.md may weigh; the meter is measured against it. */
+export const SKILL_LIMIT_BYTES = 16 * 1024;
+
+/**
+ * Where `renderMarkdown` parks a reference to a skill file. The sanitizer
+ * strips an unknown scheme's href, so the target travels in an attribute.
+ */
+export const SKILL_LINK_ATTR = 'data-skill-link';
+export const SKILL_LINK_SELECTOR = `[${SKILL_LINK_ATTR}]`;
+
+// One slash or none is accepted as well as two, as for memory:// links.
+const SKILL_SCHEME = /^skill:\/{0,2}/i;
+const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** A skill file's URI. */
+export function skillUri(skill, path = SKILL_FILE) {
+  return `skill://${skill}/${path}`;
+}
+
+/** The directory a file sits in, '' at the skill's root. */
+export function dirOf(path) {
+  const i = String(path ?? '').lastIndexOf('/');
+  return i < 0 ? '' : path.slice(0, i);
+}
+
+/**
+ * `rel` resolved against `dir`, or null when it would leave the skill, names
+ * a hidden file, or names nothing.
+ */
+export function resolveWithin(dir, rel) {
+  const out = dir ? dir.split('/') : [];
+  for (const segment of rel.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (out.length === 0) return null;
+      out.pop();
+      continue;
+    }
+    if (segment.startsWith('.')) return null;
+    out.push(segment);
+  }
+  return out.length ? out.join('/') : null;
+}
+
+/**
+ * The skill and file a skill:// URI names, or null when it is not one.
+ * `skill://<name>` alone is its SKILL.md.
+ */
+export function parseSkillUri(raw) {
+  const text = String(raw ?? '').trim();
+  if (!SKILL_SCHEME.test(text)) return null;
+  const rest = text.replace(SKILL_SCHEME, '');
+  const slash = rest.indexOf('/');
+  const skill = (slash < 0 ? rest : rest.slice(0, slash)).toLowerCase();
+  if (!NAME.test(skill)) return null;
+  const tail = slash < 0 ? '' : rest.slice(slash + 1);
+  if (tail.replace(/\/+$/, '') === '') return { skill, path: SKILL_FILE };
+  const path = resolveWithin('', tail);
+  return path ? { skill, path } : null;
+}
+
+/**
+ * The file a reference in a skill file points to, as `{skill, path}`, or null.
+ *
+ * Accepts a skill:// URI in any of its spellings, and a relative path —
+ * `references/x.md`, `./x.md`, `../x.md` — resolved against the directory of
+ * the file being read and never allowed out of the skill. Anything else, a web
+ * link or an absolute path, is not a skill file.
+ */
+export function skillLinkTarget(href, currentSkill, currentPath = SKILL_FILE) {
+  const text = String(href ?? '').trim();
+  if (SKILL_SCHEME.test(text)) return parseSkillUri(text);
+  if (!text || !currentSkill || ANY_SCHEME.test(text) || /^[/#]/.test(text)) return null;
+  let rel = text.replace(/[?#].*$/, '');
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    return null;
+  }
+  const path = resolveWithin(dirOf(currentPath), rel);
+  return path ? { skill: currentSkill, path } : null;
+}
+
+/**
+ * The file of the current skill that a piece of inline code names, or null.
+ *
+ * Real skills name their files in code rather than linking them —
+ * `root-cause-tracing.md`, or `skills/brainstorming/visual-companion.md` as
+ * the file sits in the skill's repository. Only an exact match against a file
+ * that exists counts, from the current file's directory, from the skill's
+ * root, or after `/<skill>/`; anything else stays code, so nothing clickable
+ * ever leads nowhere.
+ */
+export function inlineCodeFileMatch(text, files, currentPath = SKILL_FILE, skillName = '') {
+  const code = String(text ?? '').trim();
+  if (!code || /\s/.test(code)) return null;
+  const known = new Set((files || []).map((f) => (typeof f === 'string' ? f : f.path)));
+
+  const candidates = [];
+  const uri = parseSkillUri(code);
+  if (uri) {
+    if (uri.skill === skillName) candidates.push(uri.path);
+  } else if (!ANY_SCHEME.test(code)) {
+    candidates.push(resolveWithin(dirOf(currentPath), code), resolveWithin('', code));
+    const marker = skillName ? `/${skillName}/` : '';
+    const at = marker ? `/${code}`.lastIndexOf(marker) : -1;
+    if (at >= 0) candidates.push(resolveWithin('', `/${code}`.slice(at + marker.length)));
+  }
+  return candidates.find((c) => c && known.has(c)) || null;
+}
+
+/**
+ * A SKILL.md's body without its YAML frontmatter, for the rendered view.
+ *
+ * Markdown reads the closing `---` as a heading underline, so the frontmatter
+ * would render as a bold line of `name: … description: …`. The row already
+ * shows the description, and the raw view keeps everything.
+ */
+export function skillBody(content) {
+  const text = String(content ?? '');
+  const match = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/.exec(text);
+  return match ? text.slice(match[0].length) : text;
+}
+
+/** The skill file a click asked for, or null when the click was not on one. */
+export function skillLinkFromEvent(event) {
+  const anchor = event?.target?.closest?.(SKILL_LINK_SELECTOR);
+  return anchor ? parseSkillUri(anchor.getAttribute(SKILL_LINK_ATTR)) : null;
+}
+
+/** Skills by name, the order the API returns and the one that stays put. */
+export function orderSkills(skills = []) {
+  return [...skills].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A skill's files, SKILL.md first, then by path. */
+export function orderSkillFiles(files = []) {
+  return [...files].sort((a, b) => {
+    if (a.path === SKILL_FILE) return -1;
+    if (b.path === SKILL_FILE) return 1;
+    return a.path.localeCompare(b.path);
+  });
+}
+
+/** A size in the units a person reads — the same as a memory's. */
+export const formatSkillSize = formatMemorySize;
+
+/** How full a SKILL.md is against its 16 KB cap, as a percentage 0–100. */
+export function skillFullness(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(100, Math.round((n / SKILL_LIMIT_BYTES) * 100));
+}
+
+/**
+ * Where a skill came from: "manual", or its repository and the commit it was
+ * imported at (the ref when GitHub did not say which commit).
+ */
+export function skillSource(skill) {
+  if (skill?.sourceType !== 'github' || !skill.sourceRepo) return 'manual';
+  const at = skill.sourceCommit ? skill.sourceCommit.slice(0, 7) : skill.sourceRef;
+  return at ? `GitHub ${skill.sourceRepo}@${at}` : `GitHub ${skill.sourceRepo}`;
+}
+
+/** The segments of the path being read, for the breadcrumb. */
+export function skillBreadcrumb(skill, path = SKILL_FILE) {
+  return [skill, ...String(path).split('/')];
+}
+
+const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?(\.git)?(\/tree\/[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.\-/]*)?)?\/?$/i;
+
+/**
+ * Whether a URL looks like something the importer takes, for a hint while
+ * typing. The server decides; this only saves a round trip on a typo.
+ */
+export function githubImportUrlValid(url) {
+  return GITHUB_URL.test(String(url ?? '').trim());
+}
+
+/** What the panel should be showing. */
+export const SkillsState = {
+  Loading: 'loading',
+  Ready: 'ready',
+  /** No skills yet — nothing imported and nothing written by an agent. */
+  Empty: 'empty',
+  /** The list could not be fetched, which is not the same as there being none. */
+  Failed: 'failed',
+};
+
+/** @param {{ loading: boolean, error: unknown, skills: Array<unknown> }} state */
+export function skillsState({ loading, error, skills }) {
+  if (loading) return SkillsState.Loading;
+  // Before emptiness: a failed fetch leaves the list empty too.
+  if (error) return SkillsState.Failed;
+  return skills?.length ? SkillsState.Ready : SkillsState.Empty;
+}

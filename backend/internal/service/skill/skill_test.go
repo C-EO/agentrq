@@ -150,3 +150,31 @@ func TestURI(t *testing.T) {
 		t.Errorf("URI: %q", got)
 	}
 }
+
+func TestParseURI(t *testing.T) {
+	for _, tc := range []struct {
+		in, name, path, err string
+	}{
+		{in: "skill://systematic-debugging/SKILL.md", name: "systematic-debugging", path: "SKILL.md"},
+		{in: " SKILL://Brainstorming/scripts/helper.js ", name: "brainstorming", path: "scripts/helper.js"},
+		{in: "skill:/tdd/SKILL.md", name: "tdd", path: "SKILL.md"},
+		{in: "skill:tdd", name: "tdd"},
+		{in: "skill://tdd/", name: "tdd"},
+		{in: "memory://tdd.md", err: "not a skill URI"},
+		{in: "tdd/SKILL.md", err: "not a skill URI"},
+		{in: "skill://", err: "empty"},
+		{in: "skill://Not Valid/SKILL.md", err: "not usable"},
+		{in: "skill://tdd/../x", err: "may not contain"},
+	} {
+		name, p, err := ParseURI(tc.in)
+		if tc.err != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Errorf("ParseURI(%q): want error containing %q, got %v", tc.in, tc.err, err)
+			}
+			continue
+		}
+		if err != nil || name != tc.name || p != tc.path {
+			t.Errorf("ParseURI(%q) = %q, %q, %v; want %q, %q", tc.in, name, p, err, tc.name, tc.path)
+		}
+	}
+}

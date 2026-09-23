@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 
 import { COPY_TEXT_ATTR, FILE_LINK_ATTR, filePathFromUrl } from '../composables/useMarkdownLinks';
 import { MEMORY_LINK_ATTR, memoryLinkTarget } from '../composables/useMemories';
+import { SKILL_LINK_ATTR, inlineCodeFileMatch, skillLinkTarget, skillUri } from '../composables/useSkills';
 
 function escapeHtml(text) {
   return text
@@ -25,6 +26,16 @@ marked.use({ renderer: { html({ text }) { return escapeHtml(text); } } });
 
 const FILE_SCHEME = /^file:/i;
 
+// The skill file being rendered, while `renderMarkdown` is given one. marked's
+// renderers are registered once for every caller, so the per-call context
+// travels here; parsing is synchronous, so it cannot leak into another call.
+let skillContext = null;
+
+function skillAnchor(target, inner) {
+  const uri = escapeHtml(skillUri(target.skill, target.path));
+  return `<a class="md-skill-link" ${SKILL_LINK_ATTR}="${uri}" role="link" tabindex="0" title="${uri}">${inner}</a>`;
+}
+
 // Where a link can point and actually be followed: the web, a mail client, a
 // dialler. Everything else either gets its own treatment below or becomes text.
 const FOLLOWABLE_SCHEME = /^(https?:|mailto:|tel:|sms:)/i;
@@ -43,6 +54,11 @@ marked.use({
   renderer: {
     link(token) {
       const href = token.href;
+
+      // Inside a skill, a relative link or a skill:// URI opens another of its
+      // files, which the viewer answers rather than the browser.
+      const skillTarget = skillContext && skillLinkTarget(href, skillContext.skillName, skillContext.currentPath);
+      if (skillTarget) return skillAnchor(skillTarget, this.parser.parseInline(token.tokens));
 
       // A link between memories, which an index is made of. The scheme makes
       // the intent explicit where a bare `deploys.md` could as easily be a repo
@@ -79,6 +95,16 @@ marked.use({
       }
 
       return false;
+    },
+
+    // Real skills name their files in code rather than linking them; inside
+    // a skill, code that is exactly one of its files opens it.
+    codespan(token) {
+      const path =
+        skillContext &&
+        inlineCodeFileMatch(token.text, skillContext.skillFiles, skillContext.currentPath, skillContext.skillName);
+      if (!path) return false;
+      return skillAnchor({ skill: skillContext.skillName, path }, `<code>${escapeHtml(token.text)}</code>`);
     },
   },
 });
@@ -122,8 +148,21 @@ function addCopyButtons(fragment) {
   }
 }
 
-export function renderMarkdown(text) {
-  const clean = DOMPurify.sanitize(marked.parse(text || '', { breaks: true }), {
+/**
+ * @param {string} text
+ * @param {{ skillName: string, skillFiles: Array<string|{path: string}>, currentPath?: string }} [skill]
+ *   The skill file being rendered, which makes its references to the skill's
+ *   other files clickable. Without it, rendering is exactly as it always was.
+ */
+export function renderMarkdown(text, skill) {
+  skillContext = skill?.skillName ? skill : null;
+  let html;
+  try {
+    html = marked.parse(text || '', { breaks: true });
+  } finally {
+    skillContext = null;
+  }
+  const clean = DOMPurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
   });
   addCopyButtons(clean);

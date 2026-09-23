@@ -128,6 +128,12 @@ describe('the catalogue as a whole', () => {
         'deleteWorkflow',
         'deleteWorkflowStep',
         'deleteWorkspace',
+        'deleteWorkspaceSkill',
+        // Not deletes, but each can take away what an agent relied on: an
+        // unshared skill is gone from the other workspace, and an import with
+        // overwrite replaces skills this workspace already had.
+        'unshareWorkspaceSkill',
+        'importWorkspaceSkills',
         // Not a delete either, and the most destructive thing here: it ends
         // every session on a machine and starts them again empty.
         'approveMachineUpdate',

@@ -15,7 +15,7 @@ import (
 // registerSkillRoutes serves a workspace's skills. Writing single files is
 // left to the MCP tools; people import, delete and share.
 func (h *handler) registerSkillRoutes(r fiber.Router) {
-	r.Get("/:id/skills", h.listSkills())
+	r.Get("/:id/skills", h.searchSkills())
 	r.Post("/:id/skills/import", h.importSkills())
 	r.Get("/:id/skills/:name", h.getSkill())
 	r.Delete("/:id/skills/:name", h.deleteSkill())
@@ -45,10 +45,10 @@ func sendSkillError(c *fiber.Ctx, err error) error {
 	return c.Send(e)
 }
 
-func (h *handler) listSkills() fiber.Handler {
+func (h *handler) searchSkills() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
-		rq := mapper.FromHTTPRequestToListSkillsRequestEntity(c)
+		rq := mapper.FromHTTPRequestToSearchSkillsRequestEntity(c)
 		if rq == nil {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
@@ -57,11 +57,11 @@ func (h *handler) listSkills() fiber.Handler {
 
 		ctx, cancel := newContext(c)
 		defer cancel()
-		rs, err := h.crud.ListSkills(ctx, *rq)
+		rs, err := h.crud.SearchSkills(ctx, *rq)
 		if err != nil {
 			return sendSkillError(c, err)
 		}
-		return c.Send(mapper.FromListSkillsResponseEntityToHTTPResponse(rs))
+		return c.Send(mapper.FromSearchSkillsResponseEntityToHTTPResponse(rs))
 	}
 }
 

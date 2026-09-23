@@ -71,7 +71,7 @@ That allowance is permission to execute this package's code on your machine at i
 
 ## What the model gets
 
-Seven AgentRQ tools, bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
+Every tool the workspace server offers — fifteen today — bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
 
 | Tool | Purpose |
 |---|---|
@@ -82,6 +82,14 @@ Seven AgentRQ tools, bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq
 | `mcp__agentrq__getWorkspace` | Read the workspace title and mission |
 | `mcp__agentrq__downloadAttachment` | Fetch an attachment's content |
 | `mcp__agentrq__publishEvent` | Fire a named event so subscriber workspaces spawn their trigger tasks |
+| `mcp__agentrq__loadMemory` | Read what the workspace remembers; with no name, `memory.md`, the index |
+| `mcp__agentrq__saveMemory` | Write a memory that outlives the task, replacing it entirely |
+| `mcp__agentrq__deleteMemory` | Delete one of the workspace's memories |
+| `mcp__agentrq__searchSkills` | Find the workspace's skills by name or description, with their `skill://` URIs |
+| `mcp__agentrq__loadSkill` | Read one file of a skill by its `skill://` URI |
+| `mcp__agentrq__saveSkill` | Write one file of one of the workspace's own skills |
+| `mcp__agentrq__deleteSkill` | Delete one of the workspace's own skills, or one of its files |
+| `mcp__agentrq__elicit` | Ask the human a question and wait for the answer |
 
 Plus one tool this package owns:
 

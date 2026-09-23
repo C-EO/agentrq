@@ -348,6 +348,47 @@ test('memory delete defaults to the index', async () => {
   assert.deepEqual(client.calls[0].args, { name: undefined })
 })
 
+test('skill search passes the query and paging on', async () => {
+  const client = stubClient()
+  await invoke('skill search', { client })
+  await invoke('skill search', { positionals: ['pull', 'request'], values: { limit: '20', offset: '40' }, client })
+  assert.deepEqual(
+    client.calls.map((c) => c.args),
+    [{}, { q: 'pull request', limit: 20, offset: 40 }],
+  )
+  await assert.rejects(() => invoke('skill search', { values: { limit: '-1' } }), /--limit must be a whole number/)
+  await assert.rejects(() => invoke('skill search', { values: { offset: 'x' } }), /--offset must be a whole number/)
+})
+
+test('skill load and delete name the skill by URI', async () => {
+  const client = stubClient()
+  await invoke('skill load', { positionals: ['skill://tdd'], client })
+  await invoke('skill delete', { positionals: ['skill://tdd/notes.md'], client })
+  assert.deepEqual(
+    client.calls.map((c) => [c.name, c.args]),
+    [
+      ['loadSkill', { uri: 'skill://tdd' }],
+      ['deleteSkill', { uri: 'skill://tdd/notes.md' }],
+    ],
+  )
+  await assert.rejects(() => invoke('skill load', {}), /<uri>/)
+  await assert.rejects(() => invoke('skill delete', {}), /<uri>/)
+})
+
+test('skill save needs a URI and content, and takes the content from anywhere', async () => {
+  const client = stubClient()
+  await assert.rejects(() => invoke('skill save', { values: { content: 'x' } }), /<uri>/)
+  await assert.rejects(() => invoke('skill save', { positionals: ['skill://tdd'] }), /--content is required/)
+
+  await invoke('skill save', {
+    positionals: ['skill://tdd/SKILL.md'],
+    values: { content: '-' },
+    stdin: stdinOf('---\ndescription: d\n---\n'),
+    client,
+  })
+  assert.deepEqual(client.calls[0].args, { uri: 'skill://tdd/SKILL.md', content: '---\ndescription: d\n---\n' })
+})
+
 test('event publish sends the payload, task and faq', async () => {
   const client = stubClient()
   await invoke('event publish', {
@@ -489,6 +530,10 @@ test('the CLI covers every tool the workspace server offers', () => {
     'loadMemory',
     'saveMemory',
     'deleteMemory',
+    'searchSkills',
+    'loadSkill',
+    'saveSkill',
+    'deleteSkill',
     'elicit',
   ])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')

@@ -266,6 +266,56 @@ export const COMMANDS = [
     },
   },
   {
+    path: ['skill', 'search'],
+    summary: 'Find the skills this workspace can use, by name or description',
+    usage: 'agentrq-ws skill search [q] [--limit N] [--offset N]',
+    options: {
+      limit: { type: 'string', description: 'How many to return (at most 100; default all)' },
+      offset: { type: 'string', description: 'How many matches to skip' },
+    },
+    async run(ctx) {
+      const args = {}
+      if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
+      for (const key of ['limit', 'offset']) {
+        if (ctx.values[key] === undefined) continue
+        const n = Number(ctx.values[key])
+        if (!Number.isInteger(n) || n < 0) throw new UserError(`--${key} must be a whole number, 0 or more`)
+        args[key] = n
+      }
+      return ctx.client.callTool('searchSkills', args)
+    },
+  },
+  {
+    path: ['skill', 'load'],
+    summary: 'Read a skill file (skill://<name> reads its SKILL.md)',
+    usage: 'agentrq-ws skill load <uri>',
+    async run(ctx) {
+      return ctx.client.callTool('loadSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+    },
+  },
+  {
+    path: ['skill', 'save'],
+    summary: 'Replace a file of one of this workspace\'s skills',
+    usage: 'agentrq-ws skill save <uri> --content TEXT|@file|-',
+    options: {
+      content: { type: 'string', short: 'C', description: 'The full new content (@file or - for stdin)' },
+    },
+    async run(ctx) {
+      const uri = requirePositional(ctx.positionals, 0, 'uri')
+      if (ctx.values.content === undefined) throw new UserError('--content is required (use @file or - to read from stdin)')
+      const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the skill file' })
+      return ctx.client.callTool('saveSkill', { uri, content })
+    },
+  },
+  {
+    path: ['skill', 'delete'],
+    summary: 'Delete a skill (skill://<name>) or one of its files',
+    usage: 'agentrq-ws skill delete <uri>',
+    async run(ctx) {
+      return ctx.client.callTool('deleteSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+    },
+  },
+  {
     path: ['event', 'publish'],
     summary: 'Publish a named event',
     usage: 'agentrq-ws event publish <name> [--payload TEXT|@file|-] [--task ID] [--faq Q=A]...',
