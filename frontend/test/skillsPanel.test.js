@@ -44,7 +44,7 @@ const api = vi.hoisted(() => ({
   importWorkspaceSkills: vi.fn(() =>
     Promise.resolve({
       imported: [{ name: 'tdd', fileCount: 2, totalBytes: 300 }],
-      skipped: [{ path: 'skills/brainstorming', reason: 'SKILL.md is 17548 bytes; the limit is 16384 bytes (16 KiB)' }],
+      skipped: [{ path: 'skills/brainstorming', reason: 'SKILL.md is 40000 bytes; the limit is 32768 bytes (32 KiB)' }],
       sourceRepo: 'obra/superpowers',
       sourceRef: 'main',
       sourceCommit: '0123456789',
@@ -104,7 +104,7 @@ describe('the Skills tab', () => {
     const el = await mount();
     await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
     expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('systematic-debugging/SKILL.md');
-    expect(text(el)).toContain('50% of the 16 KB limit');
+    expect(text(el)).toContain('25% of the 32 KB limit');
     // Plain code that is no file stays plain.
     expect(el.querySelector('[data-test="skill-body"]').innerHTML).toContain('<code>npm test</code>');
 
@@ -161,7 +161,7 @@ describe('the Skills tab', () => {
     expect(api.importWorkspaceSkills).toHaveBeenCalledWith('ws1', 'https://github.com/obra/superpowers', false);
     const report = text(el.querySelector('[data-test="skill-import-report"]'));
     expect(report).toContain('Imported 1 skill from obra/superpowers@0123456');
-    expect(report).toContain('skills/brainstorming — SKILL.md is 17548 bytes');
+    expect(report).toContain('skills/brainstorming — SKILL.md is 40000 bytes');
     // The list is fetched again, so what arrived shows up.
     expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
   });

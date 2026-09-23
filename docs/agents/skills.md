@@ -5,7 +5,7 @@
 > the Skills tab (`frontend/src/composables/useSkills.js`). Read before changing any of them.
 
 - **The database holds metadata only; file content is in `service/storage`.** Write the blob before the row and delete it if the row fails. Purge a replaced blob only after the commit, or a crash leaves a row pointing at nothing.
-- **The file is exactly `SKILL.md`.** It is capped at 16 KiB and every other file at 64 KiB. An oversized file is refused, never truncated, so a caller can decide what to cut.
+- **The file is exactly `SKILL.md`.** It is capped at 32 KiB and every other file at 64 KiB. An oversized file is refused, never truncated, so a caller can decide what to cut.
 - **Names are canonicalised at the boundary, and uniqueness counts shared-in skills.** A share that would give the target two skills with one name is refused, or `skill://<name>` would be ambiguous there.
 - **A share is a live reference, read-only in the target.** Only the owning workspace writes; the refusal names it so an agent knows where to go.
 - **The importer never fetches a URL it was given.** It builds the codeload and API URLs from owner/repo/ref, which prevents SSRF. It downloads one tarball, because the contents API allows 60 unauthenticated calls an hour.

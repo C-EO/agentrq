@@ -24,7 +24,7 @@ const (
 	FileName = "SKILL.md"
 
 	// MaxSkillFileBytes caps SKILL.md, the same 16 KiB a memory is allowed.
-	MaxSkillFileBytes = 16 * 1024
+	MaxSkillFileBytes = 32 * 1024
 	// MaxSubFileBytes caps every other file in a skill.
 	MaxSubFileBytes = 64 * 1024
 	// MaxFiles caps the files in one skill, SKILL.md included.

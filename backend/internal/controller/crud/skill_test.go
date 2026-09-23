@@ -446,7 +446,7 @@ func githubResult(skills ...skillimport.Skill) *skillimport.Result {
 	return &skillimport.Result{
 		Repo: "obra/superpowers", Ref: "main", Commit: strings.Repeat("a", 40),
 		Skills:  skills,
-		Skipped: []skillimport.Skip{{Name: "brainstorming", Path: "skills/brainstorming", Reason: "SKILL.md is 17548 bytes; the limit is 16384 bytes (16 KiB)"}},
+		Skipped: []skillimport.Skip{{Name: "brainstorming", Path: "skills/brainstorming", Reason: "SKILL.md is 40000 bytes; the limit is 32768 bytes (32 KiB)"}},
 	}
 }
 
@@ -483,7 +483,7 @@ func TestSkills_Import(t *testing.T) {
 	for _, s := range rs.Skipped {
 		reasons[s.Name] = s.Reason
 	}
-	for name, want := range map[string]string{"brainstorming": "16 KiB", "tdd": "overwrite", "lint": "shared into this workspace"} {
+	for name, want := range map[string]string{"brainstorming": "32 KiB", "tdd": "overwrite", "lint": "shared into this workspace"} {
 		if !strings.Contains(reasons[name], want) {
 			t.Errorf("skipped %s: %q, want %q", name, reasons[name], want)
 		}

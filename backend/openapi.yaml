@@ -2263,7 +2263,7 @@ components:
         path: { type: string, maxLength: 255 }
         sizeBytes:
           type: integer
-          description: At most 16384 for SKILL.md and 65536 for any other file.
+          description: At most 32768 for SKILL.md and 65536 for any other file.
         updatedAt: { type: string, format: date-time }
         content:
           type: string
