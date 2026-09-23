@@ -261,6 +261,53 @@ func TestEveryAdvertisedVersionCompletesHandshake(t *testing.T) {
 	}
 }
 
+// The other half of that bug: a client that blind-tries 2026-07-28 must be
+// refused in a language it can read. This server is stateful on purpose (it
+// pushes channel notifications over the SSE stream), and the SDK serves
+// 2026-07-28 only on stateless servers — so the refusal is permanent, and it
+// has to carry the versions we do support or the client has nothing to fall
+// back to. It used to be a plain-text "Bad Request: ..." body, which no
+// JSON-RPC client can parse.
+func TestUnsupportedRevisionIsRefusedInJSONRPC(t *testing.T) {
+	srv := newProtocolTestServer(t)
+	advertised, _ := discoverResult(t, srv)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+		`"protocolVersion":"2026-07-28","capabilities":{},` +
+		`"clientInfo":{"name":"probe","version":"1"}}}`
+
+	_, out, hdr := mcpPost(t, srv.URL, map[string]string{"MCP-Protocol-Version": "2026-07-28"}, body)
+
+	if ct := hdr.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("refusal Content-Type = %q, want JSON; a plain-text body is unparseable to the client: %s", ct, out)
+	}
+
+	var env struct {
+		Error *struct {
+			Code int `json:"code"`
+			Data struct {
+				Supported []string `json:"supported"`
+			} `json:"data"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if env.Error == nil {
+		t.Fatal("expected 2026-07-28 to be refused")
+	}
+	if env.Error.Code != -32022 {
+		t.Errorf("error code = %d, want -32022 (unsupported protocol version)", env.Error.Code)
+	}
+
+	// The fallback list must be the same set the server advertises, or the
+	// client renegotiates onto a version that then fails to handshake.
+	if strings.Join(env.Error.Data.Supported, ",") != strings.Join(advertised, ",") {
+		t.Errorf("refusal offers %v, but server/discover advertises %v",
+			env.Error.Data.Supported, advertised)
+	}
+}
+
 // tools/call must return a schema-conformant CallToolResult: "content" is
 // required by the spec, so it must be present and non-empty.
 func TestToolsCall_ReturnsSchemaConformantResult(t *testing.T) {
