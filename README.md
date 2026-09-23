@@ -421,6 +421,9 @@ When connected, the AI agent has access to:
 - `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
+### Skills
+Skills are `SKILL.md` playbooks that agents load when a task matches one. Each workspace has its own, can import them from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and can share them with the account's other workspaces. See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
+
 ## 🌉 ACP Gateway (Bridge for ACP Agents)
 
 While Claude Code has native support for `claude/notifications`, other agents like **Antigravity** and **Codex** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` bridges the [Agent Client Protocol (ACP)](https://agentclientprotocol.com) with MCP to enable this.
