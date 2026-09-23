@@ -39,9 +39,13 @@ func NewServer(crudCtrl crud.Controller, baseURL string, pubsubSvc pubsub.Servic
 		},
 	}, &mcp.ServerOptions{})
 
+	// Stateless, unlike the per-workspace server, which pushes to its agent over
+	// the SSE stream and so must keep sessions. Nothing here pushes, so there is
+	// no session worth holding — and only a stateless transport may serve
+	// revision 2026-07-28. Older revisions are served exactly as before.
 	streamHandler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		return srv
-	}, &mcp.StreamableHTTPOptions{})
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
 
 	ws := &WorkspaceServer{
 		server:       srv,

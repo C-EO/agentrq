@@ -63,6 +63,10 @@ revision 2026-07-28: stateless 405s the GET/SSE stream, and that stream is how
 We advertise `2025-11-25` downwards and refuse the newer revision with a
 JSON-RPC `-32022` naming those versions, so clients renegotiate down.
 
+coremcp is stateless and does serve 2026-07-28 — it pushes nothing, so it has
+no stream to lose. The two servers differ on purpose; see
+[coremcp-and-supervisor.md](coremcp-and-supervisor.md).
+
 ## Annotations, and why `Name:` stays first
 
 Every tool on both servers declares annotations, built by
