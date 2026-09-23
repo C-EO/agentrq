@@ -12,6 +12,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/ratelimit"
+	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
 
@@ -23,6 +24,8 @@ type (
 		Image      image.Service
 		PubSub     pubsub.Service
 		Limiter    ratelimit.Limiter
+		// SkillImport reads skills from GitHub. Nil turns importing off.
+		SkillImport skillimport.Service
 	}
 
 	Controller interface {
@@ -31,6 +34,7 @@ type (
 		TaskController
 		EventController
 		MemoryController
+		SkillController
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController
@@ -48,6 +52,8 @@ type (
 		image      image.Service
 		pubsub     pubsub.Service
 		limiter    ratelimit.Limiter
+
+		skillImport skillimport.Service
 	}
 )
 
@@ -59,6 +65,8 @@ func New(p Params) Controller {
 		image:      p.Image,
 		pubsub:     p.PubSub,
 		limiter:    p.Limiter,
+
+		skillImport: p.SkillImport,
 	}
 }
 

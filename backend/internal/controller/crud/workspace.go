@@ -101,6 +101,7 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	// 1. Get all task and message attachment IDs directly from DB
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	attachmentIDs, _ := c.repository.GetWorkspaceAttachmentIDs(ctx, req.ID)
+	skillFileIDs, _ := c.repository.GetWorkspaceSkillStorageIDs(ctx, req.ID)
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
 	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {
@@ -119,6 +120,7 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	for _, id := range attachmentIDs {
 		_ = c.storage.Delete(id)
 	}
+	c.purge(skillFileIDs)
 
 	return nil
 }

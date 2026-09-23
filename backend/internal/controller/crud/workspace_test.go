@@ -66,9 +66,12 @@ func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 
 	e.repo.EXPECT().GetWorkspaceAttachmentIDs(gomock.Any(), int64(1)).Return([]string{"att-1", "att-2"}, nil)
+	e.repo.EXPECT().GetWorkspaceSkillStorageIDs(gomock.Any(), int64(1)).Return([]string{"skill-1"}, nil)
 	e.repo.EXPECT().DeleteWorkspace(gomock.Any(), int64(1), testUserID).Return(nil)
 	e.storage.EXPECT().Delete("att-1").Return(nil)
 	e.storage.EXPECT().Delete("att-2").Return(nil)
+	// A workspace's skill files are in storage too, and go with it.
+	e.storage.EXPECT().Delete("skill-1").Return(nil)
 
 	err := e.controller.DeleteWorkspace(context.Background(), entity.DeleteWorkspaceRequest{ID: 1, UserID: testUserIDStr})
 	if err != nil {

@@ -87,10 +87,14 @@ func registeredRoutes(t *testing.T) map[string]bool {
 	return routes
 }
 
-// toOpenAPIPath rewrites Fiber's `:name` parameters as OpenAPI's `{name}`.
+// toOpenAPIPath rewrites Fiber's `:name` parameters as OpenAPI's `{name}`,
+// and a trailing `*`, which matches the rest of the path, as `{path}`.
 var paramPattern = regexp.MustCompile(`:([A-Za-z0-9_]+)`)
 
 func toOpenAPIPath(path string) string {
+	if strings.HasSuffix(path, "/*") {
+		path = strings.TrimSuffix(path, "*") + "{path}"
+	}
 	return paramPattern.ReplaceAllString(path, "{$1}")
 }
 
