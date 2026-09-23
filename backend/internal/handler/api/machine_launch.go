@@ -43,6 +43,15 @@ const acpGatewayAskTimeout = 50 * time.Second
 // pointing at the same place.
 const mcpServerName = "agentrq-workspace"
 
+// supervisorWorkspaceName is the workspace that also gets the account-wide
+// server, matching the one created for every new account in
+// `controller/crud/user.go` and the same exact-name rule the setup tab applies.
+//
+// A person can rename a workspace to this, and that is allowed: what it buys
+// them is a second entry pointing at a server their own account already owns
+// and which authenticates them separately.
+const supervisorWorkspaceName = "supervisor"
+
 func (h *handler) registerAgentLaunchRoutes() {
 	h.router.Post(_routePathAgentLaunch, h.launchAgent())
 	h.router.Get(_routePathAgentSession, h.workspaceSession())
@@ -301,6 +310,14 @@ func (h *handler) launchAgent() fiber.Handler {
 			Agent:      payload.Agent,
 			Cols:       payload.Cols,
 			Rows:       payload.Rows,
+		}
+
+		// The supervisor workspace works across every other one, so its agent
+		// gets the account-wide server as well. Decided here and nowhere else:
+		// the daemon writes the entry when it is given a URL and works none of
+		// this out from the workspace's name.
+		if ws.Workspace.Name == supervisorWorkspaceName {
+			start.CoreMCPURL = h.coreMCPURL()
 		}
 
 		// The credential is minted only once everything else has passed: a

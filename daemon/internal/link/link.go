@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/agentrq/agentrq/daemon/internal/restore"
+	"github.com/agentrq/agentrq/daemon/internal/stream"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -489,5 +490,27 @@ func (l *Link) start(ctx context.Context, conn *Conn, c wire.Control) {
 		// agent is broken rather than like nobody said how big the window is.
 		cols, rows = 80, 24
 	}
-	l.streams.add(req.SessionID, cols, rows, tty, conn)
+	pump := l.streams.add(req.SessionID, cols, rows, tty, conn)
+	announce(pump, sess.Notices(), l.Log)
+}
+
+// announce puts a launch's notices at the top of its terminal.
+//
+// Fed into the stream rather than written to the terminal: writing to the
+// pseudo-terminal would be typing at the agent, and an agent that reads
+// "your .mcp.json already had an entry" as input is an agent that may go and
+// do something about it. Feeding it reaches the screen and everyone watching,
+// and the process never sees a byte of it.
+//
+// It goes in before the agent has printed anything, so it is the first line of
+// the scrollback for whoever opens the terminal later rather than something
+// they have to scroll back to find.
+func announce(p *stream.Pump, notices []string, log *slog.Logger) {
+	for _, n := range notices {
+		// Yellow, then reset. CRLF because this is a terminal, and a bare
+		// newline leaves the next line indented to wherever this one ended.
+		if err := p.Feed([]byte("\x1b[33magentrqd: " + n + "\x1b[0m\r\n")); err != nil {
+			log.Warn("could not put a launch notice in the terminal", "error", err)
+		}
+	}
 }

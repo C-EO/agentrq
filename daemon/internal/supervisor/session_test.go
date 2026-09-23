@@ -6,12 +6,16 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/pty"
+	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 // fakePTY stands in for a terminal so the supervisor's rules can be tested
@@ -789,5 +793,320 @@ func TestAJustFinishedSessionCanStillBeAskedAbout(t *testing.T) {
 	}
 	if state, _, _ := sess.State(); state != StateExited {
 		t.Errorf("state = %q, want exited", state)
+	}
+}
+
+// An agent that has to ask a human before every MCP call stalls on a machine
+// launched from the panel, because there is nobody at that terminal.
+func TestClaudeCodeGetsItsPermissionsBeforeTheProcessStarts(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	settings := readSettings(t, filepath.Join(req.Dir, ClaudeSettingsDir, ClaudeSettingsName))
+	if got := allowList(t, settings); len(got) != 1 || got[0] != "mcp__agentrq-workspace__*" {
+		t.Errorf("allow = %v", got)
+	}
+}
+
+// The gateway asks for permission over ACP, which the workspace answers. It
+// never reads that file, so writing one would leave a folder claiming settings
+// nothing applies.
+func TestTheGatewayGetsNoPermissionsFile(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := Request{
+		ID: 1, Kind: KindACPGateway,
+		Params: Params{Agent: "antigravity-acp", ServerName: "agentrq-workspace"},
+		Dir:    t.TempDir(), MCPURL: testURL,
+	}
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(req.Dir, ClaudeSettingsDir)); !os.IsNotExist(err) {
+		t.Error("the gateway was given a .claude directory")
+	}
+}
+
+// The backend decides which workspace is the supervisor, by sending the
+// account-wide server's URL. The daemon writes what it is given and works none
+// of that out for itself.
+func TestTheCoreServerIsWrittenWhenTheBackendSendsIt(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	req.CoreMCPURL = "https://mcp.agentrq.com/mcp"
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := readConfig(t, filepath.Join(req.Dir, MCPConfigName))
+	if got := cfg.Servers[wire.CoreMCPServerName].URL; got != req.CoreMCPURL {
+		t.Errorf("core entry = %q, want %q", got, req.CoreMCPURL)
+	}
+	settings := readSettings(t, filepath.Join(req.Dir, ClaudeSettingsDir, ClaudeSettingsName))
+	if got := allowList(t, settings); len(got) != 2 || got[1] != "mcp__agentrq__*" {
+		t.Errorf("allow = %v, want the core server pre-approved too", got)
+	}
+}
+
+// Every other workspace gets one entry, and nothing about the folder tells the
+// daemon otherwise.
+func TestAnOrdinaryWorkspaceGetsNoCoreServer(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	cfg := readConfig(t, filepath.Join(req.Dir, MCPConfigName))
+	if _, ok := cfg.Servers[wire.CoreMCPServerName]; ok {
+		t.Errorf("servers = %+v, want only the workspace's own", cfg.Servers)
+	}
+}
+
+// The exclusion goes in before the file does: a checkout holding a file with a
+// live token in it, even for a moment, is a commit somebody can make.
+//
+// The MCP config only. The permissions file has no credential in it, and
+// whether it is checked in belongs to the repository.
+func TestALaunchIntoARepositoryExcludesTheCredentialFile(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	req.Dir = repo(t)
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	body := readIgnore(t, req.Dir)
+	if !strings.Contains(body, MCPConfigName) {
+		t.Errorf("the config is committable:\n%s", body)
+	}
+	if strings.Contains(body, ClaudeSettingsName) {
+		t.Errorf("the permissions file was excluded:\n%s", body)
+	}
+}
+
+// A restored session reuses the folder it was launched into. Its permissions
+// file is already there, and rewriting one would be the daemon touching a
+// folder it was not asked to touch.
+func TestARestoredSessionWritesNothing(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	if _, _, err := WriteMCPConfig(req.Dir, ws(testURL)); err != nil {
+		t.Fatal(err)
+	}
+	req.MCPURL = ""
+	req.ReuseMCPConfig = true
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(req.Dir, ClaudeSettingsDir)); !os.IsNotExist(err) {
+		t.Error("a restored session wrote a permissions file")
+	}
+}
+
+// Everything that can refuse refuses before a process exists, so a rejected
+// launch leaves nothing behind — including no session holding a slot.
+func TestAFolderThatCannotBeSetUpRefusesTheLaunch(t *testing.T) {
+	cases := map[string]func(t *testing.T, dir string){
+		"the MCP config cannot be parsed": func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, MCPConfigName), []byte("{not json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the permissions file cannot be parsed": func(t *testing.T, dir string) {
+			if err := os.MkdirAll(filepath.Join(dir, ClaudeSettingsDir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, ClaudeSettingsDir, ClaudeSettingsName)
+			if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the .gitignore cannot be read": func(t *testing.T, dir string) {
+			if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, GitIgnoreName)
+			if err := os.WriteFile(path, []byte("node_modules\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			unreadable(t, path)
+		},
+	}
+
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			st := &recordingStarter{}
+			s := New(st.start, 0, 0)
+			req := claudeRequest(t, 1)
+			setup(t, req.Dir)
+
+			if _, err := s.Start(t.Context(), "work", req); err == nil {
+				t.Fatal("the launch was allowed")
+			}
+			if _, err := s.Get(1); !errors.Is(err, ErrNoSuchSession) {
+				t.Error("a refused launch left a session holding a slot")
+			}
+		})
+	}
+}
+
+// A folder that already names the server keeps what it has, and the launch
+// says so rather than going quiet about which server the agent will reach.
+func TestALaunchSaysWhatItKept(t *testing.T) {
+	var logged strings.Builder
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Log = slog.New(slog.NewTextHandler(&logged, nil))
+
+	req := claudeRequest(t, 1)
+	theirs := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://their-own.example/mcp"}}}`
+	if err := os.WriteFile(filepath.Join(req.Dir, MCPConfigName), []byte(theirs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !strings.Contains(logged.String(), "agentrq-workspace") {
+		t.Errorf("the kept entry was not reported:\n%s", logged.String())
+	}
+	// And the token in the URL is never what gets logged.
+	if strings.Contains(logged.String(), "token=") {
+		t.Errorf("a credential reached the log:\n%s", logged.String())
+	}
+	cfg := readConfig(t, filepath.Join(req.Dir, MCPConfigName))
+	if cfg.Servers["agentrq-workspace"].URL != "https://their-own.example/mcp" {
+		t.Error("their entry was replaced")
+	}
+}
+
+// A supervisor nobody gave a logger to still launches: the daemon's default
+// logger is the fallback, not a nil dereference.
+func TestALaunchWithNoLoggerConfiguredStillWorks(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	theirs := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://their-own.example/mcp"}}}`
+	if err := os.WriteFile(filepath.Join(req.Dir, MCPConfigName), []byte(theirs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+}
+
+// The folder is where three files get written before the process exists, so
+// what it is allowed to be is decided before any of them.
+func TestTheWorkspaceFolderIsCheckedBeforeAnythingIsWritten(t *testing.T) {
+	cases := map[string]struct {
+		dir  func(t *testing.T) string
+		want error
+	}{
+		// A relative path resolves against the daemon's own working
+		// directory, so it would put a workspace's config next to the daemon
+		// rather than where somebody chose, and never say so.
+		"relative": {
+			dir:  func(*testing.T) string { return filepath.Join("projects", "app") },
+			want: ErrBadParameter,
+		},
+		"empty": {
+			dir:  func(*testing.T) string { return "" },
+			want: ErrMissingParam,
+		},
+		// A typo in the workspace's setting says so, rather than quietly
+		// becoming a new empty directory with a token in it.
+		"missing": {
+			dir:  func(t *testing.T) string { return filepath.Join(t.TempDir(), "nope") },
+			want: pty.ErrDirMissing,
+		},
+		"a file, not a folder": {
+			dir: func(t *testing.T) string {
+				p := filepath.Join(t.TempDir(), "afile")
+				if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			want: pty.ErrDirNotDir,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			st := &recordingStarter{}
+			s := New(st.start, 0, 0)
+			req := claudeRequest(t, 1)
+			req.Dir = tc.dir(t)
+
+			if _, err := s.Start(t.Context(), "work", req); !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+			if len(st.specs) != 0 {
+				t.Error("a refused folder still reached the terminal layer")
+			}
+			if s.Count() != 0 {
+				t.Error("a refused folder left a session holding a slot")
+			}
+		})
+	}
+	// And nothing was created next to the daemon on the way past.
+	if _, err := os.Stat("projects"); err == nil {
+		t.Error("the daemon created the relative folder next to itself")
+	}
+}
+
+// One folder, one spelling, however the path was typed.
+func TestTheWorkspaceFolderIsCleaned(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	clean := req.Dir
+	req.Dir = filepath.Join(req.Dir, "sub", "..") + string(filepath.Separator)
+
+	if _, err := s.Start(t.Context(), "work", req); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if spec, _ := st.last(); spec.Dir != clean {
+		t.Errorf("dir = %q, want the cleaned %q", spec.Dir, clean)
+	}
+}
+
+// A folder that cannot even be looked at is refused with what the system said,
+// rather than being treated as missing: "permission denied" and "not there"
+// are different problems with different fixes.
+func TestAFolderThatCannotBeStattedIsReported(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "workspace")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	unwritable(t, parent)
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	req := claudeRequest(t, 1)
+	req.Dir = dir
+
+	_, err := s.Start(t.Context(), "work", req)
+	if err == nil {
+		t.Fatal("a folder that cannot be read was allowed")
+	}
+	if errors.Is(err, pty.ErrDirMissing) {
+		t.Errorf("reported as missing rather than unreadable: %v", err)
 	}
 }

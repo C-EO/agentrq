@@ -266,6 +266,36 @@ side of the launch form's model autocomplete) takes a working directory and
 `ListAcpAgents` does not. Confirmed against the gateway's own source, not
 assumed from the pattern above.
 
+## A launch writes three files, and never overwrites an entry it finds
+
+`.mcp.json`, `.claude/settings.local.json` (claude-code only — the gateway asks
+over ACP and never reads it), and a `.gitignore` line for **the config alone**
+when the folder is in a checkout, written *before* it because it holds a token.
+The permissions file is deliberately not excluded: no secret in it, so whether
+it is checked in belongs to the repository.
+
+**An MCP entry that is already there is kept, whatever it points at**, and said
+twice — a daemon log line, and a notice fed into the session's terminal, since
+the log is on the machine and the person is in a browser. Feed it into the
+stream, never write it to the pty: writing is typing at the agent. The cost is
+that a relaunch keeps the old entry's token rather than the one it just minted;
+a workspace token lasts a year, so it works, and the way to move an entry is to
+delete it.
+
+**The permissions file allows `mcp__<server>__*`, not a list of tool names.**
+A list here would be a sixth copy of the server's catalogue, and a stale copy
+stalls an agent on the one call nobody is watching.
+
+Only the **supervisor** workspace gets the second, account-wide `agentrq`
+entry, and only the backend decides that — by sending `CoreMCPURL`. The daemon
+knows nothing about which workspace is which.
+
+The folder itself is checked in `workspaceDir` before any of this: absolute
+only, cleaned, and it must already exist. The pty layer checks it too and still
+should — but by the time it does, three files have been written, so a relative
+or mistyped path has to be refused here or it becomes a new empty directory
+with a token in it.
+
 ## The terminal must never size itself
 
 The fit addon reads the host element's box and sets the terminal's rows to

@@ -205,6 +205,15 @@ func SessionFrame(t Type, sessionID uint64, payload []byte) (Frame, error) {
 // relay and the daemon must agree, and the only way to guarantee that is for
 // there to be one definition that both import.
 
+// CoreMCPServerName is what the account-wide server is called in .mcp.json
+// and in a permission rule.
+//
+// Shared rather than agreed twice: the backend decides whether that server is
+// configured at all (by sending a [StartSession.CoreMCPURL]) and the daemon
+// writes the entry, so the name has to be one constant both import — it is
+// also what the setup tab tells people to paste by hand.
+const CoreMCPServerName = "agentrq"
+
 // StartSession asks the daemon to run an agent.
 //
 // It names a KIND and carries validated parameters. There is deliberately no
@@ -227,6 +236,16 @@ type StartSession struct {
 	// ServerName is the entry the daemon writes into .mcp.json, and also what
 	// `server:<name>` refers to on the command line. One decision, not two.
 	ServerName string `json:"serverName,omitempty"`
+	// CoreMCPURL points the agent at the account-wide server as well, under
+	// [CoreMCPServerName].
+	//
+	// Sent only for the "supervisor" workspace, and that decision is the
+	// backend's alone: the daemon writes the entry when it is given a URL and
+	// nothing else about the workspace tells it to. It carries no credential,
+	// because that server authenticates over its own OAuth flow rather than
+	// the minted token the per-workspace URL holds — so unlike MCPURL, this
+	// one is safe to log.
+	CoreMCPURL string `json:"coreMcpUrl,omitempty"`
 	// Workspace is what claude-code reports itself as.
 	Workspace string `json:"workspace,omitempty"`
 	// Model and Agent are the acp-gateway's selections.

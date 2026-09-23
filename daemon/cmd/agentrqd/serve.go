@@ -118,6 +118,7 @@ func cmdServe(ctx context.Context, args []string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	sup := supervisor.New(pty.Start, perProfile, perMachine)
+	sup.Log = log
 
 	// One collector for the machine, shared by every profile. The numbers are
 	// the same hardware whichever account is asking, and measuring once per
