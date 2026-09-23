@@ -266,6 +266,44 @@ export const COMMANDS = [
     },
   },
   {
+    path: ['skill', 'list'],
+    summary: 'List the skills this workspace can use',
+    usage: 'agentrq-ws skill list',
+    async run(ctx) {
+      return ctx.client.callTool('listSkills', {})
+    },
+  },
+  {
+    path: ['skill', 'load'],
+    summary: 'Read a skill file (skill://<name> reads its SKILL.md)',
+    usage: 'agentrq-ws skill load <uri>',
+    async run(ctx) {
+      return ctx.client.callTool('loadSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+    },
+  },
+  {
+    path: ['skill', 'save'],
+    summary: 'Replace a file of one of this workspace\'s skills',
+    usage: 'agentrq-ws skill save <uri> --content TEXT|@file|-',
+    options: {
+      content: { type: 'string', short: 'C', description: 'The full new content (@file or - for stdin)' },
+    },
+    async run(ctx) {
+      const uri = requirePositional(ctx.positionals, 0, 'uri')
+      if (ctx.values.content === undefined) throw new UserError('--content is required (use @file or - to read from stdin)')
+      const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the skill file' })
+      return ctx.client.callTool('saveSkill', { uri, content })
+    },
+  },
+  {
+    path: ['skill', 'delete'],
+    summary: 'Delete a skill (skill://<name>) or one of its files',
+    usage: 'agentrq-ws skill delete <uri>',
+    async run(ctx) {
+      return ctx.client.callTool('deleteSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+    },
+  },
+  {
     path: ['event', 'publish'],
     summary: 'Publish a named event',
     usage: 'agentrq-ws event publish <name> [--payload TEXT|@file|-] [--task ID] [--faq Q=A]...',

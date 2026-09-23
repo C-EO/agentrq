@@ -14,6 +14,7 @@ import (
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 )
@@ -293,6 +294,15 @@ type GetMemoryParams struct {
 	Name        string `json:"name" jsonschema:"The memory's name, as listMemories reports it."`
 }
 
+type ListSkillsParams struct {
+	WorkspaceID string `json:"workspaceId"`
+}
+
+type GetSkillParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	URI         string `json:"uri" jsonschema:"The file to read, as skill://<name>/<path>. skill://<name> alone reads its SKILL.md."`
+}
+
 // ── Tool Definitions ──────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) registerTools() {
@@ -316,6 +326,8 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata", Annotations: mcphint.Read("Get an attachment")}, s.handleGetAttachment)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that.", Annotations: mcphint.Read("List a workspace's memories")}, s.handleListMemories)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off.", Annotations: mcphint.Read("Get a memory")}, s.handleGetMemory)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listSkills", Description: "List the skills a workspace can use, its own and those shared into it: name, description, source and size. A shared-in skill carries sharedFromWorkspaceId and is read-only there. Content is not included — get a file with getSkill.", Annotations: mcphint.Read("List a workspace's skills")}, s.handleListSkills)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getSkill", Description: "Get one file of a workspace's skill in full, by its skill://<name>/<path> URI; skill://<name> alone gets its SKILL.md, together with the list of the skill's other files.", Annotations: mcphint.Read("Get a skill file")}, s.handleGetSkill)
 
 	// Events and their triggers — see events.go.
 	s.registerEventTools()
@@ -734,6 +746,46 @@ func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallT
 
 	b := apiMapper.FromListMemoriesResponseEntityToHTTPResponse(res)
 	return textResponse(string(b)), nil, nil
+}
+
+func (s *WorkspaceServer) handleListSkills(ctx context.Context, req *mcp.CallToolRequest, args ListSkillsParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listSkills", parseID(args.WorkspaceID))
+	res, err := s.crud.ListSkills(ctx, entity.ListSkillsRequest{
+		UserID:      getUserID(ctx),
+		WorkspaceID: parseID(args.WorkspaceID),
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	return textResponse(string(apiMapper.FromListSkillsResponseEntityToHTTPResponse(res))), nil, nil
+}
+
+// handleGetSkill returns one file with its skill's metadata; for a SKILL.md,
+// the metadata lists the skill's other files too, as loadSkill's footer does
+// on the workspace server.
+func (s *WorkspaceServer) handleGetSkill(ctx context.Context, req *mcp.CallToolRequest, args GetSkillParams) (*mcp.CallToolResult, any, error) {
+	workspaceID := parseID(args.WorkspaceID)
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getSkill", workspaceID)
+	name, p, err := skill.ParseURI(args.URI)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	if p == "" {
+		p = skill.FileName
+	}
+	userID := getUserID(ctx)
+	res, err := s.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{UserID: userID, WorkspaceID: workspaceID, Name: name, Path: p})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+	if p == skill.FileName {
+		meta, err := s.crud.GetSkill(ctx, entity.GetSkillRequest{UserID: userID, WorkspaceID: workspaceID, Name: name})
+		if err != nil {
+			return errorResponse(err), nil, nil
+		}
+		res.Skill.Files = meta.Skill.Files
+	}
+	return textResponse(string(apiMapper.FromGetSkillFileResponseEntityToHTTPResponse(res))), nil, nil
 }
 
 func (s *WorkspaceServer) handleGetMemory(ctx context.Context, req *mcp.CallToolRequest, args GetMemoryParams) (*mcp.CallToolResult, any, error) {

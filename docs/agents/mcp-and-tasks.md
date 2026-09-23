@@ -9,12 +9,12 @@
 ## A tool on the server is a tool in five other places
 
 The `mcp.AddTool(mcpSrv, …)` block in `server.go` is the source of truth for
-what a workspace offers — 11 tools as of 2026-09-17. Every other list of them
+what a workspace offers — 15 tools as of 2026-09-23. Every other list of them
 in this repository is a copy, and the copies are what go stale.
 
 **`cli/agentrq-ws` is the one that is easiest to forget**, because it is a
 separate npm package and nothing in the backend mentions it. It is a
-command-line client over exactly these tools — 14 commands for the 11 — so
+command-line client over exactly these tools — 18 commands for the 15 — so
 **adding, renaming or removing a tool on the server is a change to the CLI
 too**: `COMMANDS` in `cli/agentrq-ws/src/commands.js`, the command table in its
 `README.md`, and the sentence there that spells the tool count out in words. A
@@ -41,6 +41,10 @@ the list the setup tab's `.claude/settings.local.json` snippet is generated
 from. It also asserts a literal expected list, so **both** the composable and
 that expectation need the new name. That place cannot be forgotten, and it is
 the only one that cannot.
+
+The Claude plugin docs are checked too: `plugin_docs_test.go` fails when
+`plugins/claude/agentrq-workspace/README.md` or its `SKILL.md` lacks a row for
+a tool.
 
 The remaining copies are documentation and fail silently: `README.md` (the
 settings snippet, and the "Available MCP Tools" list), `README.zh-CN.md` (the
