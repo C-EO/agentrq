@@ -654,6 +654,71 @@ export async function getWorkspaceMemory(workspaceId, name) {
   return res.json();
 }
 
+// A skill's name is one URL segment and a file's path several, each encoded on
+// its own so its slashes stay separators.
+const skillPath = (workspaceId, name) => `${API_BASE_URL}/workspaces/${workspaceId}/skills/${encodeURIComponent(name)}`;
+const encodePath = (path) => String(path).split('/').map(encodeURIComponent).join('/');
+
+// A refusal from the skills API says what was wrong — a bad link, a name
+// taken, a read-only skill — and is worth showing as it is.
+// The status travels with it, so a missing skill can be told from a failure.
+async function skillError(res, fallback) {
+  const body = await res.json().catch(() => ({}));
+  return Object.assign(new Error(body?.error?.message || fallback), { status: res.status });
+}
+
+export async function fetchWorkspaceSkills(workspaceId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch workspace skills');
+  return res.json();
+}
+
+export async function getWorkspaceSkill(workspaceId, name) {
+  const res = await apiFetch(skillPath(workspaceId, name));
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skill');
+  return res.json();
+}
+
+export async function getWorkspaceSkillFile(workspaceId, name, path) {
+  const res = await apiFetch(`${skillPath(workspaceId, name)}/files/${encodePath(path)}`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skill file');
+  return res.json();
+}
+
+export async function importWorkspaceSkills(workspaceId, url, overwrite = false) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, overwrite }),
+  });
+  if (!res.ok) throw await skillError(res, 'Failed to import skills');
+  return res.json();
+}
+
+export async function deleteWorkspaceSkill(workspaceId, name) {
+  const res = await apiFetch(skillPath(workspaceId, name), { method: 'DELETE' });
+  if (!res.ok) throw await skillError(res, 'Failed to delete skill');
+  return true;
+}
+
+export async function fetchWorkspaceSkillShares(workspaceId, name) {
+  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skill shares');
+  return res.json();
+}
+
+export async function shareWorkspaceSkill(workspaceId, name, targetWorkspaceId) {
+  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares/${targetWorkspaceId}`, { method: 'PUT' });
+  if (!res.ok) throw await skillError(res, 'Failed to share skill');
+  return true;
+}
+
+export async function unshareWorkspaceSkill(workspaceId, name, targetWorkspaceId) {
+  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares/${targetWorkspaceId}`, { method: 'DELETE' });
+  if (!res.ok) throw await skillError(res, 'Failed to stop sharing skill');
+  return true;
+}
+
 export async function fetchGlobalTaskStats() {
   const res = await apiFetch(`${API_BASE_URL}/tasks/stats`);
   if (!res.ok) throw new Error('Failed to fetch global task stats');
