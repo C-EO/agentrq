@@ -230,6 +230,92 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
     }),
     tool({
+      name: 'listWorkspaceSkills',
+      description:
+        'The skills a workspace\'s agents can load: its own and those other workspaces of the account ' +
+        'share into it, with description, size and source. A shared-in skill carries ' +
+        'sharedFromWorkspaceId and is read-only there. File contents are not included.',
+      properties: { workspaceId: WORKSPACE_ID },
+      required: ['workspaceId'],
+      readOnly: true,
+      run: ({ workspaceId }) => api.fetchWorkspaceSkills(workspaceId),
+    }),
+    tool({
+      name: 'getWorkspaceSkill',
+      description: 'One skill of a workspace, with the paths and sizes of its files but not their content.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name, as listWorkspaceSkills reports it.') },
+      required: ['workspaceId', 'name'],
+      readOnly: true,
+      run: ({ workspaceId, name }) => api.getWorkspaceSkill(workspaceId, name),
+    }),
+    tool({
+      name: 'getWorkspaceSkillFile',
+      description: 'One file of a skill, in full. Start with SKILL.md, which says which other files matter.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('The skill\'s name.'),
+        path: str('The file\'s path within the skill, like SKILL.md or references/guide.md.'),
+      },
+      required: ['workspaceId', 'name', 'path'],
+      readOnly: true,
+      run: ({ workspaceId, name, path }) => api.getWorkspaceSkillFile(workspaceId, name, path),
+    }),
+    tool({
+      name: 'importWorkspaceSkills',
+      description:
+        'Import skills from a public GitHub repository into a workspace, e.g. https://github.com/obra/superpowers ' +
+        'or a /tree/<ref>/<path> link to part of one. Returns what was imported and what was skipped, with why.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        url: str('The GitHub link.'),
+        overwrite: bool('Replace skills this workspace already has under the same name.'),
+      },
+      required: ['workspaceId', 'url'],
+      // With overwrite, it replaces skills the workspace already had.
+      destructive: true,
+      run: ({ workspaceId, url, overwrite }) => api.importWorkspaceSkills(workspaceId, url, overwrite),
+    }),
+    tool({
+      name: 'deleteWorkspaceSkill',
+      description: 'Delete one of a workspace\'s own skills, with all its files and shares. Cannot be undone.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.') },
+      required: ['workspaceId', 'name'],
+      destructive: true,
+      run: ({ workspaceId, name }) => api.deleteWorkspaceSkill(workspaceId, name),
+    }),
+    tool({
+      name: 'listWorkspaceSkillShares',
+      description: 'The other workspaces one of a workspace\'s own skills is shared into.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.') },
+      required: ['workspaceId', 'name'],
+      readOnly: true,
+      run: ({ workspaceId, name }) => api.fetchWorkspaceSkillShares(workspaceId, name),
+    }),
+    tool({
+      name: 'shareWorkspaceSkill',
+      description:
+        'Share one of a workspace\'s own skills into another workspace of the same account, where it can be read but not changed.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('The skill\'s name.'),
+        targetWorkspaceId: str('The workspace to share it into.'),
+      },
+      required: ['workspaceId', 'name', 'targetWorkspaceId'],
+      run: ({ workspaceId, name, targetWorkspaceId }) => api.shareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
+    }),
+    tool({
+      name: 'unshareWorkspaceSkill',
+      description: 'Stop sharing a skill into a workspace; its agents can no longer load it.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('The skill\'s name.'),
+        targetWorkspaceId: str('The workspace to stop sharing it into.'),
+      },
+      required: ['workspaceId', 'name', 'targetWorkspaceId'],
+      destructive: true,
+      run: ({ workspaceId, name, targetWorkspaceId }) => api.unshareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
+    }),
+    tool({
       name: 'setWorkspaceSlackChannel',
       description: 'Connect a workspace to a Slack channel so its activity is posted there.',
       properties: {
