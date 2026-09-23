@@ -102,9 +102,10 @@ func TestClientReportableActionsAreDistinct(t *testing.T) {
 
 type stubLimiter struct{ allowed int }
 
-func (s *stubLimiter) AllowWorkspace(int64) bool { return true }
-func (s *stubLimiter) AllowTask(int64) bool      { return true }
-func (s *stubLimiter) AllowMessage(int64) bool   { return true }
+func (s *stubLimiter) AllowWorkspace(int64) bool   { return true }
+func (s *stubLimiter) AllowTask(int64) bool        { return true }
+func (s *stubLimiter) AllowMessage(int64) bool     { return true }
+func (s *stubLimiter) AllowSkillImport(int64) bool { return s.allowed > 0 }
 func (s *stubLimiter) AllowTelemetry(int64) bool {
 	if s.allowed <= 0 {
 		return false

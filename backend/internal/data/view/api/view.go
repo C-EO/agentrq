@@ -12,30 +12,30 @@ type (
 	// Workspace views
 
 	Workspace struct {
-		ID                    string                `json:"id"`
-		CreatedAt             time.Time             `json:"createdAt"`
-		UpdatedAt             time.Time             `json:"updatedAt"`
-		Name                  string                `json:"name"`
-		Description           string                `json:"description"`
-		ArchivedAt            *time.Time            `json:"archivedAt,omitempty"`
-		Icon                  string                `json:"icon,omitempty"`
-		NotificationSettings  *NotificationSettings `json:"notificationSettings,omitempty"`
-		AgentConnected        bool                  `json:"agentConnected"`
-		AgentSupportsStop     bool                  `json:"agentSupportsStop"`
-		AgentModels           *AgentModels          `json:"agentModels,omitempty"`
-		AgentCommands         *AgentCommands        `json:"agentCommands,omitempty"`
-		AgentClient           *AgentClient          `json:"agentClient,omitempty"`
-		AgentConcurrency      *AgentConcurrency     `json:"agentConcurrency,omitempty"`
-		MCPURL                string                `json:"mcpUrl"`
-		MCPToken              string                `json:"mcpToken,omitempty"`
-		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
-		AllowAllCommands      bool                  `json:"allowAllCommands"`
+		ID                   string                `json:"id"`
+		CreatedAt            time.Time             `json:"createdAt"`
+		UpdatedAt            time.Time             `json:"updatedAt"`
+		Name                 string                `json:"name"`
+		Description          string                `json:"description"`
+		ArchivedAt           *time.Time            `json:"archivedAt,omitempty"`
+		Icon                 string                `json:"icon,omitempty"`
+		NotificationSettings *NotificationSettings `json:"notificationSettings,omitempty"`
+		AgentConnected       bool                  `json:"agentConnected"`
+		AgentSupportsStop    bool                  `json:"agentSupportsStop"`
+		AgentModels          *AgentModels          `json:"agentModels,omitempty"`
+		AgentCommands        *AgentCommands        `json:"agentCommands,omitempty"`
+		AgentClient          *AgentClient          `json:"agentClient,omitempty"`
+		AgentConcurrency     *AgentConcurrency     `json:"agentConcurrency,omitempty"`
+		MCPURL               string                `json:"mcpUrl"`
+		MCPToken             string                `json:"mcpToken,omitempty"`
+		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
+		AllowAllCommands     bool                  `json:"allowAllCommands"`
 		// ClearContextDefault is what a new task's clearContext starts as.
-		ClearContextDefault   bool                  `json:"clearContextDefault"`
-		SelfLearningLoopNote  string                `json:"selfLearningLoopNote,omitempty"`
-		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
-		WorkingDirectory      string                `json:"workingDirectory,omitempty"`
-		Slack                 *SlackConfig          `json:"slack,omitempty"`
+		ClearContextDefault   bool         `json:"clearContextDefault"`
+		SelfLearningLoopNote  string       `json:"selfLearningLoopNote,omitempty"`
+		InputSendDelaySeconds int          `json:"inputSendDelaySeconds"`
+		WorkingDirectory      string       `json:"workingDirectory,omitempty"`
+		Slack                 *SlackConfig `json:"slack,omitempty"`
 	}
 
 	// AgentModels is what the connected agent can switch between. Omitted
@@ -412,6 +412,84 @@ type (
 
 	GetMemoryResponse struct {
 		Memory Memory `json:"memory"`
+	}
+
+	// Skill as the interface sees it. `files` is listed only when one skill is
+	// asked for, and never with content: each file is fetched on its own.
+	// `sharedFromWorkspaceId` is set on a skill another workspace shared in,
+	// which is read-only here.
+	Skill struct {
+		ID                    string      `json:"id"`
+		CreatedAt             time.Time   `json:"createdAt"`
+		UpdatedAt             time.Time   `json:"updatedAt"`
+		WorkspaceID           string      `json:"workspaceId"`
+		Name                  string      `json:"name"`
+		Description           string      `json:"description"`
+		SourceType            string      `json:"sourceType"`
+		SourceRepo            string      `json:"sourceRepo,omitempty"`
+		SourceRef             string      `json:"sourceRef,omitempty"`
+		SourceCommit          string      `json:"sourceCommit,omitempty"`
+		SourcePath            string      `json:"sourcePath,omitempty"`
+		LocallyModified       bool        `json:"locallyModified"`
+		FileCount             int         `json:"fileCount"`
+		TotalBytes            int         `json:"totalBytes"`
+		SharedFromWorkspaceID string      `json:"sharedFromWorkspaceId,omitempty"`
+		Files                 []SkillFile `json:"files,omitempty"`
+	}
+
+	SkillFile struct {
+		Path      string    `json:"path"`
+		SizeBytes int       `json:"sizeBytes"`
+		UpdatedAt time.Time `json:"updatedAt"`
+		Content   string    `json:"content,omitempty"`
+	}
+
+	ListSkillsResponse struct {
+		Skills []Skill `json:"skills"`
+	}
+
+	GetSkillResponse struct {
+		Skill Skill `json:"skill"`
+	}
+
+	GetSkillFileResponse struct {
+		Skill Skill     `json:"skill"`
+		File  SkillFile `json:"file"`
+	}
+
+	ImportSkillsRequest struct {
+		URL       string `json:"url"`
+		Overwrite bool   `json:"overwrite"`
+	}
+
+	ImportedSkill struct {
+		Name       string `json:"name"`
+		FileCount  int    `json:"fileCount"`
+		TotalBytes int    `json:"totalBytes"`
+	}
+
+	// SkippedSkillEntry is a skill or a single file an import left out.
+	SkippedSkillEntry struct {
+		Name   string `json:"name,omitempty"`
+		Path   string `json:"path,omitempty"`
+		Reason string `json:"reason"`
+	}
+
+	ImportSkillsResponse struct {
+		Imported     []ImportedSkill     `json:"imported"`
+		Skipped      []SkippedSkillEntry `json:"skipped"`
+		SourceRepo   string              `json:"sourceRepo"`
+		SourceRef    string              `json:"sourceRef"`
+		SourceCommit string              `json:"sourceCommit"`
+	}
+
+	SkillShare struct {
+		TargetWorkspaceID string    `json:"targetWorkspaceId"`
+		CreatedAt         time.Time `json:"createdAt"`
+	}
+
+	ListSkillSharesResponse struct {
+		Shares []SkillShare `json:"shares"`
 	}
 
 	Event struct {

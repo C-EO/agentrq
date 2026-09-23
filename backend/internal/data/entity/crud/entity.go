@@ -663,6 +663,140 @@ type (
 		Memory Memory
 	}
 
+	// Skill is one of the skills a workspace can use: its own, or one shared
+	// into it, in which case SharedFromWorkspaceID names the owner and the
+	// skill is read-only here. Files is only filled when one skill was asked
+	// for, and then without content.
+	Skill struct {
+		ID                    int64
+		CreatedAt             time.Time
+		UpdatedAt             time.Time
+		WorkspaceID           int64
+		Name                  string
+		Description           string
+		SourceType            string
+		SourceRepo            string
+		SourceRef             string
+		SourceCommit          string
+		SourcePath            string
+		LocallyModified       bool
+		FileCount             int
+		TotalBytes            int
+		SharedFromWorkspaceID int64
+		Files                 []SkillFile
+	}
+
+	SkillFile struct {
+		Path      string
+		SizeBytes int
+		UpdatedAt time.Time
+		Content   string
+	}
+
+	SkillShare struct {
+		TargetWorkspaceID int64
+		CreatedAt         time.Time
+	}
+
+	SkillImportSkip struct {
+		Name   string
+		Path   string
+		Reason string
+	}
+
+	ListSkillsRequest struct {
+		WorkspaceID int64
+		UserID      string
+	}
+
+	ListSkillsResponse struct {
+		Skills []Skill
+	}
+
+	GetSkillRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+	}
+
+	GetSkillResponse struct {
+		Skill Skill
+	}
+
+	GetSkillFileRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+		Path        string
+	}
+
+	GetSkillFileResponse struct {
+		Skill Skill
+		File  SkillFile
+	}
+
+	SaveSkillFileRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+		Path        string
+		Content     string
+	}
+
+	SaveSkillFileResponse struct {
+		Skill Skill
+		File  SkillFile
+	}
+
+	DeleteSkillRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+	}
+
+	DeleteSkillFileRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+		Path        string
+	}
+
+	DeleteSkillFileResponse struct {
+		Skill Skill
+	}
+
+	ImportSkillsRequest struct {
+		WorkspaceID int64
+		UserID      string
+		URL         string
+		Overwrite   bool
+	}
+
+	ImportSkillsResponse struct {
+		Imported     []Skill
+		Skipped      []SkillImportSkip
+		SourceRepo   string
+		SourceRef    string
+		SourceCommit string
+	}
+
+	ListSkillSharesRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+	}
+
+	ListSkillSharesResponse struct {
+		Shares []SkillShare
+	}
+
+	ShareSkillRequest struct {
+		WorkspaceID       int64
+		UserID            string
+		Name              string
+		TargetWorkspaceID int64
+	}
+
 	Event struct {
 		ID                int64
 		CreatedAt         time.Time

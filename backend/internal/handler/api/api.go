@@ -634,6 +634,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Get("/:id/stats", h.getWorkspaceStats())
 	r.Get("/:id/memories", h.listWorkspaceMemories())
 	r.Get("/:id/memories/:name", h.getWorkspaceMemory())
+	h.registerSkillRoutes(r)
 	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
 	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
 	r.Post("/:id/agent/model", h.setAgentModel())

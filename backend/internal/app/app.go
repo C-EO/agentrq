@@ -51,6 +51,7 @@ import (
 	svclimit "github.com/agentrq/agentrq/backend/internal/service/ratelimit"
 	"github.com/agentrq/agentrq/backend/internal/service/scheduler"
 	"github.com/agentrq/agentrq/backend/internal/service/server"
+	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
@@ -217,6 +218,9 @@ func New(cfg Config) (*App, error) {
 		&model.WorkflowStep{},
 		&model.ToolCall{},
 		&model.Memory{},
+		&model.Skill{},
+		&model.SkillFile{},
+		&model.SkillShare{},
 		&model.Machine{},
 		&model.EnrolmentCode{},
 		&model.Session{},
@@ -318,12 +322,13 @@ func New(cfg Config) (*App, error) {
 	rateLimiter := svclimit.New()
 
 	crudCtrl := crud.New(crud.Params{
-		IDGen:      ids,
-		Repository: repo,
-		Storage:    storageSvc,
-		Image:      imgSvc,
-		PubSub:     pubsubSvc,
-		Limiter:    rateLimiter,
+		IDGen:       ids,
+		Repository:  repo,
+		Storage:     storageSvc,
+		Image:       imgSvc,
+		PubSub:      pubsubSvc,
+		Limiter:     rateLimiter,
+		SkillImport: skillimport.New(),
 	})
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────

@@ -208,6 +208,52 @@ type (
 		Content     string `gorm:"type:varchar(64000)"`
 	}
 
+	// Skill is a workspace's playbook for a kind of task: a SKILL.md and the
+	// files beside it. Only metadata lives here; every file's content is in
+	// the storage service under SkillFile.StorageID.
+	//
+	// Keyed per (owner, workspace, name) like Memory, with the same one index
+	// name on all three columns.
+	Skill struct {
+		ID              int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt       time.Time
+		UpdatedAt       time.Time
+		UserID          int64  `gorm:"index:idx_skills_user_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:1"`
+		WorkspaceID     int64  `gorm:"index:idx_skills_workspace_id;uniqueIndex:uk_skills_user_id_workspace_id_name,priority:2"`
+		Name            string `gorm:"type:varchar(64);uniqueIndex:uk_skills_user_id_workspace_id_name,priority:3"`
+		Description     string `gorm:"type:varchar(1024)"`
+		SourceType      string `gorm:"type:varchar(16)"`
+		SourceRepo      string `gorm:"type:varchar(255)"`
+		SourceRef       string `gorm:"type:varchar(255)"`
+		SourceCommit    string `gorm:"type:varchar(40)"`
+		SourcePath      string `gorm:"type:varchar(255)"`
+		LocallyModified bool
+		FileCount       int
+		TotalBytes      int
+	}
+
+	// SkillFile is one file of a skill. Its content is in storage.
+	SkillFile struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		SkillID   int64  `gorm:"index:idx_skill_files_skill_id;uniqueIndex:uk_skill_files_skill_id_path,priority:1"`
+		Path      string `gorm:"type:varchar(255);uniqueIndex:uk_skill_files_skill_id_path,priority:2"`
+		SizeBytes int
+		SHA256    string `gorm:"type:varchar(64)"`
+		StorageID string `gorm:"type:varchar(64)"`
+	}
+
+	// SkillShare makes a skill readable from another of its owner's
+	// workspaces. A reference, not a copy: the target sees every change.
+	SkillShare struct {
+		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt         time.Time
+		UserID            int64 `gorm:"index:idx_skill_shares_user_id"`
+		SkillID           int64 `gorm:"index:idx_skill_shares_skill_id;uniqueIndex:uk_skill_shares_skill_id_target,priority:1"`
+		TargetWorkspaceID int64 `gorm:"index:idx_skill_shares_target_workspace_id;uniqueIndex:uk_skill_shares_skill_id_target,priority:2"`
+	}
+
 	Message struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time

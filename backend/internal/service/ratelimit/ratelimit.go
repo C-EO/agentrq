@@ -13,6 +13,7 @@ type Limiter interface {
 	AllowTask(userID int64) bool
 	AllowMessage(userID int64) bool
 	AllowTelemetry(userID int64) bool
+	AllowSkillImport(userID int64) bool
 }
 
 type rotatingBucket struct {
@@ -26,6 +27,7 @@ type limiter struct {
 	taskRequests      map[int64]*rotatingBucket
 	messageRequests   map[int64]*rotatingBucket
 	telemetryRequests map[int64]*rotatingBucket
+	importRequests    map[int64]*rotatingBucket
 }
 
 func New() Limiter {
@@ -34,6 +36,7 @@ func New() Limiter {
 		taskRequests:      make(map[int64]*rotatingBucket),
 		messageRequests:   make(map[int64]*rotatingBucket),
 		telemetryRequests: make(map[int64]*rotatingBucket),
+		importRequests:    make(map[int64]*rotatingBucket),
 	}
 }
 
@@ -108,6 +111,23 @@ func (l *limiter) AllowTelemetry(userID int64) bool {
 	}
 
 	return allow(rb, now, 5, 60)
+}
+
+// AllowSkillImport caps GitHub skill imports at one a second and five a
+// minute. Each downloads a whole repository and spends two of the server's
+// sixty unauthenticated GitHub API calls an hour, which every user shares.
+func (l *limiter) AllowSkillImport(userID int64) bool {
+	l.Lock()
+	defer l.Unlock()
+
+	now := time.Now().Unix()
+	rb, ok := l.importRequests[userID]
+	if !ok {
+		rb = &rotatingBucket{}
+		l.importRequests[userID] = rb
+	}
+
+	return allow(rb, now, 1, 5)
 }
 
 func allow(rb *rotatingBucket, now int64, maxSec int, maxMin int) bool {

@@ -237,3 +237,13 @@ func TestLimiterExposesTelemetryBucketSeparately(t *testing.T) {
 		t.Error("telemetry reports should not consume the task allowance")
 	}
 }
+
+func TestLimiter_AllowSkillImport(t *testing.T) {
+	l := New()
+	if !l.AllowSkillImport(7) || l.AllowSkillImport(7) {
+		t.Fatal("want one import a second")
+	}
+	if !l.AllowSkillImport(8) {
+		t.Error("each user has their own budget")
+	}
+}

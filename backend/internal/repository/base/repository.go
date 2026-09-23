@@ -49,6 +49,23 @@ type Repository interface {
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
+	// Skill — a workspace's playbooks. Metadata only: file content is in the
+	// storage service, and the methods that drop files return the storage ids
+	// the caller must purge once the transaction has committed.
+	GetSkill(ctx context.Context, userID, workspaceID int64, name string) (model.Skill, error)
+	ListSkillsByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
+	ListSkillsSharedInto(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
+	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile) (model.Skill, []string, error)
+	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile) (model.Skill, string, error)
+	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)
+	DeleteSkill(ctx context.Context, skillID int64) ([]string, error)
+	GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error)
+	ListSkillFiles(ctx context.Context, skillID int64) ([]model.SkillFile, error)
+	CreateSkillShare(ctx context.Context, sh model.SkillShare) error
+	DeleteSkillShare(ctx context.Context, skillID, targetWorkspaceID int64) error
+	ListSkillShares(ctx context.Context, skillID int64) ([]model.SkillShare, error)
+	GetWorkspaceSkillStorageIDs(ctx context.Context, workspaceID int64) ([]string, error)
+
 	// Machine — an enrolled computer running agentrqd, and the short-lived
 	// codes used to enrol one. See internal/controller/machine for the rules.
 	CreateEnrolmentCode(ctx context.Context, c model.EnrolmentCode) (model.EnrolmentCode, error)
@@ -226,6 +243,18 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 			return err
 		}
 		if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
+			return err
+		}
+		// Skills go with their workspace, and so does every share of them and
+		// every share into it. The files' content is purged by the caller.
+		skillIDs := tx.Model(&model.Skill{}).Select("id").Where("workspace_id = ?", id)
+		if err := tx.Where("skill_id IN (?) OR target_workspace_id = ?", skillIDs, id).Delete(&model.SkillShare{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("skill_id IN (?)", skillIDs).Delete(&model.SkillFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("workspace_id = ?", id).Delete(&model.Skill{}).Error; err != nil {
 			return err
 		}
 
