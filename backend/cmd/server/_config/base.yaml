@@ -75,6 +75,26 @@ ratelimit:
 storage:
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
 
+# Where skill file content is kept: "local" (./_storage) or "s3", which uses
+# the s3 block below.
+skills:
+  storage: ${AGENTRQ_SKILLS_STORAGE:local}
+
+# Any S3-compatible store. Objects are addressed path-style.
+s3:
+  endpoint: "${AGENTRQ_S3_ENDPOINT:}"
+  accessKey: "${AGENTRQ_S3_ACCESS_KEY:}"
+  secretAccessKey: "${AGENTRQ_S3_SECRET_ACCESS_KEY:}"
+  region: "${AGENTRQ_S3_REGION:us-east-1}"
+  bucket: "${AGENTRQ_S3_BUCKET:}"
+  publicBucketURL: "${AGENTRQ_S3_PUBLIC_BUCKET_URL:}"
+
+# Optional. The encryption key is 64 hex characters (32 bytes); locksmith is
+# only built when it is set.
+locksmith:
+  salt: "${AGENTRQ_LOCKSMITH_SALT:}"
+  encryptionKey: "${AGENTRQ_LOCKSMITH_ENCRYPTION_KEY:}"
+
 # The node id must be unique across running instances: monoflake ids collide
 # otherwise. It is also what identifies this process when a daemon socket is
 # paired to an instance, so the same value has to be right for both reasons.

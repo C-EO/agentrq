@@ -10,6 +10,10 @@ import (
 	"path/filepath"
 )
 
+// SkillPrefix starts the id of every skill blob. Skills are kept until they
+// are deleted, so attachment cleanup must pass over these.
+const SkillPrefix = "skill-"
+
 type Service interface {
 	Save(id string, dataBase64 string) error
 	Load(id string) (string, error)
@@ -72,13 +76,19 @@ func (s *service) Delete(id string) error {
 // fullPath validates the ID and returns the absolute path within the base directory.
 // It prevents path traversal by ensuring the ID is a simple filename.
 func (s *service) fullPath(id string) (string, error) {
-	if id == "" || id == "." || id == ".." {
-		return "", fmt.Errorf("invalid storage id")
-	}
-	// filepath.Base returns the last element of path.
-	// If ID contains any path separators or traversal sequences, Base(id) will not equal id.
-	if filepath.Base(id) != id {
-		return "", fmt.Errorf("invalid storage id: path traversal detected or invalid format")
+	if err := validID(id); err != nil {
+		return "", err
 	}
 	return filepath.Join(s.baseDir, id), nil
+}
+
+// validID accepts a flat name only, on every store, so an id cannot traverse.
+func validID(id string) error {
+	if id == "" || id == "." || id == ".." {
+		return fmt.Errorf("invalid storage id")
+	}
+	if filepath.Base(id) != id {
+		return fmt.Errorf("invalid storage id: path traversal detected or invalid format")
+	}
+	return nil
 }
