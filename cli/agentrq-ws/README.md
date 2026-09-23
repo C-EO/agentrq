@@ -20,7 +20,7 @@ npx -y @agentrq/agentrq-ws@latest workspace
 
 An agent talks to its workspace over MCP, which is the right shape for an agent
 and the wrong shape for a person: every call is a JSON envelope, and every
-answer is tokens the agent pays for. The same eleven tools are underneath this
+answer is tokens the agent pays for. The same fifteen tools are underneath this
 CLI, but a command is a line of shell and the answer is plain text.
 
 It is also the difference between reading an attachment and *handling* one — see
@@ -52,6 +52,10 @@ Node 20.6 or newer.
 | `memory load [name]` | Read a workspace memory (defaults to the index) |
 | `memory save [name] --content …` | Replace a workspace memory |
 | `memory delete [name]` | Delete a workspace memory |
+| `skill list` | List the skills this workspace can use |
+| `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
+| `skill save <uri> --content …` | Replace a file of one of this workspace's skills |
+| `skill delete <uri>` | Delete a skill (`skill://<name>`) or one of its files |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
 | `tools` | List the tools this workspace server offers |

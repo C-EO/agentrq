@@ -42,6 +42,8 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `getAttachment` | Get attachment data as base64 and metadata |
 | `listMemories` | List a workspace's memories: name, size and when each was last changed |
 | `getMemory` | Get one of a workspace's memories in full, by name |
+| `listSkills` | List the skills a workspace can use, its own and those shared into it, without their content |
+| `getSkill` | Get one file of a workspace's skill in full, by its `skill://<name>/<path>` URI |
 | `listEvents` | List the events defined for this account |
 | `createEvent` | Define a named signal workspaces can publish |
 | `getEvent` | Get an event by ID |

@@ -162,3 +162,25 @@ func ParseSkillFile(content []byte, dirName string) (Frontmatter, error) {
 func URI(name, p string) string {
 	return "skill://" + name + "/" + p
 }
+
+// ParseURI reads a skill URI into the skill's name and a file path within it.
+// The scheme is matched without regard to case, and skill:/ and skill: are
+// taken as well, since agents write them. A bare skill://<name> has path "".
+func ParseURI(raw string) (name, p string, err error) {
+	s := strings.TrimSpace(raw)
+	scheme, rest, ok := strings.Cut(s, ":")
+	if !ok || !strings.EqualFold(scheme, "skill") {
+		return "", "", fmt.Errorf("%q is not a skill URI; write it as skill://<name>/<path>, like %q", raw, URI("pr-reviewer", FileName))
+	}
+	name, p, _ = strings.Cut(strings.TrimLeft(rest, "/"), "/")
+	if name, err = CanonicalName(name); err != nil {
+		return "", "", err
+	}
+	if p == "" {
+		return name, "", nil
+	}
+	if _, err := CleanPath(p); err != nil {
+		return "", "", err
+	}
+	return name, p, nil
+}

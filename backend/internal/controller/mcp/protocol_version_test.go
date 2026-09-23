@@ -36,6 +36,7 @@ func newProtocolTestServer(t *testing.T) *httptest.Server {
 		nil,           // clearAgentContext
 		nil,           // publishEvent
 		nil, nil, nil, // loadMemory, saveMemory, deleteMemory
+		nil, // skills
 		nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)

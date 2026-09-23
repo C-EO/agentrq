@@ -60,6 +60,10 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'loadMemory',
   'saveMemory',
   'deleteMemory',
+  'listSkills',
+  'loadSkill',
+  'saveSkill',
+  'deleteSkill',
   'elicit',
 ])
 
@@ -85,6 +89,8 @@ export const SUPERVISOR_TOOLS = Object.freeze([
   'getAttachment',
   'listMemories',
   'getMemory',
+  'listSkills',
+  'getSkill',
   'listEvents',
   'createEvent',
   'getEvent',

@@ -702,6 +702,7 @@ func New(cfg Config) (*App, error) {
 				}
 				return true, nil
 			},
+			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
 				created, err := repo.CreateToolCall(ctx, tc)
 				if err == nil {

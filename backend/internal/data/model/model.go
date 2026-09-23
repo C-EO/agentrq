@@ -661,4 +661,10 @@ const (
 	SubActionIDMCPPromptNewWorkspace
 	SubActionIDMCPPromptSetupAgentrqd
 	SubActionIDMCPPromptWorkspaceStatus
+	// Skills. listSkills is on both servers; getSkill is CoreMCP's.
+	SubActionIDMCPListSkills
+	SubActionIDMCPLoadSkill
+	SubActionIDMCPSaveSkill
+	SubActionIDMCPDeleteSkill
+	SubActionIDMCPGetSkill
 )

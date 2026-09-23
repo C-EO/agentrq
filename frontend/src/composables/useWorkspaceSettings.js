@@ -93,6 +93,10 @@ export const WORKSPACE_MCP_TOOLS = Object.freeze([
   'loadMemory',
   'saveMemory',
   'deleteMemory',
+  'listSkills',
+  'loadSkill',
+  'saveSkill',
+  'deleteSkill',
   'elicit',
 ]);
 
@@ -131,6 +135,8 @@ export const SUPERVISOR_MCP_TOOLS = Object.freeze([
   'getAttachment',
   'listMemories',
   'getMemory',
+  'listSkills',
+  'getSkill',
   'listEvents',
   'createEvent',
   'getEvent',

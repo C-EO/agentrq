@@ -96,6 +96,12 @@ event: code_changed
 | `listMemories` | List a workspace's memories: name, size and when each changed. Content is not included |
 | `getMemory` | Read one memory in full, by name. `MEMORY.md` is the index the others hang off |
 
+### Workspace Skills
+| Tool | Description |
+|------|-------------|
+| `listSkills` | List the skills a workspace can use, its own and those shared into it: name, description, source and size. Content is not included |
+| `getSkill` | Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`, with the list of its other files |
+
 ## Core Guidelines
 
 1. **Discover Before Creating**: Always use `listWorkspaces` or `listAllTasks` to find existing workspaces and tasks before creating new ones. Avoid duplicates.
