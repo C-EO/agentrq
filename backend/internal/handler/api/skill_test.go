@@ -40,9 +40,9 @@ func testSkill() entity.Skill {
 	}
 }
 
-func (s *skillCrud) ListSkills(_ context.Context, rq entity.ListSkillsRequest) (*entity.ListSkillsResponse, error) {
+func (s *skillCrud) SearchSkills(_ context.Context, rq entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
 	s.saw = rq
-	return &entity.ListSkillsResponse{Skills: []entity.Skill{testSkill(), {ID: 8, Name: "own"}}}, s.err
+	return &entity.SearchSkillsResponse{Skills: []entity.Skill{testSkill(), {ID: 8, Name: "own"}}, Total: 2}, s.err
 }
 
 func (s *skillCrud) GetSkill(_ context.Context, rq entity.GetSkillRequest) (*entity.GetSkillResponse, error) {
@@ -129,8 +129,11 @@ func TestSkillRoutes(t *testing.T) {
 		want                     any
 		contains                 []string
 	}{
-		{"list", http.MethodGet, prefix, "", 200, entity.ListSkillsRequest{WorkspaceID: 4242, UserID: "user-1"},
+		{"list", http.MethodGet, prefix, "", 200, entity.SearchSkillsRequest{WorkspaceID: 4242, UserID: "user-1"},
 			[]string{`"name":"tdd"`, `"sharedFromWorkspaceId":"` + skillTarget + `"`, `"sourceRepo":"obra/superpowers"`, `"files":[{"path":"SKILL.md","sizeBytes":20`}},
+		{"search", http.MethodGet, prefix + "?q=review&limit=20&offset=40", "", 200,
+			entity.SearchSkillsRequest{WorkspaceID: 4242, UserID: "user-1", Query: "review", Limit: 20, Offset: 40},
+			[]string{`"total":2`}},
 		{"get", http.MethodGet, prefix + "/tdd", "", 200, entity.GetSkillRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd"},
 			[]string{`"skill":{`, `"fileCount":2`}},
 		{"file, with a nested and encoded path", http.MethodGet, prefix + "/tdd/files/scripts/run%20me.sh", "", 200,

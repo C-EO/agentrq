@@ -18,16 +18,16 @@ import (
 type mockSkillCrud struct {
 	crud.Controller
 
-	list    entity.ListSkillsRequest
+	list    entity.SearchSkillsRequest
 	getFile entity.GetSkillFileRequest
 	get     entity.GetSkillRequest
 
 	listErr, fileErr, getErr error
 }
 
-func (m *mockSkillCrud) ListSkills(_ context.Context, req entity.ListSkillsRequest) (*entity.ListSkillsResponse, error) {
+func (m *mockSkillCrud) SearchSkills(_ context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
 	m.list = req
-	return &entity.ListSkillsResponse{Skills: []entity.Skill{{Name: "tdd", Description: "Test first.", SharedFromWorkspaceID: 301}}}, m.listErr
+	return &entity.SearchSkillsResponse{Skills: []entity.Skill{{Name: "tdd", Description: "Test first.", SharedFromWorkspaceID: 301}}, Total: 1}, m.listErr
 }
 
 func (m *mockSkillCrud) GetSkillFile(_ context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
@@ -40,15 +40,15 @@ func (m *mockSkillCrud) GetSkill(_ context.Context, req entity.GetSkillRequest) 
 	return &entity.GetSkillResponse{Skill: entity.Skill{Name: req.Name, Files: []entity.SkillFile{{Path: "SKILL.md"}, {Path: "refs/a.md"}}}}, m.getErr
 }
 
-func TestListSkills_ScopesToTheAuthenticatedUserAndWorkspace(t *testing.T) {
+func TestSearchSkills_ScopesToTheAuthenticatedUserAndWorkspace(t *testing.T) {
 	ctrl := &mockSkillCrud{}
 	s := &WorkspaceServer{crud: ctrl}
-	body := textOf(t, toolResult(s.handleListSkills(authedContext(), nil, ListSkillsParams{WorkspaceID: base62(testWorkspace)})))
+	body := textOf(t, toolResult(s.handleSearchSkills(authedContext(), nil, SearchSkillsParams{WorkspaceID: base62(testWorkspace), Q: "test", Limit: 5, Offset: 10})))
 
-	if ctrl.list.UserID != testUserID || ctrl.list.WorkspaceID != testWorkspace {
+	if ctrl.list.UserID != testUserID || ctrl.list.WorkspaceID != testWorkspace || ctrl.list.Query != "test" || ctrl.list.Limit != 5 || ctrl.list.Offset != 10 {
 		t.Errorf("request = %+v", ctrl.list)
 	}
-	for _, want := range []string{`"name":"tdd"`, `"description":"Test first."`, `"sharedFromWorkspaceId":"` + base62(301) + `"`} {
+	for _, want := range []string{`"total":1`, `"name":"tdd"`, `"description":"Test first."`, `"sharedFromWorkspaceId":"` + base62(301) + `"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body %s lacks %s", body, want)
 		}
@@ -91,7 +91,7 @@ func TestSkillTools_ReportFailures(t *testing.T) {
 		want string
 	}{
 		{"list", &mockSkillCrud{listErr: errors.New("db down")}, func(s *WorkspaceServer) callResult {
-			return toolResult(s.handleListSkills(authedContext(), nil, ListSkillsParams{WorkspaceID: base62(testWorkspace)}))
+			return toolResult(s.handleSearchSkills(authedContext(), nil, SearchSkillsParams{WorkspaceID: base62(testWorkspace), Q: "test", Limit: 5, Offset: 10}))
 		}, "db down"},
 		{"bad uri", &mockSkillCrud{}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "memory://x.md"}))

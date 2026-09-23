@@ -294,8 +294,11 @@ type GetMemoryParams struct {
 	Name        string `json:"name" jsonschema:"The memory's name, as listMemories reports it."`
 }
 
-type ListSkillsParams struct {
+type SearchSkillsParams struct {
 	WorkspaceID string `json:"workspaceId"`
+	Q           string `json:"q,omitempty" jsonschema:"Text to find in a skill's name or description, ignoring case; at least 3 characters. Leave it out to list every skill."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"How many skills to return, at most 100. Leave it out to return every match."`
+	Offset      int    `json:"offset,omitempty" jsonschema:"How many matches to skip, for the next page."`
 }
 
 type GetSkillParams struct {
@@ -326,7 +329,7 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata", Annotations: mcphint.Read("Get an attachment")}, s.handleGetAttachment)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that.", Annotations: mcphint.Read("List a workspace's memories")}, s.handleListMemories)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off.", Annotations: mcphint.Read("Get a memory")}, s.handleGetMemory)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listSkills", Description: "List the skills a workspace can use, its own and those shared into it: name, description, source and size. A shared-in skill carries sharedFromWorkspaceId and is read-only there. Content is not included — get a file with getSkill.", Annotations: mcphint.Read("List a workspace's skills")}, s.handleListSkills)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "searchSkills", Description: "Find the skills a workspace can use, its own and those shared into it: name, description, source and size, plus the total number of matches. With q (at least 3 characters) only skills whose name or description contains it are returned; limit and offset page through the matches. A shared-in skill carries sharedFromWorkspaceId and is read-only there. Content is not included — get a file with getSkill.", Annotations: mcphint.Read("Search a workspace's skills")}, s.handleSearchSkills)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getSkill", Description: "Get one file of a workspace's skill in full, by its skill://<name>/<path> URI; skill://<name> alone gets its SKILL.md, together with the list of the skill's other files.", Annotations: mcphint.Read("Get a skill file")}, s.handleGetSkill)
 
 	// Events and their triggers — see events.go.
@@ -748,16 +751,19 @@ func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallT
 	return textResponse(string(b)), nil, nil
 }
 
-func (s *WorkspaceServer) handleListSkills(ctx context.Context, req *mcp.CallToolRequest, args ListSkillsParams) (*mcp.CallToolResult, any, error) {
-	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "listSkills", parseID(args.WorkspaceID))
-	res, err := s.crud.ListSkills(ctx, entity.ListSkillsRequest{
+func (s *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.CallToolRequest, args SearchSkillsParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "searchSkills", parseID(args.WorkspaceID))
+	res, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{
 		UserID:      getUserID(ctx),
 		WorkspaceID: parseID(args.WorkspaceID),
+		Query:       args.Q,
+		Limit:       args.Limit,
+		Offset:      args.Offset,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
-	return textResponse(string(apiMapper.FromListSkillsResponseEntityToHTTPResponse(res))), nil, nil
+	return textResponse(string(apiMapper.FromSearchSkillsResponseEntityToHTTPResponse(res))), nil, nil
 }
 
 // handleGetSkill returns one file with its skill's metadata; for a SKILL.md,

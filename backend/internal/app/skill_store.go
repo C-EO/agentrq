@@ -34,10 +34,10 @@ func refusal(err error) error {
 	return err
 }
 
-func (s *skillStore) ListSkills(ctx context.Context) ([]mcp.SkillSummary, error) {
-	rs, err := s.crud.ListSkills(ctx, entity.ListSkillsRequest{WorkspaceID: s.workspaceID, UserID: s.userID})
+func (s *skillStore) SearchSkills(ctx context.Context, q string, limit, offset int) ([]mcp.SkillSummary, int, error) {
+	rs, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Query: q, Limit: limit, Offset: offset})
 	if err != nil {
-		return nil, refusal(err)
+		return nil, 0, refusal(err)
 	}
 	owners := map[int64]string{}
 	out := make([]mcp.SkillSummary, len(rs.Skills))
@@ -56,7 +56,7 @@ func (s *skillStore) ListSkills(ctx context.Context) ([]mcp.SkillSummary, error)
 		}
 		out[i].SharedFrom = name
 	}
-	return out, nil
+	return out, rs.Total, nil
 }
 
 // LoadSkillFile reads one file, and for a SKILL.md the paths of its skill's

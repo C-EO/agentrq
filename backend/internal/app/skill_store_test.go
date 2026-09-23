@@ -24,15 +24,17 @@ type fakeSkillCrud struct {
 	workspaces                    map[int64]string
 	listErr, getErr, fileErr, err error
 	scopes                        []string
+	search                        entity.SearchSkillsRequest
 }
 
 func (f *fakeSkillCrud) scope(workspaceID int64, userID string) {
 	f.scopes = append(f.scopes, userID+"@"+string(rune('0'+workspaceID)))
 }
 
-func (f *fakeSkillCrud) ListSkills(_ context.Context, req entity.ListSkillsRequest) (*entity.ListSkillsResponse, error) {
+func (f *fakeSkillCrud) SearchSkills(_ context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
 	f.scope(req.WorkspaceID, req.UserID)
-	return &entity.ListSkillsResponse{Skills: f.skills}, f.listErr
+	f.search = req
+	return &entity.SearchSkillsResponse{Skills: f.skills, Total: len(f.skills) + 10}, f.listErr
 }
 
 func (f *fakeSkillCrud) GetWorkspace(_ context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
@@ -82,7 +84,7 @@ func TestSkillStore_List(t *testing.T) {
 		},
 		workspaces: map[int64]string{8: "Platform"},
 	}
-	got, err := newSkillStore(f).ListSkills(context.Background())
+	got, total, err := newSkillStore(f).SearchSkills(context.Background(), "tdd", 5, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +97,9 @@ func TestSkillStore_List(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v", got)
+	}
+	if total != 14 || f.search.Query != "tdd" || f.search.Limit != 5 || f.search.Offset != 2 {
+		t.Errorf("total %d, search %+v", total, f.search)
 	}
 	if !reflect.DeepEqual(f.scopes, []string{"owner@7"}) {
 		t.Errorf("scopes: %v", f.scopes)
@@ -145,7 +150,7 @@ func TestSkillStore_Errors(t *testing.T) {
 			t.Errorf("load refusal: %v", err)
 		}
 	}
-	if _, err := newSkillStore(&fakeSkillCrud{listErr: refusal}).ListSkills(ctx); !isRefusal(err) {
+	if _, _, err := newSkillStore(&fakeSkillCrud{listErr: refusal}).SearchSkills(ctx, "", 0, 0); !isRefusal(err) {
 		t.Errorf("list refusal: %v", err)
 	}
 	if err := newSkillStore(&fakeSkillCrud{err: refusal}).SaveSkillFile(ctx, "tdd", "SKILL.md", "x"); !isRefusal(err) {

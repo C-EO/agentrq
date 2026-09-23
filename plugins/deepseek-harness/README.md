@@ -85,7 +85,7 @@ Every tool the workspace server offers — fifteen today — bridged by `@deepse
 | `mcp__agentrq__loadMemory` | Read what the workspace remembers; with no name, `memory.md`, the index |
 | `mcp__agentrq__saveMemory` | Write a memory that outlives the task, replacing it entirely |
 | `mcp__agentrq__deleteMemory` | Delete one of the workspace's memories |
-| `mcp__agentrq__listSkills` | List the workspace's skills with their descriptions and `skill://` URIs |
+| `mcp__agentrq__searchSkills` | Find the workspace's skills by name or description, with their `skill://` URIs |
 | `mcp__agentrq__loadSkill` | Read one file of a skill by its `skill://` URI |
 | `mcp__agentrq__saveSkill` | Write one file of one of the workspace's own skills |
 | `mcp__agentrq__deleteSkill` | Delete one of the workspace's own skills, or one of its files |

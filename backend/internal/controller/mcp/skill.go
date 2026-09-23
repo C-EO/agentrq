@@ -15,11 +15,11 @@ import (
 
 // Workspace skills: playbooks an agent loads when a task matches one, a
 // SKILL.md and the files it points to. The tools disclose progressively —
-// listSkills gives names and descriptions only, loadSkill one file at a time —
+// searchSkills gives names and descriptions only, loadSkill one file at a time —
 // because loading every skill up front would spend the context on the ones
 // the task does not need.
 
-// SkillSummary is one skill as listSkills shows it.
+// SkillSummary is one skill as searchSkills shows it.
 type SkillSummary struct {
 	Name        string
 	Description string
@@ -35,7 +35,9 @@ type SkillSummary struct {
 // refusal the caller should read — a rule broken, a read-only skill — is a
 // *SkillRefusal, passed to the agent word for word.
 type SkillStore interface {
-	ListSkills(ctx context.Context) ([]SkillSummary, error)
+	// SearchSkills finds skills by name or description; an empty q matches
+	// all, and a limit of 0 returns every match. total counts all matches.
+	SearchSkills(ctx context.Context, q string, limit, offset int) (skills []SkillSummary, total int, err error)
 	// LoadSkillFile returns a file's content and the paths of every file in
 	// its skill.
 	LoadSkillFile(ctx context.Context, name, path string) (content string, files []string, found bool, err error)
@@ -49,6 +51,14 @@ type SkillStore interface {
 type SkillRefusal struct{ Message string }
 
 func (r *SkillRefusal) Error() string { return r.Message }
+
+// SearchSkillsParams is the input to the searchSkills tool. Every field is
+// optional.
+type SearchSkillsParams struct {
+	Q      string `json:"q,omitempty" jsonschema:"Text to find in a skill's name or description, ignoring case; at least 3 characters. Leave it out to list every skill."`
+	Limit  int    `json:"limit,omitempty" jsonschema:"How many skills to return, at most 100. Leave it out to return every match."`
+	Offset int    `json:"offset,omitempty" jsonschema:"How many matches to skip, for the next page."`
+}
 
 // LoadSkillParams is the input to the loadSkill tool.
 type LoadSkillParams struct {
@@ -82,22 +92,37 @@ func skillFailure(err error, doing string) *mcp.CallToolResult {
 	return toolError("failed to %s: %v", doing, err)
 }
 
-func (ps *WorkspaceServer) handleListSkills(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "listSkills", clientIdentityFromRequest(req))
+func (ps *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.CallToolRequest, params SearchSkillsParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "searchSkills", clientIdentityFromRequest(req))
 
 	if ps.skills == nil {
 		return toolError(skillsUnavailable), nil, nil
 	}
-	skills, err := ps.skills.ListSkills(ctx)
+	skills, total, err := ps.skills.SearchSkills(ctx, params.Q, params.Limit, params.Offset)
 	if err != nil {
-		return skillFailure(err, "list skills"), nil, nil
+		return skillFailure(err, "search skills"), nil, nil
+	}
+	if total == 0 {
+		if strings.TrimSpace(params.Q) != "" {
+			return textResult("No skill's name or description contains %q. Call searchSkills with no q to see them all.", strings.TrimSpace(params.Q)), nil, nil
+		}
+		return textResult("This workspace has no skills yet. Write one with saveSkill, starting with skill://<name>/%s.", skill.FileName), nil, nil
 	}
 	if len(skills) == 0 {
-		return textResult("This workspace has no skills yet. Write one with saveSkill, starting with skill://<name>/%s.", skill.FileName), nil, nil
+		return textResult("%d skills match, but none from offset %d; call searchSkills with a smaller offset.", total, params.Offset), nil, nil
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d skills. Load the %s of any whose description matches your task with loadSkill.\n", len(skills), skill.FileName)
+	if len(skills) == total {
+		fmt.Fprintf(&b, "%d skills.", total)
+	} else {
+		next := params.Offset + len(skills)
+		fmt.Fprintf(&b, "Skills %d–%d of %d.", params.Offset+1, next, total)
+		if next < total {
+			fmt.Fprintf(&b, " Call searchSkills with offset %d for more.", next)
+		}
+	}
+	fmt.Fprintf(&b, " Load the %s of any whose description matches your task with loadSkill.\n", skill.FileName)
 	for _, s := range skills {
 		fmt.Fprintf(&b, "\n- %s: %s\n  %s", s.Name, s.Description, skill.URI(s.Name, skill.FileName))
 		if s.SharedFrom != "" {
@@ -126,9 +151,9 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 		return skillFailure(err, "load "+skill.URI(name, p)), nil, nil
 	}
 	if !found {
-		// Not an error: a stale link or a guessed name, which listSkills
+		// Not an error: a stale link or a guessed name, which searchSkills
 		// answers.
-		return textResult("No skill or file at %s. Call listSkills to see the skills this workspace has.", skill.URI(name, p)), nil, nil
+		return textResult("No skill or file at %s. Call searchSkills to see the skills this workspace has.", skill.URI(name, p)), nil, nil
 	}
 	if p != skill.FileName {
 		return textResult("%s", content), nil, nil

@@ -10,8 +10,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -29,7 +30,7 @@ import (
 // came in by. Only the workspace that owns a skill may change it; a workspace
 // it is shared into can read it and nothing else.
 type SkillController interface {
-	ListSkills(ctx context.Context, req entity.ListSkillsRequest) (*entity.ListSkillsResponse, error)
+	SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error)
 	GetSkill(ctx context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error)
 	GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error)
 	SaveSkillFile(ctx context.Context, req entity.SaveSkillFileRequest) (*entity.SaveSkillFileResponse, error)
@@ -124,28 +125,46 @@ func skillName(name string) (string, error) {
 	return canonical, nil
 }
 
-func (c *controller) ListSkills(ctx context.Context, req entity.ListSkillsRequest) (*entity.ListSkillsResponse, error) {
+const (
+	// MaxSkillSearchLimit is the largest page a search returns.
+	MaxSkillSearchLimit = 100
+	// MinSkillQueryLength and MaxSkillQueryLength bound a search query that is
+	// given at all, in characters; an empty query lists every skill.
+	MinSkillQueryLength = 3
+	MaxSkillQueryLength = 256
+)
+
+// SearchSkills finds the skills a workspace can use — its own and those shared
+// into it — whose name or description contains the query, ignoring case. With
+// no query it lists them all, and with no limit it returns every match.
+func (c *controller) SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
 	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
-	own, err := c.repository.ListSkillsByWorkspace(ctx, uid, req.WorkspaceID)
+	q := strings.TrimSpace(req.Query)
+	switch n := utf8.RuneCountInString(q); {
+	case n > 0 && n < MinSkillQueryLength:
+		return nil, skillErr(SkillInvalid, "search query %q is too short; give at least %d characters, or none to list every skill", q, MinSkillQueryLength)
+	case n > MaxSkillQueryLength:
+		return nil, skillErr(SkillInvalid, "search query is %d characters; the limit is %d", n, MaxSkillQueryLength)
+	case req.Limit < 0 || req.Offset < 0:
+		return nil, skillErr(SkillInvalid, "limit and offset cannot be negative")
+	}
+	limit := min(req.Limit, MaxSkillSearchLimit)
+	found, total, err := c.repository.SearchSkills(ctx, uid, req.WorkspaceID, q, limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
-	shared, err := c.repository.ListSkillsSharedInto(ctx, uid, req.WorkspaceID)
-	if err != nil {
-		return nil, err
+	skills := make([]entity.Skill, len(found))
+	for i, s := range found {
+		var sharedFrom int64
+		if s.WorkspaceID != req.WorkspaceID {
+			sharedFrom = s.WorkspaceID
+		}
+		skills[i] = fromModelSkill(s, sharedFrom)
 	}
-	skills := make([]entity.Skill, 0, len(own)+len(shared))
-	for _, s := range own {
-		skills = append(skills, fromModelSkill(s, 0))
-	}
-	for _, s := range shared {
-		skills = append(skills, fromModelSkill(s, s.WorkspaceID))
-	}
-	sort.SliceStable(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
-	return &entity.ListSkillsResponse{Skills: skills}, nil
+	return &entity.SearchSkillsResponse{Skills: skills, Total: int(total)}, nil
 }
 
 func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error) {

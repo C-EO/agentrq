@@ -125,7 +125,7 @@ than an oversight to route around.
 
 ```
 createTask  updateTaskStatus  reply  downloadAttachment  getWorkspace
-getTask  publishEvent  loadMemory  saveMemory  deleteMemory  listSkills
+getTask  publishEvent  loadMemory  saveMemory  deleteMemory  searchSkills
 loadSkill  saveSkill  deleteSkill  elicit
 ```
 

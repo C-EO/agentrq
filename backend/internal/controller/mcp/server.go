@@ -499,7 +499,7 @@ func NewWorkspaceServer(
 					"`memory.md`, the index of everything this workspace remembers, and it may already answer what you were about to ask. The index links "+
 					"its entries as `memory://<name>`; load the ones that look relevant. When you learn something that would save the next agent the same "+
 					"detour, `saveMemory` it and link it from the index. The memory belongs to the workspace, so everyone working here shares it.\n\n"+
-					"7. **SKILLS**: This workspace may have skills, playbooks for kinds of task. Call `listSkills` at the start of a task, and `loadSkill` "+
+					"7. **SKILLS**: This workspace may have skills, playbooks for kinds of task. Call `searchSkills` at the start of a task, and `loadSkill` "+
 					"the SKILL.md of any skill whose description matches it, then follow it. Load a skill's other files only when its SKILL.md points you to "+
 					"them, by their `skill://` URI. When you improve one of this workspace's own skills, save it with `saveSkill`.\n",
 				workspaceIDStr,
@@ -584,11 +584,13 @@ func NewWorkspaceServer(
 	}, ps.handleDeleteMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
-		Name: "listSkills",
-		Description: "List the skills this workspace can use — its own and those shared into it — with each one's description and the skill:// URI of its SKILL.md. " +
+		Name: "searchSkills",
+		Description: "Find the skills this workspace can use — its own and those shared into it — with each one's description and the skill:// URI of its SKILL.md. " +
+			"With q (at least 3 characters) only skills whose name or description contains it are returned, ignoring case; without it, every skill. " +
+			"limit and offset page through the matches. " +
 			"Call this at the start of a task, then loadSkill the SKILL.md of any skill whose description matches the task. Bodies are not included.",
-		Annotations: mcphint.Read("List skills"),
-	}, ps.handleListSkills)
+		Annotations: mcphint.Read("Search skills"),
+	}, ps.handleSearchSkills)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name: "loadSkill",

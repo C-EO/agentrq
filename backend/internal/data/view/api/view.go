@@ -444,8 +444,11 @@ type (
 		Content   string    `json:"content,omitempty"`
 	}
 
-	ListSkillsResponse struct {
+	// SearchSkillsResponse is one page of matching skills; total counts every
+	// match, so a caller can tell whether there are more.
+	SearchSkillsResponse struct {
 		Skills []Skill `json:"skills"`
+		Total  int     `json:"total"`
 	}
 
 	GetSkillResponse struct {

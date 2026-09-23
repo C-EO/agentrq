@@ -704,13 +704,19 @@ type (
 		Reason string
 	}
 
-	ListSkillsRequest struct {
+	// SearchSkillsRequest finds skills by name or description. An empty Query
+	// matches every skill, and a Limit of 0 returns every match.
+	SearchSkillsRequest struct {
 		WorkspaceID int64
 		UserID      string
+		Query       string
+		Limit       int
+		Offset      int
 	}
 
-	ListSkillsResponse struct {
+	SearchSkillsResponse struct {
 		Skills []Skill
+		Total  int
 	}
 
 	GetSkillRequest struct {
