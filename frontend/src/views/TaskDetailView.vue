@@ -124,7 +124,7 @@
                   </div>
                 </div>
                 <MarkdownBody v-if="!isTaskBodyRaw" :text="stripNote(task.body)" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ stripNote(task.body) }}</div>
+                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ stripNote(task.body) }}</div>
               </div>
             </div>
           </div>
@@ -230,7 +230,7 @@
                  </div>
                </div>
                <MarkdownBody v-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-               <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
 
                <!-- Permission Request (agent message) -->
                <div v-if="m.metadata?.type === 'permission_request'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
@@ -484,7 +484,7 @@
                  </div>
                </div>
                <MarkdownBody v-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-               <div v-else class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-all text-gray-800 dark:text-zinc-200">{{ m.text }}</div>
+               <div v-else class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-words text-gray-800 dark:text-zinc-200">{{ m.text }}</div>
                <!-- Attachments on slack message -->
                <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-zinc-600 justify-end">
                  <div v-for="(att, i) in m.attachments" :key="i"
@@ -537,9 +537,9 @@
                          rows="3"
                          dir="auto"
                          class="w-full sm:min-w-[340px] text-[13px] font-medium leading-relaxed bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white resize-none custom-scrollbar"></textarea>
-               <div v-else-if="m._pending || m._queued" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <div v-else-if="m._pending || m._queued" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
-               <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
                <div v-if="m._pending" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
                  <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>

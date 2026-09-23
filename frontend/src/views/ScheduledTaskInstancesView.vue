@@ -75,7 +75,7 @@
                   </div>
                 </div>
                 <div v-if="!isTaskBodyRaw" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(stripNote(scheduledTask.body))"></div>
-                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ stripNote(scheduledTask.body) }}</div>
+                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ stripNote(scheduledTask.body) }}</div>
               </div>
             </div>
           </div>
