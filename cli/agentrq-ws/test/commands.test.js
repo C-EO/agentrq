@@ -348,15 +348,25 @@ test('memory delete defaults to the index', async () => {
   assert.deepEqual(client.calls[0].args, { name: undefined })
 })
 
-test('skill list, load and delete name the skill by URI', async () => {
+test('skill search passes the query and paging on', async () => {
   const client = stubClient()
-  await invoke('skill list', { client })
+  await invoke('skill search', { client })
+  await invoke('skill search', { positionals: ['pull', 'request'], values: { limit: '20', offset: '40' }, client })
+  assert.deepEqual(
+    client.calls.map((c) => c.args),
+    [{}, { q: 'pull request', limit: 20, offset: 40 }],
+  )
+  await assert.rejects(() => invoke('skill search', { values: { limit: '-1' } }), /--limit must be a whole number/)
+  await assert.rejects(() => invoke('skill search', { values: { offset: 'x' } }), /--offset must be a whole number/)
+})
+
+test('skill load and delete name the skill by URI', async () => {
+  const client = stubClient()
   await invoke('skill load', { positionals: ['skill://tdd'], client })
   await invoke('skill delete', { positionals: ['skill://tdd/notes.md'], client })
   assert.deepEqual(
     client.calls.map((c) => [c.name, c.args]),
     [
-      ['listSkills', {}],
       ['loadSkill', { uri: 'skill://tdd' }],
       ['deleteSkill', { uri: 'skill://tdd/notes.md' }],
     ],
@@ -520,7 +530,7 @@ test('the CLI covers every tool the workspace server offers', () => {
     'loadMemory',
     'saveMemory',
     'deleteMemory',
-    'listSkills',
+    'searchSkills',
     'loadSkill',
     'saveSkill',
     'deleteSkill',

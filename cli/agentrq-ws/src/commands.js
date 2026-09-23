@@ -266,11 +266,23 @@ export const COMMANDS = [
     },
   },
   {
-    path: ['skill', 'list'],
-    summary: 'List the skills this workspace can use',
-    usage: 'agentrq-ws skill list',
+    path: ['skill', 'search'],
+    summary: 'Find the skills this workspace can use, by name or description',
+    usage: 'agentrq-ws skill search [q] [--limit N] [--offset N]',
+    options: {
+      limit: { type: 'string', description: 'How many to return (at most 100; default all)' },
+      offset: { type: 'string', description: 'How many matches to skip' },
+    },
     async run(ctx) {
-      return ctx.client.callTool('listSkills', {})
+      const args = {}
+      if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
+      for (const key of ['limit', 'offset']) {
+        if (ctx.values[key] === undefined) continue
+        const n = Number(ctx.values[key])
+        if (!Number.isInteger(n) || n < 0) throw new UserError(`--${key} must be a whole number, 0 or more`)
+        args[key] = n
+      }
+      return ctx.client.callTool('searchSkills', args)
     },
   },
   {

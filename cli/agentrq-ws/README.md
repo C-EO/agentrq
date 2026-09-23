@@ -52,7 +52,7 @@ Node 20.6 or newer.
 | `memory load [name]` | Read a workspace memory (defaults to the index) |
 | `memory save [name] --content …` | Replace a workspace memory |
 | `memory delete [name]` | Delete a workspace memory |
-| `skill list` | List the skills this workspace can use |
+| `skill search [q]` | Find the skills this workspace can use, by name or description; `--limit`/`--offset` page |
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
 | `skill save <uri> --content …` | Replace a file of one of this workspace's skills |
 | `skill delete <uri>` | Delete a skill (`skill://<name>`) or one of its files |

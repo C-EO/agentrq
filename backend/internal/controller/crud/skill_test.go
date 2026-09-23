@@ -143,7 +143,7 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 		t.Errorf("storage holds %d blobs, want 2", n)
 	}
 
-	list, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
+	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
 	if err != nil || len(list.Skills) != 1 || list.Skills[0].SharedFromWorkspaceID != 0 {
 		t.Fatalf("list: %+v, %v", list, err)
 	}
@@ -281,7 +281,7 @@ func TestSkills_AccountIsolation(t *testing.T) {
 
 	calls := map[string]func() error{
 		"list": func() error {
-			_, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS, UserID: other})
+			_, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: other})
 			return err
 		},
 		"get": func() error {
@@ -326,7 +326,7 @@ func TestSkills_AccountIsolation(t *testing.T) {
 			t.Errorf("%s: want ErrNotFound, got %v", name, err)
 		}
 	}
-	if _, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: 0, UserID: skUserStr}); err == nil {
+	if _, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: 0, UserID: skUserStr}); err == nil {
 		t.Error("workspace 0 must be refused")
 	}
 }
@@ -344,7 +344,7 @@ func TestSkills_Sharing(t *testing.T) {
 		t.Fatalf("share again: %v", err)
 	}
 
-	list, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
+	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
 	if err != nil || len(list.Skills) != 1 || list.Skills[0].SharedFromWorkspaceID != skWS {
 		t.Fatalf("target list: %+v, %v", list, err)
 	}
@@ -382,7 +382,7 @@ func TestSkills_Sharing(t *testing.T) {
 	if err := e.c.UnshareSkill(e.ctx, share); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("unshare again: %v", err)
 	}
-	list, _ = e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
+	list, _ = e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
 	if len(list.Skills) != 0 {
 		t.Errorf("after unsharing the target still lists %+v", list.Skills)
 	}
@@ -625,7 +625,7 @@ func failOn(db *gorm.DB, op, table string) {
 func TestSkills_DatabaseFailures(t *testing.T) {
 	type call func(e *skillEnv) error
 	list := func(e *skillEnv) error {
-		_, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
+		_, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
 		return err
 	}
 	get := func(e *skillEnv) error {
@@ -718,9 +718,9 @@ func TestSkills_ListIsSortedByName(t *testing.T) {
 	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "mid", TargetWorkspaceID: skWS}); err != nil {
 		t.Fatalf("share: %v", err)
 	}
-	list, err := e.c.ListSkills(e.ctx, entity.ListSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
+	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
 	if err != nil {
-		t.Fatalf("ListSkills: %v", err)
+		t.Fatalf("SearchSkills: %v", err)
 	}
 	var names []string
 	for _, s := range list.Skills {
@@ -794,5 +794,85 @@ func TestSkills_ImportIsRateLimited(t *testing.T) {
 	}
 	if e.importer.url != "" {
 		t.Error("a refused import still reached GitHub")
+	}
+}
+
+func TestSkills_Search(t *testing.T) {
+	e := newSkillEnv(t)
+	e.save(t, skWS, "pr-reviewer", "SKILL.md", md("pr-reviewer", "Reviews Pull Requests."))
+	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Write the failing test first."))
+	e.save(t, skWS, "percent", "SKILL.md", md("percent", "Handles 100% of cases."))
+	e.save(t, skWS2, "reviewed-by-ops", "SKILL.md", md("reviewed-by-ops", "Shared in from beta."))
+	e.save(t, skWS3, "unshared-review", "SKILL.md", md("unshared-review", "Not visible to alpha."))
+	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "reviewed-by-ops", TargetWorkspaceID: skWS}); err != nil {
+		t.Fatal(err)
+	}
+	search := func(q string, limit, offset int) *entity.SearchSkillsResponse {
+		t.Helper()
+		rs, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, Query: q, Limit: limit, Offset: offset})
+		if err != nil {
+			t.Fatalf("SearchSkills(%q): %v", q, err)
+		}
+		return rs
+	}
+	names := func(rs *entity.SearchSkillsResponse) string {
+		var out []string
+		for _, s := range rs.Skills {
+			out = append(out, s.Name)
+		}
+		return strings.Join(out, ",")
+	}
+
+	for _, tc := range []struct{ q, want string }{
+		{"", "percent,pr-reviewer,reviewed-by-ops,tdd"},
+		{"review", "pr-reviewer,reviewed-by-ops"}, // name, own and shared-in
+		{"PULL requests", "pr-reviewer"},          // description, any case
+		{"  failing  ", "tdd"},                    // trimmed
+		{"100%", "percent"},                       // % matches itself
+		{"r_v", ""},                               // so does _
+		{"nothing-here", ""},
+	} {
+		rs := search(tc.q, 0, 0)
+		if got := names(rs); got != tc.want || rs.Total != len(rs.Skills) {
+			t.Errorf("q %q: got %q (total %d), want %q", tc.q, got, rs.Total, tc.want)
+		}
+	}
+
+	// A shared-in skill says where it came from.
+	if rs := search("reviewed", 0, 0); rs.Skills[0].SharedFromWorkspaceID != skWS2 {
+		t.Errorf("shared from: %+v", rs.Skills[0])
+	}
+
+	// Pages by name, with the total of every match.
+	if rs := search("", 2, 1); names(rs) != "pr-reviewer,reviewed-by-ops" || rs.Total != 4 {
+		t.Errorf("page: %q total %d", names(rs), rs.Total)
+	}
+	if rs := search("", 2, 10); len(rs.Skills) != 0 || rs.Total != 4 {
+		t.Errorf("past the end: %+v", rs)
+	}
+	if rs := search("", 1000, 0); len(rs.Skills) != 4 {
+		t.Errorf("a large limit is capped, not refused: %d", len(rs.Skills))
+	}
+}
+
+func TestSkills_SearchRefusesBadInput(t *testing.T) {
+	e := newSkillEnv(t)
+	for _, tc := range []struct {
+		rq   entity.SearchSkillsRequest
+		want string
+	}{
+		{entity.SearchSkillsRequest{Query: "ab"}, "at least 3 characters"},
+		{entity.SearchSkillsRequest{Query: " ab "}, "at least 3 characters"},
+		{entity.SearchSkillsRequest{Query: strings.Repeat("q", MaxSkillQueryLength+1)}, "the limit is 256"},
+		{entity.SearchSkillsRequest{Limit: -1}, "cannot be negative"},
+		{entity.SearchSkillsRequest{Offset: -1}, "cannot be negative"},
+	} {
+		tc.rq.WorkspaceID, tc.rq.UserID = skWS, skUserStr
+		_, err := e.c.SearchSkills(e.ctx, tc.rq)
+		wantSkillErr(t, err, SkillInvalid, tc.want)
+	}
+	// Exactly the minimum is a search.
+	if _, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, Query: "tdd"}); err != nil {
+		t.Errorf("three characters: %v", err)
 	}
 }

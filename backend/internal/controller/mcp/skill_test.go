@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,15 +21,21 @@ import (
 // fakeSkills is a SkillStore over a map of name → path → content, with a
 // failure to return from each call when one is set.
 type fakeSkills struct {
-	skills  []SkillSummary
-	files   map[string]map[string]string
-	err     error
-	saved   []string
-	deleted []string
+	skills   []SkillSummary
+	files    map[string]map[string]string
+	err      error
+	saved    []string
+	total    int
+	searched []string
+	deleted  []string
 }
 
-func (f *fakeSkills) ListSkills(context.Context) ([]SkillSummary, error) {
-	return f.skills, f.err
+func (f *fakeSkills) SearchSkills(_ context.Context, q string, limit, offset int) ([]SkillSummary, int, error) {
+	f.searched = append(f.searched, fmt.Sprintf("%s/%d/%d", q, limit, offset))
+	if f.total != 0 {
+		return f.skills, f.total, f.err
+	}
+	return f.skills, len(f.skills), f.err
 }
 
 func (f *fakeSkills) LoadSkillFile(_ context.Context, name, path string) (string, []string, bool, error) {
@@ -105,9 +112,9 @@ func tddSkills() *fakeSkills {
 	}
 }
 
-func TestListSkills(t *testing.T) {
+func TestSearchSkills(t *testing.T) {
 	ps, tools := skillServer(t, tddSkills())
-	text, isErr := call(ps.handleListSkills(context.Background(), nil, struct{}{}))
+	text, isErr := call(ps.handleSearchSkills(context.Background(), nil, SearchSkillsParams{}))
 	if isErr {
 		t.Fatalf("error: %s", text)
 	}
@@ -123,14 +130,14 @@ func TestListSkills(t *testing.T) {
 	if strings.Contains(text, "See references") {
 		t.Error("the list must not carry skill bodies")
 	}
-	if strings.Join(*tools, ",") != "listSkills" {
+	if strings.Join(*tools, ",") != "searchSkills" {
 		t.Errorf("telemetry: %v", *tools)
 	}
 }
 
-func TestListSkills_None(t *testing.T) {
+func TestSearchSkills_None(t *testing.T) {
 	ps, _ := skillServer(t, &fakeSkills{})
-	text, isErr := call(ps.handleListSkills(context.Background(), nil, struct{}{}))
+	text, isErr := call(ps.handleSearchSkills(context.Background(), nil, SearchSkillsParams{}))
 	if isErr || !strings.Contains(text, "no skills yet") || !strings.Contains(text, "saveSkill") {
 		t.Errorf("got %v %q", isErr, text)
 	}
@@ -166,7 +173,7 @@ func TestLoadSkill_MissIsNotAnError(t *testing.T) {
 	ps, _ := skillServer(t, tddSkills())
 	for _, uri := range []string{"skill://nope", "skill://tdd/missing.md"} {
 		text, isErr := call(ps.handleLoadSkill(context.Background(), nil, LoadSkillParams{URI: uri}))
-		if isErr || !strings.HasPrefix(text, "No skill or file at skill://") || !strings.Contains(text, "listSkills") {
+		if isErr || !strings.HasPrefix(text, "No skill or file at skill://") || !strings.Contains(text, "searchSkills") {
 			t.Errorf("%s: got %v %q", uri, isErr, text)
 		}
 	}
@@ -268,7 +275,7 @@ func TestSkillTools_Failures(t *testing.T) {
 			"delete file": `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
 		}},
 		{errors.New("disk full"), map[string]string{
-			"list":        "failed to list skills: disk full",
+			"list":        "failed to search skills: disk full",
 			"load":        "failed to load skill://tdd/SKILL.md: disk full",
 			"save":        "failed to save skill://tdd/SKILL.md: disk full",
 			"delete":      "failed to delete skill://tdd: disk full",
@@ -277,7 +284,7 @@ func TestSkillTools_Failures(t *testing.T) {
 	} {
 		ps, _ := skillServer(t, &fakeSkills{err: tc.err, files: map[string]map[string]string{"tdd": {"notes.md": "n"}}})
 		for name, run := range map[string]func() (*mcp.CallToolResult, any, error){
-			"list": func() (*mcp.CallToolResult, any, error) { return ps.handleListSkills(ctx, nil, struct{}{}) },
+			"list": func() (*mcp.CallToolResult, any, error) { return ps.handleSearchSkills(ctx, nil, SearchSkillsParams{}) },
 			"load": func() (*mcp.CallToolResult, any, error) {
 				return ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd"})
 			},
@@ -303,7 +310,7 @@ func TestSkillTools_WithoutAStore(t *testing.T) {
 	ps, tools := skillServer(t, nil)
 	ctx := context.Background()
 	for name, run := range map[string]func() (*mcp.CallToolResult, any, error){
-		"list": func() (*mcp.CallToolResult, any, error) { return ps.handleListSkills(ctx, nil, struct{}{}) },
+		"list": func() (*mcp.CallToolResult, any, error) { return ps.handleSearchSkills(ctx, nil, SearchSkillsParams{}) },
 		"load": func() (*mcp.CallToolResult, any, error) {
 			return ps.handleLoadSkill(ctx, nil, LoadSkillParams{URI: "skill://tdd"})
 		},
@@ -333,10 +340,10 @@ func TestSkillRefusal_Error(t *testing.T) {
 
 func TestSkillToolAnnotations(t *testing.T) {
 	want := map[string]struct{ readOnly, destructive bool }{
-		"listSkills":  {readOnly: true},
-		"loadSkill":   {readOnly: true},
-		"saveSkill":   {destructive: true},
-		"deleteSkill": {destructive: true},
+		"searchSkills": {readOnly: true},
+		"loadSkill":    {readOnly: true},
+		"saveSkill":    {destructive: true},
+		"deleteSkill":  {destructive: true},
 	}
 	seen := map[string]bool{}
 	for _, tool := range toolsOverTheWire(t) {
@@ -379,9 +386,39 @@ func TestInstructionsMentionSkills(t *testing.T) {
 	if err := json.Unmarshal(out, &env); err != nil {
 		t.Fatalf("decode %s: %v", out, err)
 	}
-	for _, want := range []string{"7. **SKILLS**", "`listSkills`", "`loadSkill`", "`skill://`", "`saveSkill`"} {
+	for _, want := range []string{"7. **SKILLS**", "`searchSkills`", "`loadSkill`", "`skill://`", "`saveSkill`"} {
 		if !strings.Contains(env.Result.Instructions, want) {
 			t.Errorf("instructions lack %q", want)
 		}
+	}
+}
+
+func TestSearchSkills_PagesAndQueries(t *testing.T) {
+	store := tddSkills()
+	store.total = 5
+	ps, _ := skillServer(t, store)
+	ctx := context.Background()
+
+	text, _ := call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{Q: "test", Limit: 2, Offset: 1}))
+	if !strings.HasPrefix(text, "Skills 2–3 of 5. Call searchSkills with offset 3 for more.") {
+		t.Errorf("middle page: %q", text)
+	}
+	text, _ = call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{Offset: 3}))
+	if !strings.HasPrefix(text, "Skills 4–5 of 5. Load") {
+		t.Errorf("last page: %q", text)
+	}
+	if strings.Join(store.searched, " ") != "test/2/1 /0/3" {
+		t.Errorf("store saw %v", store.searched)
+	}
+
+	store.skills = nil
+	text, _ = call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{Offset: 9}))
+	if text != "5 skills match, but none from offset 9; call searchSkills with a smaller offset." {
+		t.Errorf("past the end: %q", text)
+	}
+	store.total = 0
+	text, isErr := call(ps.handleSearchSkills(ctx, nil, SearchSkillsParams{Q: " nope "}))
+	if isErr || text != `No skill's name or description contains "nope". Call searchSkills with no q to see them all.` {
+		t.Errorf("no match: %v %q", isErr, text)
 	}
 }

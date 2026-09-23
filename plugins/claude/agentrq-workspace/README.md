@@ -30,7 +30,7 @@ To supervise several workspaces from one session, see [`agentrq`](../agentrq/REA
 | `loadMemory` | Read what the workspace remembers. With no name it reads `memory.md`, the index of everything remembered there. |
 | `saveMemory` | Write something worth remembering, so the next task starts with it. Replaces the named memory entirely. |
 | `deleteMemory` | Delete one of the workspace's memories. |
-| `listSkills` | List the skills this workspace can use, own and shared-in, with each one's description and `skill://` URI. |
+| `searchSkills` | Find the skills this workspace can use, own and shared-in, by name or description, with each one's description and `skill://` URI. |
 | `loadSkill` | Read one file of a skill by its `skill://<name>/<path>` URI; a `SKILL.md` comes with the URIs of the skill's other files. |
 | `saveSkill` | Write one file of one of this workspace's own skills, replacing it entirely. Writing `SKILL.md` creates or updates the skill. |
 | `deleteSkill` | Delete one of this workspace's own skills, or one of its files. |

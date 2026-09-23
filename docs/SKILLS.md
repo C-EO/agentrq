@@ -85,11 +85,13 @@ On the workspace server, which every agent in the workspace connects to:
 
 | Tool | What it does |
 |---|---|
-| `listSkills` | The skills this workspace can use, each with its description and `skill://` URI. Contents are not included |
+| `searchSkills(q?, limit?, offset?)` | The skills this workspace can use, each with its description and `skill://` URI. `q` (at least 3 characters) keeps only skills whose name or description contains it, ignoring case; `limit` (at most 100) and `offset` page through the matches, and the answer says how many there are in all. Contents are not included |
 | `loadSkill(uri)` | One file, as stored. A `SKILL.md` comes with the URIs of the skill's other files |
 | `saveSkill(uri, content)` | Writes one file of one of this workspace's own skills. Writing `SKILL.md` creates or updates the skill |
 | `deleteSkill(uri)` | Deletes a skill (`skill://<name>`) or one of its files. A `SKILL.md` cannot be deleted on its own |
 
-Agents are told to call `listSkills` at the start of a task and to load the `SKILL.md` of any skill that matches it.
+Agents are told to call `searchSkills` at the start of a task and to load the `SKILL.md` of any skill that matches it.
 
-The supervisor's account-wide server has read-only `listSkills(workspaceId)` and `getSkill(workspaceId, uri)`.
+The supervisor's account-wide server has read-only `searchSkills(workspaceId, q?, limit?, offset?)` and `getSkill(workspaceId, uri)`.
+
+The REST API searches the same way: `GET /api/v1/workspaces/{id}/skills?q=&limit=&offset=` returns `{skills, total}`.

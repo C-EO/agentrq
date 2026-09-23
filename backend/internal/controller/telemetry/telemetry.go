@@ -266,7 +266,7 @@ var subActionIDByToolName = map[string]uint8{
 	"listEventTasks":          model.SubActionIDMCPListEventTasks,
 	"listEventTriggers":       model.SubActionIDMCPListEventTriggers,
 	"listMemories":            model.SubActionIDMCPListMemories,
-	"listSkills":              model.SubActionIDMCPListSkills,
+	"searchSkills":            model.SubActionIDMCPSearchSkills,
 	"listTasks":               model.SubActionIDMCPListTasks,
 	"listWorkflows":           model.SubActionIDMCPListWorkflows,
 	"listWorkflowSteps":       model.SubActionIDMCPListWorkflowSteps,

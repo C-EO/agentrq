@@ -269,7 +269,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
 - `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。
 - `deleteMemory`：删除某一条 Workspace 记忆。
-- `listSkills`：列出 Workspace 可用的技能（Skill），包括自身的和其他 Workspace 共享进来的，附带描述和 `skill://` URI。
+- `searchSkills`：搜索 Workspace 可用的技能（Skill），包括自身的和其他 Workspace 共享进来的，附带描述和 `skill://` URI；可选 `q`（至少 3 个字符）按名称或描述匹配，可选 `limit`/`offset` 分页。
 - `loadSkill`：按 `skill://<name>/<path>` URI 读取技能中的一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI。
 - `saveSkill`：写入本 Workspace 自有技能的一个文件；写入 `SKILL.md` 即创建或更新该技能。
 - `deleteSkill`：删除本 Workspace 的某个技能，或其中的一个文件。

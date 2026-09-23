@@ -30,12 +30,20 @@ func skillParams(c *fiber.Ctx, wantName bool) (int64, string, bool) {
 	return workspaceID, name, true
 }
 
-func FromHTTPRequestToListSkillsRequestEntity(c *fiber.Ctx) *entity.ListSkillsRequest {
+// FromHTTPRequestToSearchSkillsRequestEntity reads ?q=&limit=&offset=; all are
+// optional. A limit or offset that is not a number is left for the controller
+// to refuse, as a negative one.
+func FromHTTPRequestToSearchSkillsRequestEntity(c *fiber.Ctx) *entity.SearchSkillsRequest {
 	workspaceID, _, ok := skillParams(c, false)
 	if !ok {
 		return nil
 	}
-	return &entity.ListSkillsRequest{WorkspaceID: workspaceID}
+	return &entity.SearchSkillsRequest{
+		WorkspaceID: workspaceID,
+		Query:       c.Query("q"),
+		Limit:       c.QueryInt("limit", 0),
+		Offset:      c.QueryInt("offset", 0),
+	}
 }
 
 func FromHTTPRequestToGetSkillRequestEntity(c *fiber.Ctx) *entity.GetSkillRequest {
@@ -101,12 +109,12 @@ func FromHTTPRequestToShareSkillRequestEntity(c *fiber.Ctx) *entity.ShareSkillRe
 	return &entity.ShareSkillRequest{WorkspaceID: workspaceID, Name: name, TargetWorkspaceID: target}
 }
 
-func FromListSkillsResponseEntityToHTTPResponse(rs *entity.ListSkillsResponse) []byte {
+func FromSearchSkillsResponseEntityToHTTPResponse(rs *entity.SearchSkillsResponse) []byte {
 	skills := make([]view.Skill, len(rs.Skills))
 	for i, s := range rs.Skills {
 		skills[i] = fromEntitySkillToView(s)
 	}
-	payload, _ := json.Marshal(view.ListSkillsResponse{Skills: skills})
+	payload, _ := json.Marshal(view.SearchSkillsResponse{Skills: skills, Total: rs.Total})
 	return payload
 }
 
