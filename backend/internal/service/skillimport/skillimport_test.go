@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -211,9 +212,9 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 	}
 	wantFiles := map[string][]string{
 		"inner":                {"SKILL.md", "refs/a.md", "refs/b.md"},
-		"outer":                {"SKILL.md", "notes.md"},
+		"outer":                {"SKILL.md", "notes.md", "xnotes.md"},
 		"same-name":            {"SKILL.md"},
-		"systematic-debugging": {"SKILL.md", "root-cause-tracing.md", "scripts/find-polluter.sh", "scripts/lib.sh"},
+		"systematic-debugging": {"SKILL.md", "root-cause-tracing.md", "scripts/find-polluter.sh", "scripts/lib.sh", "CREATION-LOG.md"},
 		"writing-skills":       {"SKILL.md", "anthropic-best-practices.md"},
 	}
 	if len(got) != len(wantFiles) {
@@ -242,23 +243,21 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 		reasons[sk.Path] = sk.Reason
 	}
 	for p, want := range map[string]string{
-		"skills/brainstorming":                        "16 KiB",
-		"skills/no-description":                       "needs a description",
-		"skills/linked":                               "links are not imported",
-		"skills/dupe-b":                               "already called",
-		"skills/systematic-debugging/logo.png":        "not UTF-8 text",
-		"skills/systematic-debugging/.DS_Store":       "hidden",
-		"skills/systematic-debugging/link.md":         "links are not imported",
-		"skills/writing-skills/huge.md":               "64 KiB",
-		"skills/systematic-debugging/CREATION-LOG.md": "not referenced",
-		"skills/outer/xnotes.md":                      "not referenced",
+		"skills/brainstorming":                  "16 KiB",
+		"skills/no-description":                 "needs a description",
+		"skills/linked":                         "links are not imported",
+		"skills/dupe-b":                         "already called",
+		"skills/systematic-debugging/logo.png":  "not UTF-8 text",
+		"skills/systematic-debugging/.DS_Store": "hidden",
+		"skills/systematic-debugging/link.md":   "links are not imported",
+		"skills/writing-skills/huge.md":         "64 KiB",
 	} {
 		if !strings.Contains(reasons[p], want) {
 			t.Errorf("skipped %s: reason %q, want it to mention %q", p, reasons[p], want)
 		}
 	}
-	if len(res.Skipped) != 10 {
-		t.Errorf("skipped %d entries, want 10: %+v", len(res.Skipped), res.Skipped)
+	if len(res.Skipped) != 8 {
+		t.Errorf("skipped %d entries, want 8: %+v", len(res.Skipped), res.Skipped)
 	}
 }
 
@@ -668,5 +667,63 @@ func TestFetch_OversizedSkillFileQuotesItsOwnLimit(t *testing.T) {
 	}
 	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "16 KiB") {
 		t.Errorf("skipped: %+v", res.Skipped)
+	}
+}
+
+// Every Markdown file in a skill's folder is part of the skill, referenced or
+// not, except the files a repository keeps for its own sake.
+func TestFetch_KeepsUnreferencedMarkdownButNotRepoMetaFiles(t *testing.T) {
+	root := "repo-main/skills/tdd/"
+	gh := &fakeGitHub{commitStatus: 404, tarball: buildTarball(t, []tarEntry{
+		{name: root + "SKILL.md", body: skillMD("tdd", "T.") + "Nothing referenced here.\n"},
+		{name: root + "test-pressure-1.md", body: "Run `helper.sh` first."},
+		{name: root + "notes/CREATION-LOG.MD", body: "log"},
+		{name: root + "helper.sh", body: "#!/bin/sh"},
+		{name: root + "unreferenced.sh", body: "#!/bin/sh"},
+		{name: root + "README.md", body: "repo readme"},
+		{name: root + "notes/claude.md", body: "agent config"},
+		{name: root + "Agents.md", body: "agent config"},
+		{name: root + "CHANGELOG.md", body: "changes"},
+	})}
+	s, done := gh.server(t)
+	defer done()
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range res.Skills[0].Files {
+		paths = append(paths, f.Path)
+	}
+	// helper.sh is kept because a kept Markdown file names it.
+	sort.Strings(paths)
+	if got := strings.Join(paths, ","); got != "SKILL.md,helper.sh,notes/CREATION-LOG.MD,test-pressure-1.md" {
+		t.Errorf("kept %s", got)
+	}
+	skipped := map[string]bool{}
+	for _, sk := range res.Skipped {
+		skipped[sk.Path] = true
+	}
+	for _, p := range []string{"unreferenced.sh", "README.md", "notes/claude.md", "Agents.md", "CHANGELOG.md"} {
+		if !skipped["skills/tdd/"+p] {
+			t.Errorf("%s was not skipped: %+v", p, res.Skipped)
+		}
+	}
+}
+
+// A meta file SKILL.md names on purpose is still a reference.
+func TestFetch_KeepsAMetaFileSkillMDReferences(t *testing.T) {
+	gh := &fakeGitHub{commitStatus: 404, tarball: buildTarball(t, []tarEntry{
+		{name: "repo-main/tdd/SKILL.md", body: skillMD("tdd", "T.") + "Read README.md first.\n"},
+		{name: "repo-main/tdd/README.md", body: "the readme"},
+	})}
+	s, done := gh.server(t)
+	defer done()
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Skills[0].Files) != 2 {
+		t.Errorf("files: %+v", res.Skills[0].Files)
 	}
 }

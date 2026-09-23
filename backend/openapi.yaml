@@ -528,8 +528,9 @@ paths:
         Downloads the repository once and imports every skill in it. A plugin
         manifest, `.agentrq/plugin.json` or else `.muse-plugin/plugin.json`,
         says which directories are skills; without one, every directory with a
-        `SKILL.md` is. Only the files a skill's `SKILL.md` references, directly
-        or through other referenced files, are kept. Anything left out is
+        `SKILL.md` is. A skill keeps its Markdown files, except a repository's
+        own README, CLAUDE, AGENTS and similar meta files, and any other file
+        its kept files reference, directly or in turn. Anything left out is
         listed in `skipped` with the reason, rather than failing the import.
       requestBody:
         required: true

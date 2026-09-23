@@ -281,7 +281,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 
 - `SKILL.md` 须以 YAML frontmatter 开头，`description` 必填（最多 1024 个字符）；`name` 可选，默认取目录名。
 - `SKILL.md` 最大 16 KiB，其他文件每个最大 64 KiB；超限的文件会被拒绝而不是截断，导入时会在报告中列出被跳过的内容及原因。
-- 导入只保留 `SKILL.md` 直接或间接引用到的文件；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
+- 导入会保留技能目录中的所有 Markdown（`.md`）文件（`README.md`、`CLAUDE.md`、`AGENTS.md` 等仓库元文件除外），其他文件则只保留被 `SKILL.md` 或已保留文件直接或间接引用到的；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
 - 文件地址形如 `skill://<name>/<path>`，`skill://<name>` 即该技能的 `SKILL.md`。界面中不单独列出子文件，点击 `SKILL.md` 中的引用即可打开。
 
 详见 [docs/SKILLS.md](docs/SKILLS.md)（英文）。

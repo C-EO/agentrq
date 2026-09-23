@@ -527,14 +527,22 @@ func buildSkill(dir, dirName string, entries []entry, repoPath string) (Skill, [
 	return sk, skips, ""
 }
 
-// keepReferenced keeps the files SKILL.md reaches: those it mentions, those
-// a kept file mentions, and so on. A file is mentioned by its path from the
-// skill root, its path from the mentioning file, or a folder holding it
-// written with a trailing slash.
+// keepReferenced keeps the skill's Markdown files and the files SKILL.md
+// reaches: those it mentions, those a kept file mentions, and so on. A file
+// is mentioned by its path from the skill root, its path from the mentioning
+// file, or a folder holding it written with a trailing slash.
 func keepReferenced(skillMD []byte, files []File, repoPath string) (kept, dropped []File) {
 	type source struct{ dir, text string }
 	reached := make([]bool, len(files))
 	queue := []source{{"", string(skillMD)}}
+	// Markdown in the skill's folder is part of the skill whether or not it
+	// is referenced, and what it references is followed like the rest.
+	for i, f := range files {
+		if isSkillMarkdown(f.Path) {
+			reached[i] = true
+			queue = append(queue, source{dirOf(f.Path), string(f.Content)})
+		}
+	}
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
@@ -553,6 +561,22 @@ func keepReferenced(skillMD []byte, files []File, repoPath string) (kept, droppe
 		}
 	}
 	return kept, dropped
+}
+
+// repoMetaFiles are Markdown files a repository keeps for itself or for the
+// tools working on it, not for a skill's reader. They are kept only when
+// something references them.
+var repoMetaFiles = map[string]bool{
+	"readme.md": true, "claude.md": true, "agents.md": true, "gemini.md": true,
+	"changelog.md": true, "license.md": true, "contributing.md": true,
+	"code_of_conduct.md": true, "security.md": true,
+}
+
+// isSkillMarkdown reports whether a file is Markdown that belongs to the skill
+// unreferenced: any .md file except a repository's own meta files.
+func isSkillMarkdown(p string) bool {
+	base := strings.ToLower(path.Base(p))
+	return strings.HasSuffix(base, ".md") && !repoMetaFiles[base]
 }
 
 // mentions reports whether text, in a file in directory from, names p —
