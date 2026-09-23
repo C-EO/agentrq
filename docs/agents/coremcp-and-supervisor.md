@@ -32,6 +32,15 @@ do; nothing else needs to be told it exists.
 `WorkspaceServer` in `server.go`, first line of the handler, same as the
 per-workspace server.
 
+**This server is stateless** (`StreamableHTTPOptions.Stateless = true`), which
+is how it serves protocol revision 2026-07-28 — the SDK offers that revision
+only on a stateless transport. Older revisions are served exactly as before;
+what changes is that GET and DELETE now answer 405, which costs a server that
+has never pushed a notification nothing. The **opposite** rule holds for the
+per-workspace server, which must stay stateful — see
+[mcp-and-tasks.md](mcp-and-tasks.md). `protocol_version_test.go` in both
+packages fails if either is flipped.
+
 **Don't put install/enrol prose in a resource.** The agentrqd install steps
 already live in three places kept in sync by hand — see
 [machines-and-daemon.md](machines-and-daemon.md), "Installation is answered in
