@@ -130,7 +130,7 @@
                 </button>
               </div>
               <div v-if="!rawContent.has(selectedItem.id)" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(selectedItem.raw.text)"></div>
-              <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ selectedItem.raw.text || '(empty message)' }}</div>
+              <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ selectedItem.raw.text || '(empty message)' }}</div>
             </div>
           </div>
         </div>
