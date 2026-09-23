@@ -442,3 +442,95 @@ func TestAgentLaunchAction(t *testing.T) {
 		}
 	}
 }
+
+// capturingConn keeps the start request the handler sent, so a test can assert
+// on what the daemon was actually asked to do.
+type capturingConn struct {
+	start wire.StartSession
+}
+
+func (c *capturingConn) Send(f wire.Frame) error {
+	ctl, err := wire.ParseControl(f)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(ctl.Body, &c.start)
+}
+
+func (c *capturingConn) Close() error { return nil }
+
+func launchInto(t *testing.T, workspaceName string) wire.StartSession {
+	t.Helper()
+	machineID := monoflake.ID(5)
+	crudCtrl := &fakeLaunchCrud{
+		workspace: entity.Workspace{ID: 1, Name: workspaceName, WorkingDirectory: "/srv/app"},
+		machine:   entity.MachineView{ID: machineID.String(), Enabled: true},
+	}
+	conn := &capturingConn{}
+	registry := machinectrl.NewRegistry("test-instance")
+	registry.Add(machineID.Int64(), conn)
+	h := &handler{
+		crud:            crudCtrl,
+		mcpManager:      &fakeMCPManager{},
+		machineRegistry: registry,
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+		mcpBaseURL:      "https://agentrq.example",
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent",
+		strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"claude-code"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := launchApp(h, monoflake.ID(100).String()).Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	return conn.start
+}
+
+// The supervisor workspace works across every other one, so its agent is given
+// the account-wide server as well as its own.
+func TestLaunchAgent_TheSupervisorGetsTheCoreServer(t *testing.T) {
+	start := launchInto(t, supervisorWorkspaceName)
+	if start.CoreMCPURL != "https://agentrq.example/mcp" {
+		t.Errorf("coreMcpUrl = %q, want the account-wide server", start.CoreMCPURL)
+	}
+	// And it carries no credential: that server authenticates over its own
+	// OAuth flow, so a token on this URL would be one minted for nothing.
+	if strings.Contains(start.CoreMCPURL, "token=") {
+		t.Errorf("the core URL carries a token: %q", start.CoreMCPURL)
+	}
+}
+
+// Every other workspace gets one entry. The daemon writes the second only when
+// it is given a URL, so leaving this empty is the whole decision.
+func TestLaunchAgent_AnOrdinaryWorkspaceGetsNoCoreServer(t *testing.T) {
+	if start := launchInto(t, "agentrq-code"); start.CoreMCPURL != "" {
+		t.Errorf("coreMcpUrl = %q, want it empty", start.CoreMCPURL)
+	}
+}
+
+// Templated from the same host as the per-workspace URL and by the same rule,
+// so the two never disagree about which deployment they mean.
+func TestCoreMCPURLFollowsTheDeployment(t *testing.T) {
+	masked := &handler{domain: "agentrq.com", cookieSecure: true, mcpBaseURL: "https://agentrq.com"}
+	if got := masked.coreMCPURL(); got != "https://mcp.agentrq.com/mcp" {
+		t.Errorf("masked = %q", got)
+	}
+	insecure := &handler{domain: "agentrq.test", mcpBaseURL: "http://agentrq.test"}
+	if got := insecure.coreMCPURL(); got != "http://mcp.agentrq.test/mcp" {
+		t.Errorf("http deployment = %q", got)
+	}
+	for _, domain := range []string{"", "localhost", "127.0.0.1"} {
+		local := &handler{domain: domain, mcpBaseURL: "http://localhost:3000"}
+		if got := local.coreMCPURL(); got != "http://localhost:3000/mcp" {
+			t.Errorf("domain %q = %q, want the bare base URL", domain, got)
+		}
+	}
+}

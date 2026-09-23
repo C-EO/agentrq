@@ -11,9 +11,13 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testURL = "https://abc123.mcp.agentrq.com?token=eyJhbGciOiJIUzI1NiJ9.test.signature"
+
+// ws is the ordinary single entry every non-supervisor launch writes.
+func ws(url string) MCPEntry { return MCPEntry{Name: "agentrq-workspace", URL: url} }
 
 func readConfig(t *testing.T, path string) MCPConfig {
 	t.Helper()
@@ -30,9 +34,12 @@ func readConfig(t *testing.T, path string) MCPConfig {
 
 func TestWriteMCPConfigProducesTheShapeClaudeReads(t *testing.T) {
 	dir := t.TempDir()
-	path, err := WriteMCPConfig(dir, "agentrq-workspace", testURL)
+	path, kept, err := WriteMCPConfig(dir, ws(testURL))
 	if err != nil {
 		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+	if len(kept) != 0 {
+		t.Errorf("kept = %v, want nothing in an empty folder", kept)
 	}
 	if filepath.Base(path) != MCPConfigName {
 		t.Errorf("wrote %q, want %s", path, MCPConfigName)
@@ -48,6 +55,29 @@ func TestWriteMCPConfigProducesTheShapeClaudeReads(t *testing.T) {
 	}
 }
 
+// The supervisor workspace talks to the account-wide server as well, and both
+// entries have to land in the one file the agent reads.
+func TestTheSupervisorGetsBothServersInOneFile(t *testing.T) {
+	dir := t.TempDir()
+	const coreURL = "https://mcp.agentrq.com/mcp"
+
+	path, _, err := WriteMCPConfig(dir, ws(testURL), MCPEntry{Name: "agentrq", URL: coreURL})
+	if err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+
+	cfg := readConfig(t, path)
+	if len(cfg.Servers) != 2 {
+		t.Fatalf("servers = %+v, want two", cfg.Servers)
+	}
+	if got := cfg.Servers["agentrq"]; got.URL != coreURL || got.Type != "http" {
+		t.Errorf("core entry = %+v", got)
+	}
+	if got := cfg.Servers["agentrq-workspace"]; got.URL != testURL {
+		t.Errorf("workspace entry = %+v", got)
+	}
+}
+
 // The whole credential is a query parameter in that URL, so the file is the
 // only place it may live — and only the owner may read it.
 func TestMCPConfigIsOwnerOnly(t *testing.T) {
@@ -55,7 +85,7 @@ func TestMCPConfigIsOwnerOnly(t *testing.T) {
 		t.Skip("Unix permission bits do not apply")
 	}
 	dir := t.TempDir()
-	path, err := WriteMCPConfig(dir, "agentrq-workspace", testURL)
+	path, _, err := WriteMCPConfig(dir, ws(testURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +105,7 @@ func TestTheTokenNeverAppearsInAnError(t *testing.T) {
 	const secret = "SUPERSECRETTOKENVALUE"
 	bad := "http://not-loopback.example.com?token=" + secret
 
-	_, err := WriteMCPConfig(t.TempDir(), "agentrq-workspace", bad)
+	_, _, err := WriteMCPConfig(t.TempDir(), ws(bad))
 	if err == nil {
 		t.Fatal("plaintext http to a remote host should be refused")
 	}
@@ -83,7 +113,7 @@ func TestTheTokenNeverAppearsInAnError(t *testing.T) {
 		t.Errorf("the error leaked the token: %v", err)
 	}
 
-	_, err = WriteMCPConfig(t.TempDir(), "agentrq-workspace", "://broken?token="+secret)
+	_, _, err = WriteMCPConfig(t.TempDir(), ws("://broken?token="+secret))
 	if err == nil {
 		t.Fatal("an unparseable URL should be refused")
 	}
@@ -95,14 +125,14 @@ func TestTheTokenNeverAppearsInAnError(t *testing.T) {
 // The token is in the query string, so plain HTTP puts it on the wire in
 // clear. Loopback has no wire to be on.
 func TestPlainHTTPIsRefusedExceptOnLoopback(t *testing.T) {
-	if _, err := WriteMCPConfig(t.TempDir(), "s", "http://mcp.example.com?token=x"); !errors.Is(err, ErrInsecureMCP) {
+	if _, _, err := WriteMCPConfig(t.TempDir(), MCPEntry{Name: "s", URL: "http://mcp.example.com?token=x"}); !errors.Is(err, ErrInsecureMCP) {
 		t.Errorf("error = %v, want ErrInsecureMCP", err)
 	}
 	for _, u := range []string{
 		"http://localhost:3000?token=x",
 		"http://127.0.0.1:3000?token=x",
 	} {
-		if _, err := WriteMCPConfig(t.TempDir(), "s", u); err != nil {
+		if _, _, err := WriteMCPConfig(t.TempDir(), MCPEntry{Name: "s", URL: u}); err != nil {
 			t.Errorf("WriteMCPConfig(%q) = %v, want it allowed", u, err)
 		}
 	}
@@ -116,7 +146,7 @@ func TestExistingEntriesAreKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, err := WriteMCPConfig(dir, "agentrq-workspace", testURL)
+	path, _, err := WriteMCPConfig(dir, ws(testURL))
 	if err != nil {
 		t.Fatalf("WriteMCPConfig: %v", err)
 	}
@@ -129,33 +159,112 @@ func TestExistingEntriesAreKept(t *testing.T) {
 	}
 }
 
-// Overwriting somebody else's entry under the same name would break whatever
-// they had it pointed at, silently.
-func TestAConflictingEntryIsAnErrorRatherThanAnOverwrite(t *testing.T) {
+// A folder that already names one of our servers has been set up by somebody
+// who meant it, so the entry stands and the launch says which ones it left.
+func TestAnEntryAlreadyThereIsKeptAndReported(t *testing.T) {
 	dir := t.TempDir()
-	existing := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://someone-elses.example"}}}`
-	if err := os.WriteFile(filepath.Join(dir, MCPConfigName), []byte(existing), 0o600); err != nil {
+	const theirs = "https://someone-elses.example"
+	body := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"` + theirs + `"}}}`
+	if err := os.WriteFile(filepath.Join(dir, MCPConfigName), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", testURL); !errors.Is(err, ErrForeignConfig) {
-		t.Fatalf("error = %v, want ErrForeignConfig", err)
+	path, kept, err := WriteMCPConfig(dir, ws(testURL))
+	if err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
 	}
-	// And it must not have been touched.
-	cfg := readConfig(t, filepath.Join(dir, MCPConfigName))
-	if cfg.Servers["agentrq-workspace"].URL != "https://someone-elses.example" {
-		t.Error("the existing entry was modified despite the refusal")
+	if len(kept) != 1 || kept[0] != "agentrq-workspace" {
+		t.Errorf("kept = %v, want the entry that was already there", kept)
+	}
+	if got := readConfig(t, path).Servers["agentrq-workspace"].URL; got != theirs {
+		t.Errorf("url = %q, want the existing %q left alone", got, theirs)
 	}
 }
 
-// Rewriting the same entry is how a restart works and must be harmless.
-func TestRewritingOurOwnEntryIsFine(t *testing.T) {
+// One entry already configured must not stop the other being written.
+func TestOnlyTheMissingEntryIsAdded(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", testURL); err != nil {
+	body := `{"mcpServers":{"agentrq":{"type":"http","url":"https://their-own-core.example/mcp"}}}`
+	if err := os.WriteFile(filepath.Join(dir, MCPConfigName), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", testURL); err != nil {
-		t.Errorf("rewriting the same config failed: %v", err)
+
+	path, kept, err := WriteMCPConfig(dir, ws(testURL), MCPEntry{Name: "agentrq", URL: "https://mcp.agentrq.com/mcp"})
+	if err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+	if len(kept) != 1 || kept[0] != "agentrq" {
+		t.Errorf("kept = %v, want only the core entry", kept)
+	}
+	cfg := readConfig(t, path)
+	if cfg.Servers["agentrq"].URL != "https://their-own-core.example/mcp" {
+		t.Errorf("their core entry changed: %+v", cfg.Servers["agentrq"])
+	}
+	if cfg.Servers["agentrq-workspace"].URL != testURL {
+		t.Errorf("the workspace entry was not written: %+v", cfg.Servers["agentrq-workspace"])
+	}
+}
+
+// A second launch into the same folder keeps the credential already there.
+//
+// The opposite of what this file used to assert, and a deliberate decision
+// (2026-09-23): a workspace token is good for a year, so the entry from the
+// first launch goes on working, and not touching it is what makes a folder
+// somebody configured by hand stay configured. The way to move an entry is to
+// delete it.
+func TestRelaunchingKeepsTheCredentialAlreadyThere(t *testing.T) {
+	dir := t.TempDir()
+	const endpoint = "https://agentrq.example/mcp/0inioPIhhbt"
+
+	if _, _, err := WriteMCPConfig(dir, ws(endpoint+"?token=first")); err != nil {
+		t.Fatalf("first launch: %v", err)
+	}
+	path, kept, err := WriteMCPConfig(dir, ws(endpoint+"?token=second"))
+	if err != nil {
+		t.Fatalf("second launch: %v", err)
+	}
+	if len(kept) != 1 {
+		t.Errorf("kept = %v, want the first launch's entry", kept)
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "token=first") {
+		t.Errorf("the first launch's credential was replaced:\n%s", b)
+	}
+}
+
+// Rewriting a file to the bytes it already holds still changes its timestamp,
+// and on a folder somebody is watching that is a change they have to explain.
+func TestAFileWithNothingToAddIsNotRewritten(t *testing.T) {
+	dir := t.TempDir()
+	path, _, err := WriteMCPConfig(dir, ws(testURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A timestamp is too coarse to compare after a write that takes
+	// microseconds, so the file is aged instead: if it is rewritten, the
+	// change is unmistakable.
+	old := before.ModTime().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := WriteMCPConfig(dir, ws(testURL)); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(old) {
+		t.Error("a config with nothing to add was rewritten")
 	}
 }
 
@@ -167,7 +276,7 @@ func TestAnUnreadableConfigIsNotOverwritten(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json at all"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", testURL); !errors.Is(err, ErrForeignConfig) {
+	if _, _, err := WriteMCPConfig(dir, ws(testURL)); !errors.Is(err, ErrForeignConfig) {
 		t.Fatalf("error = %v, want ErrForeignConfig", err)
 	}
 	b, _ := os.ReadFile(path)
@@ -177,12 +286,15 @@ func TestAnUnreadableConfigIsNotOverwritten(t *testing.T) {
 }
 
 func TestWriteMCPConfigValidatesItsInputs(t *testing.T) {
-	if _, err := WriteMCPConfig(t.TempDir(), "s", "  "); !errors.Is(err, ErrNoMCPURL) {
+	if _, _, err := WriteMCPConfig(t.TempDir()); !errors.Is(err, ErrNoMCPURL) {
+		t.Errorf("error = %v, want ErrNoMCPURL", err)
+	}
+	if _, _, err := WriteMCPConfig(t.TempDir(), MCPEntry{Name: "s", URL: "  "}); !errors.Is(err, ErrNoMCPURL) {
 		t.Errorf("error = %v, want ErrNoMCPURL", err)
 	}
 	// The server name reaches an argv as `server:<name>`, so it gets the same
 	// check every other parameter does.
-	if _, err := WriteMCPConfig(t.TempDir(), "bad name", testURL); !errors.Is(err, ErrBadParameter) {
+	if _, _, err := WriteMCPConfig(t.TempDir(), MCPEntry{Name: "bad name", URL: testURL}); !errors.Is(err, ErrBadParameter) {
 		t.Errorf("error = %v, want ErrBadParameter", err)
 	}
 }
@@ -191,7 +303,7 @@ func TestWriteMCPConfigValidatesItsInputs(t *testing.T) {
 // truncated one the agent cannot parse.
 func TestNoTemporaryFilesAreLeftBehind(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", testURL); err != nil {
+	if _, _, err := WriteMCPConfig(dir, ws(testURL)); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(dir)
@@ -219,79 +331,13 @@ func readMCPConfigExists(dir string) (MCPConfig, error) {
 	return cfg, nil
 }
 
-// Every launch mints a fresh, short-lived token, so the URL for the same
-// workspace differs every time. Comparing whole URLs made the first launch
-// into a folder succeed and every launch after it fail — found by launching an
-// agent twice.
-func TestRelaunchingTheSameWorkspaceReplacesTheCredential(t *testing.T) {
-	dir := t.TempDir()
-	const endpoint = "https://agentrq.example/mcp/0inioPIhhbt"
-
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", endpoint+"?token=first"); err != nil {
-		t.Fatalf("first launch: %v", err)
-	}
-	path, err := WriteMCPConfig(dir, "agentrq-workspace", endpoint+"?token=second")
-	if err != nil {
-		t.Fatalf("second launch: %v", err)
-	}
-
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), "token=second") {
-		t.Errorf("the config still has the old credential:\n%s", b)
-	}
-	if strings.Contains(string(b), "token=first") {
-		t.Errorf("the old credential is still in the file:\n%s", b)
-	}
-}
-
-// The protection it was written for still holds: an entry under our name that
-// points somewhere else is somebody's own and is not ours to replace.
-func TestAnEntryPointingElsewhereIsStillRefused(t *testing.T) {
-	for name, existing := range map[string]string{
-		"a different host":      "https://somewhere-else.example/mcp/0inioPIhhbt?token=x",
-		"a different workspace": "https://agentrq.example/mcp/somebody-elses?token=x",
-		"a different scheme":    "http://agentrq.example/mcp/0inioPIhhbt?token=x",
-	} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			body := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"` + existing + `"}}}`
-			if err := os.WriteFile(filepath.Join(dir, MCPConfigName), []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			_, err := WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/0inioPIhhbt?token=ours")
-			if !errors.Is(err, ErrForeignConfig) {
-				t.Errorf("error = %v, want ErrForeignConfig", err)
-			}
-			// And their URL is untouched.
-			b, _ := os.ReadFile(filepath.Join(dir, MCPConfigName))
-			if !strings.Contains(string(b), existing) {
-				t.Errorf("their entry was changed:\n%s", b)
-			}
-		})
-	}
-}
-
-// A trailing slash is not a different endpoint.
-func TestATrailingSlashIsTheSameEndpoint(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws/?token=a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=b"); err != nil {
-		t.Errorf("a trailing slash was treated as a different endpoint: %v", err)
-	}
-}
-
 // HasMCPConfig answers what a restored session needs to know.
 func TestHasMCPConfig(t *testing.T) {
 	dir := t.TempDir()
 	if HasMCPConfig(dir, "agentrq-workspace") {
 		t.Error("an empty folder claimed to have a config")
 	}
-	if _, err := WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=a"); err != nil {
+	if _, _, err := WriteMCPConfig(dir, ws("https://agentrq.example/mcp/ws?token=a")); err != nil {
 		t.Fatal(err)
 	}
 	if !HasMCPConfig(dir, "agentrq-workspace") {

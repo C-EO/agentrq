@@ -7,11 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/pty"
+	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 // State is where a session is in its life.
@@ -42,6 +47,11 @@ type Request struct {
 	Dir string
 	// MCPURL points the agent at its workspace. The credential is inside it.
 	MCPURL string
+	// CoreMCPURL adds the account-wide server, for the workspace the backend
+	// judged to be the supervisor. Empty for every other workspace, and that
+	// emptiness is the whole decision: this daemon does not work out which
+	// workspace is which.
+	CoreMCPURL string
 	// ReuseMCPConfig says this session is being restored after the daemon
 	// replaced itself, and its config is already in the folder.
 	//
@@ -77,6 +87,16 @@ type Session struct {
 	state    State
 	exitCode int
 	err      error
+	// notices are things the person launching this needs told and did not
+	// ask about — a folder whose .mcp.json already named one of our servers,
+	// which was kept as it was.
+	//
+	// Kept on the session rather than only logged because the daemon's log is
+	// on the machine and the person is not: these are put into the terminal
+	// the moment it is being streamed, which is the one surface the panel
+	// already shows. A notice never carries a URL, since one of them holds a
+	// token.
+	notices []string
 	// endedAt is when this session reached a terminal state, and is zero
 	// until it does. Kept so a finished session can be dropped once nobody
 	// is going to ask about it.
@@ -128,6 +148,13 @@ const FinishedRetention = 5 * time.Minute
 type Supervisor struct {
 	start Starter
 
+	// Log is where this reports what it decided but was not asked about —
+	// notably a folder whose .mcp.json already named a server, which is left
+	// as it was. A field rather than a constructor argument because every
+	// caller but one is a test that does not care, and nil is the daemon's
+	// default logger.
+	Log *slog.Logger
+
 	// PerProfile caps one account. WholeMachine caps the box.
 	//
 	// The second is the one that protects anything. CPU and memory are
@@ -157,6 +184,57 @@ func New(start Starter, perProfile, wholeMachine int) *Supervisor {
 	}
 }
 
+// log is the supervisor's logger, or the daemon's default one.
+func (s *Supervisor) log() *slog.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return slog.Default()
+}
+
+// workspaceDir decides whether a folder is one this daemon will write into,
+// and returns the path it will use.
+//
+// Checked here rather than left to the pty layer because by the time the
+// process starts, three files have already been written into that folder. The
+// backend names it, so this is the boundary where a name becomes a path:
+//
+//   - Absolute only. A relative path resolves against the daemon's own
+//     working directory, so "projects/app" would put a workspace's config
+//     next to the daemon rather than in the folder somebody chose, and never
+//     say so. It is refused rather than resolved, because guessing which of
+//     the two was meant is exactly the kind of guess that goes unnoticed.
+//   - Cleaned, so one folder has one spelling however the path was typed.
+//   - It has to already exist and be a directory. The daemon runs an agent in
+//     a folder that is there; it does not conjure one, and a typo in the
+//     workspace's setting should say so rather than quietly become a new
+//     empty directory with a token in it.
+//
+// The pty layer checks the folder too, and still should: it is the one that
+// has to be right about the directory the process actually starts in.
+func workspaceDir(dir string) (string, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return "", fmt.Errorf("%w: dir", ErrMissingParam)
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("%w: dir=%q is not an absolute path", ErrBadParameter, dir)
+	}
+	clean := filepath.Clean(dir)
+
+	info, err := os.Stat(clean)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("%w: %s", pty.ErrDirMissing, clean)
+	}
+	if err != nil {
+		return "", fmt.Errorf("supervisor: working directory %s: %w", clean, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%w: %s", pty.ErrDirNotDir, clean)
+	}
+	return clean, nil
+}
+
 // Start launches an agent.
 //
 // The order matters and is deliberate: resolve the command, check the caps,
@@ -167,6 +245,11 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	if err != nil {
 		return nil, err
 	}
+	dir, err := workspaceDir(req.Dir)
+	if err != nil {
+		return nil, err
+	}
+	req.Dir = dir
 
 	s.mu.Lock()
 	s.pruneFinishedLocked(time.Now())
@@ -197,6 +280,11 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		s.mu.Unlock()
 	}
 
+	servers := []MCPEntry{{Name: req.Params.ServerName, URL: req.MCPURL}}
+	if req.CoreMCPURL != "" {
+		servers = append(servers, MCPEntry{Name: wire.CoreMCPServerName, URL: req.CoreMCPURL})
+	}
+
 	if cmd.NeedsMCPConfig {
 		switch {
 		case req.ReuseMCPConfig:
@@ -206,10 +294,52 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 					req.Dir, MCPConfigName, req.Params.ServerName)
 			}
 		default:
-			if _, err := WriteMCPConfig(req.Dir, req.Params.ServerName, req.MCPURL); err != nil {
+			// Excluded before it is written, never after. A folder that is a
+			// git checkout would otherwise hold a file with a live token in it
+			// for as long as it takes to get to the next line — and a commit
+			// made in that window cannot be unmade once it is pushed.
+			//
+			// This file only. The permissions file written below carries no
+			// credential, and whether it is checked in is the repository's
+			// decision.
+			if _, err := EnsureGitIgnored(req.Dir, MCPConfigName); err != nil {
 				release()
 				return nil, err
 			}
+			path, kept, err := WriteMCPConfig(req.Dir, servers...)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			if len(kept) > 0 {
+				// Said out loud rather than assumed: the agent is about to
+				// talk to whatever those entries point at, which is not
+				// necessarily what this launch was for.
+				//
+				// Both places on purpose. The log is for whoever is on the
+				// machine; the notice reaches the person who pressed the
+				// button, who can see only the terminal.
+				s.log().Info("kept the MCP servers this folder already configured",
+					"session", req.ID, "file", path, "servers", strings.Join(kept, ", "))
+				sess.addNotice(fmt.Sprintf(
+					"%s already configured %s — kept as it is, and this launch's own settings were not written over it.",
+					MCPConfigName, strings.Join(kept, " and ")))
+			}
+		}
+	}
+
+	// The permissions file is written for a fresh launch only. A restored
+	// session's folder already has the one written when it was first launched,
+	// and it holds no credential to go stale — unlike the MCP config, there is
+	// nothing here a restart could invalidate.
+	if cmd.NeedsClaudeSettings && !req.ReuseMCPConfig {
+		names := make([]string, 0, len(servers))
+		for _, srv := range servers {
+			names = append(names, srv.Name)
+		}
+		if _, err := WriteClaudeSettings(req.Dir, names...); err != nil {
+			release()
+			return nil, err
 		}
 	}
 
@@ -518,4 +648,24 @@ func (sess *Session) PTY() pty.Session {
 	sess.mu.RLock()
 	defer sess.mu.RUnlock()
 	return sess.tty
+}
+
+// addNotice records something the person needs told about this launch.
+func (sess *Session) addNotice(text string) {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	sess.notices = append(sess.notices, text)
+}
+
+// Notices are the things the launch decided and nobody asked for, for the
+// streaming layer to put at the top of the terminal.
+//
+// The terminal rather than the log, because the log is on the machine and the
+// person is in a browser. Written into the stream, so the agent's own process
+// never sees them: they are for the human reading the scrollback, and a line
+// injected into an agent's input would be a line it might act on.
+func (sess *Session) Notices() []string {
+	sess.mu.RLock()
+	defer sess.mu.RUnlock()
+	return append([]string(nil), sess.notices...)
 }

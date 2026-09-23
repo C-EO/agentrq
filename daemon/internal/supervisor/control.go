@@ -81,10 +81,11 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 			Model:      req.Model,
 			Agent:      req.Agent,
 		},
-		Dir:    req.Dir,
-		MCPURL: req.MCPURL,
-		Cols:   req.Cols,
-		Rows:   req.Rows,
+		Dir:        req.Dir,
+		MCPURL:     req.MCPURL,
+		CoreMCPURL: req.CoreMCPURL,
+		Cols:       req.Cols,
+		Rows:       req.Rows,
 	})
 	if err != nil {
 		return fail(err)

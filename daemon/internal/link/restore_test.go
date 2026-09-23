@@ -82,7 +82,7 @@ func TestARestoredSessionSaysItWasRestored(t *testing.T) {
 	// the one that was written when it was first launched, exactly as
 	// claude-code does.
 	dir := t.TempDir()
-	if _, err := supervisor.WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=test"); err != nil {
+	if _, _, err := supervisor.WriteMCPConfig(dir, supervisor.MCPEntry{Name: "agentrq-workspace", URL: "https://agentrq.example/mcp/ws?token=test"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -180,7 +180,7 @@ func TestARestoredAgentReadsTheConfigAlreadyInItsFolder(t *testing.T) {
 	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
 
 	dir := t.TempDir()
-	if _, err := supervisor.WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=abc"); err != nil {
+	if _, _, err := supervisor.WriteMCPConfig(dir, supervisor.MCPEntry{Name: "agentrq-workspace", URL: "https://agentrq.example/mcp/ws?token=abc"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,7 +230,7 @@ func TestRestoringWritesNoNewCredential(t *testing.T) {
 	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
 
 	dir := t.TempDir()
-	path, err := supervisor.WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=original")
+	path, _, err := supervisor.WriteMCPConfig(dir, supervisor.MCPEntry{Name: "agentrq-workspace", URL: "https://agentrq.example/mcp/ws?token=original"})
 	if err != nil {
 		t.Fatal(err)
 	}

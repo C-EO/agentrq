@@ -117,6 +117,15 @@ type Command struct {
 	// on the command line, so it looks self-contained — and it is not: it
 	// reads the workspace from the same file.
 	NeedsMCPConfig bool
+	// NeedsClaudeSettings reports whether this kind reads
+	// .claude/settings.local.json, and therefore whether the daemon has to
+	// pre-approve its MCP servers there before starting it.
+	//
+	// Only claude-code does, and this is where the two kinds part company. The
+	// gateway asks for permission over ACP, which the workspace answers; it
+	// never reads that file, so writing one for it would leave a folder
+	// claiming settings nothing applies.
+	NeedsClaudeSettings bool
 }
 
 // Resolve turns a kind and its parameters into a command line.
@@ -151,7 +160,8 @@ func Resolve(kind Kind, p Params) (Command, error) {
 				"--dangerously-load-development-channels",
 				"server:" + p.ServerName,
 			},
-			NeedsMCPConfig: true,
+			NeedsMCPConfig:      true,
+			NeedsClaudeSettings: true,
 		}, nil
 
 	case KindACPGateway:

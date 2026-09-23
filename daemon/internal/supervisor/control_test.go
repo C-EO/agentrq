@@ -5,6 +5,7 @@ package supervisor
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -112,7 +113,10 @@ func TestAMissingWorkingDirectoryIsReportedWithItsPath(t *testing.T) {
 	sup := New(realStarter, 0, 0)
 	rep := &recordingReporter{}
 
-	missing := t.TempDir() + "/not-checked-out"
+	// Join, not concatenation: a "/" pasted onto a Windows path makes a
+	// string that names the right folder and matches nothing, because the
+	// launch reports the cleaned path and this one is not cleaned.
+	missing := filepath.Join(t.TempDir(), "not-checked-out")
 	c := control(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: string(KindClaudeCode), Dir: missing,
 		MCPURL: testURL, ServerName: "agentrq-workspace", Workspace: "agentrq-code",

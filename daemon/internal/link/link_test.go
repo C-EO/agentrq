@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -823,4 +824,43 @@ func TestTheTerminalsSurviveAReconnect(t *testing.T) {
 	}
 	waitFor(t, func() bool { return outputContains(b, "after the gap") },
 		"the terminal went silent after the daemon reconnected")
+}
+
+// A launch that kept a folder's existing MCP entry has to say so where the
+// person can see it. The daemon's log is on the machine; they are in a
+// browser, so it goes into the terminal.
+func TestAKeptEntryIsAnnouncedInTheTerminal(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	// A folder somebody has already configured, pointing somewhere else.
+	dir := t.TempDir()
+	theirs := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://their-own.example/mcp"}}}`
+	if err := os.WriteFile(filepath.Join(dir, supervisor.MCPConfigName), []byte(theirs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "claude-code", Dir: dir, Workspace: "Ops",
+		ServerName: "agentrq-workspace", MCPURL: "https://agentrq.example/mcp/ws?token=test",
+		Cols: 80, Rows: 24,
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	// Attaching is what starts the output flowing, and the notice is in the
+	// screen that gets replayed rather than lost before anyone looked.
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool {
+		return outputContains(b, "already configured agentrq-workspace")
+	}, "the kept entry was never announced in the terminal")
+
+	// And the agent's own process must not have been typed at: a line an
+	// agent reads as input is a line it might act on.
+	if len(h.tty.written()) != 0 {
+		t.Errorf("the notice reached the terminal's input: %q", h.tty.written())
+	}
+	// Nor may it carry the credential that is in the URL.
+	if outputContains(b, "token=") {
+		t.Error("a notice carried a token into the terminal")
+	}
 }

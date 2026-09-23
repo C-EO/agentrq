@@ -22,6 +22,17 @@ type MCPServer struct {
 	URL  string `json:"url"`
 }
 
+// MCPEntry is a server to write, named.
+//
+// A slice of these rather than one name and one URL because the "supervisor"
+// workspace gets a second entry — the account-wide server — alongside its own,
+// and the two have to land in one file: writing them in two passes would mean
+// a folder that briefly has only half of what the agent is about to read.
+type MCPEntry struct {
+	Name string
+	URL  string
+}
+
 // MCPConfig is the file's shape.
 type MCPConfig struct {
 	Servers map[string]MCPServer `json:"mcpServers"`
@@ -34,97 +45,123 @@ var (
 	ErrForeignConfig = errors.New("supervisor: .mcp.json already exists and is not ours to replace")
 )
 
-// WriteMCPConfig puts the workspace's MCP endpoint where the agent will find
-// it, and returns the path written.
+// WriteMCPConfig puts the MCP endpoints the agent is to have where it will
+// find them. It returns the path and the names it left alone.
 //
-// The whole credential lives inside that URL as a query parameter, which
-// shapes everything here:
+// Usually one entry, the workspace's own. A "supervisor" workspace also gets
+// the account-wide server, and the backend decides that by sending its URL.
+//
+// The whole credential lives inside the workspace URL as a query parameter,
+// which shapes everything here:
 //
 //   - The file is 0600. On a machine with other users, a default-permission
 //     file hands the workspace token to all of them.
 //   - The URL is never logged, never put in an argv, and never returned in an
 //     error. A token in a command line is visible in `ps` to every user on the
 //     box, which would undo the file permission entirely.
-//   - An existing file is merged rather than replaced, and an entry under our
-//     own name that points somewhere else is an error rather than an
-//     overwrite. A person's own .mcp.json is theirs.
+//   - **An entry that is already there is never rewritten**, whatever it
+//     points at, and its name comes back in `kept` so the daemon can say so.
+//     A person's own .mcp.json is theirs, and a folder that already names
+//     these servers has been set up by somebody who meant it.
 //
-// "Points somewhere else" compares the endpoint and deliberately ignores the
-// query string, because the query string is the credential and it is *meant*
-// to change: every launch mints a fresh, short-lived token. Comparing whole
-// URLs made the first launch into a folder succeed and every launch after it
-// fail — found by launching an agent twice.
-func WriteMCPConfig(dir, serverName, mcpURL string) (string, error) {
-	if strings.TrimSpace(mcpURL) == "" {
-		return "", ErrNoMCPURL
-	}
-	u, err := url.Parse(mcpURL)
-	if err != nil {
-		// Deliberately not including the URL: it holds the token.
-		return "", fmt.Errorf("supervisor: MCP URL is not usable")
-	}
-	if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
-		// The token is in the query string, so plain HTTP puts it on the wire
-		// in clear. Loopback has no wire to be on.
-		return "", fmt.Errorf("%w: %s is not https", ErrInsecureMCP, u.Hostname())
-	}
-	if err := checkParam("serverName", serverName); err != nil {
-		return "", err
+// The cost of that rule, and it is worth knowing before changing it back: a
+// relaunch into a folder that already has an entry reuses the token that entry
+// carries rather than the one this launch minted. A workspace token is good
+// for a year, so in practice the old one keeps working — but a workspace whose
+// entry was written against a different deployment stays pointed there, and
+// the way to move it is to delete the entry.
+func WriteMCPConfig(dir string, entries ...MCPEntry) (path string, kept []string, err error) {
+	if len(entries) == 0 {
+		return "", nil, ErrNoMCPURL
 	}
 
-	path := filepath.Join(dir, MCPConfigName)
-	cfg, existed, err := readMCPConfig(path)
+	path = filepath.Join(dir, MCPConfigName)
+	cfg, _, err := readMCPConfig(path)
 	if err != nil {
-		return "", err
-	}
-	if existing, ok := cfg.Servers[serverName]; ok && !sameEndpoint(existing.URL, mcpURL) {
-		// Somebody else's entry under the same name, pointing at a different
-		// place. Overwriting it silently would break whatever they had it
-		// pointed at.
-		return "", fmt.Errorf("%w: %s already defines %q", ErrForeignConfig, path, serverName)
+		return "", nil, err
 	}
 
-	cfg.Servers[serverName] = MCPServer{Type: "http", URL: mcpURL}
+	var added int
+	for _, e := range entries {
+		if strings.TrimSpace(e.URL) == "" {
+			return "", nil, ErrNoMCPURL
+		}
+		u, parseErr := url.Parse(e.URL)
+		if parseErr != nil {
+			// Deliberately not including the URL: it holds the token.
+			return "", nil, fmt.Errorf("supervisor: MCP URL is not usable")
+		}
+		if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
+			// The token is in the query string, so plain HTTP puts it on the
+			// wire in clear. Loopback has no wire to be on.
+			return "", nil, fmt.Errorf("%w: %s is not https", ErrInsecureMCP, u.Hostname())
+		}
+		if checkErr := checkParam("serverName", e.Name); checkErr != nil {
+			return "", nil, checkErr
+		}
+		if existing, ok := cfg.Servers[e.Name]; ok && existing.URL != "" {
+			kept = append(kept, e.Name)
+			continue
+		}
+		cfg.Servers[e.Name] = MCPServer{Type: "http", URL: e.URL}
+		added++
+	}
+
+	// Nothing to add means nothing to write: rewriting a file to the bytes it
+	// already holds still changes its timestamp, and on a folder somebody is
+	// watching with a file watcher that is a change they have to explain.
+	if added == 0 {
+		return path, kept, nil
+	}
 
 	body, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("supervisor: encode %s: %w", MCPConfigName, err)
+		return "", nil, fmt.Errorf("supervisor: encode %s: %w", MCPConfigName, err)
 	}
 	body = append(body, '\n')
 
-	// Written through a temp file and renamed, so an interrupted write leaves
-	// the previous config intact rather than a truncated one the agent cannot
-	// parse. Created 0600 before anything is written to it.
-	tmp, err := os.CreateTemp(dir, ".mcp-*.json")
+	if err := writePrivate(dir, path, ".mcp-*.json", body); err != nil {
+		return "", nil, err
+	}
+	return path, kept, nil
+}
+
+// writePrivate replaces a file with content only its owner can read.
+//
+// Written through a temp file in the same directory and renamed, so an
+// interrupted write leaves the previous file intact rather than a truncated
+// one the agent cannot parse. Created 0600 before anything is written to it,
+// because both files this is used for are read by an agent on a machine that
+// may have other people on it.
+func writePrivate(dir, path, pattern string, body []byte) error {
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return "", fmt.Errorf("supervisor: create temp config: %w", err)
+		return fmt.Errorf("supervisor: create temp config: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return "", fmt.Errorf("supervisor: chmod temp config: %w", err)
+		return fmt.Errorf("supervisor: chmod temp config: %w", err)
 	}
 	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
-		return "", fmt.Errorf("supervisor: write temp config: %w", err)
+		return fmt.Errorf("supervisor: write temp config: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("supervisor: close temp config: %w", err)
+		return fmt.Errorf("supervisor: close temp config: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return "", fmt.Errorf("supervisor: replace %s: %w", path, err)
+		return fmt.Errorf("supervisor: replace %s: %w", path, err)
 	}
 	// Rename preserves the temp file's mode, but an existing file replaced by
 	// rename keeps the new inode — so this is belt and braces for the case
 	// where the umask or the platform surprises us.
 	if err := os.Chmod(path, 0o600); err != nil {
-		return "", fmt.Errorf("supervisor: chmod %s: %w", path, err)
+		return fmt.Errorf("supervisor: chmod %s: %w", path, err)
 	}
-
-	_ = existed
-	return path, nil
+	return nil
 }
 
 // HasMCPConfig reports whether a folder already has a usable entry for a
@@ -167,25 +204,6 @@ func readMCPConfig(path string) (MCPConfig, bool, error) {
 		cfg.Servers = map[string]MCPServer{}
 	}
 	return cfg, true, nil
-}
-
-// sameEndpoint reports whether two MCP URLs address the same thing.
-//
-// Scheme, host and path. Not the query, which is where the token lives and
-// which changes on every launch by design — a fresh credential is the point,
-// not a sign that somebody else wrote this entry.
-func sameEndpoint(a, b string) bool {
-	ua, err := url.Parse(a)
-	if err != nil {
-		return false
-	}
-	ub, err := url.Parse(b)
-	if err != nil {
-		return false
-	}
-	return ua.Scheme == ub.Scheme &&
-		strings.EqualFold(ua.Host, ub.Host) &&
-		strings.TrimSuffix(ua.Path, "/") == strings.TrimSuffix(ub.Path, "/")
 }
 
 func isLoopbackHost(host string) bool {

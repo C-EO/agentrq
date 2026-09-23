@@ -186,6 +186,27 @@ func (h *handler) mcpURL(workspaceID int64) string {
 	return url
 }
 
+// coreMCPURL is where the account-wide server answers.
+//
+// Templated from the same host as [handler.mcpURL] and by the same rule, so a
+// deployment with subdomain masking gets `https://mcp.{domain}/mcp` and one
+// without gets the bare `{baseURL}/mcp`. It carries no credential: that server
+// authenticates over its own OAuth flow rather than a minted token, which is
+// why this is a plain URL where the per-workspace one has a token on the end.
+//
+// Mirrors `buildSupervisorMcpUrl` in the frontend, which builds the same
+// address for the setup tab's snippet.
+func (h *handler) coreMCPURL() string {
+	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") && !strings.HasPrefix(h.domain, "127.0.0.1") {
+		proto := "https"
+		if !h.cookieSecure {
+			proto = "http"
+		}
+		return fmt.Sprintf("%s://mcp.%s/mcp", proto, h.domain)
+	}
+	return h.mcpBaseURL + "/mcp"
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 func (h *handler) registerPublicAuthRoutes() {

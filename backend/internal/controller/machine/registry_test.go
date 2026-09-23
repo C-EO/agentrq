@@ -62,6 +62,37 @@ func (c *fakeConn) firstOfType(t wire.Type) (wire.Frame, bool) {
 	return wire.Frame{}, false
 }
 
+// countOfType and lastOfType are firstOfType's answer for a test that sends
+// more than one frame.
+//
+// The trap firstOfType names has a second half: counting *all* frames to
+// decide that a keystroke has arrived counts the attach as well, so the wait
+// can finish before the keystroke is sent at all — and then read the attach.
+// A test that only ever counts and reads the kind it sent cannot be disturbed
+// by a control frame arriving at any moment.
+func (c *fakeConn) countOfType(t wire.Type) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, f := range c.sent {
+		if f.Type == t {
+			n++
+		}
+	}
+	return n
+}
+
+func (c *fakeConn) lastOfType(t wire.Type) (wire.Frame, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := len(c.sent) - 1; i >= 0; i-- {
+		if c.sent[i].Type == t {
+			return c.sent[i], true
+		}
+	}
+	return wire.Frame{}, false
+}
+
 func (c *fakeConn) isClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

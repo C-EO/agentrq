@@ -116,7 +116,14 @@ func TestBytesSurviveARealSocketInBothDirections(t *testing.T) {
 
 	t.Run("browser to daemon", func(t *testing.T) {
 		for name, payload := range payloads {
-			before := daemon.count()
+			// Input frames only, on both the wait and the read. The relay
+			// sends the daemon an attach control frame when the viewer
+			// registers, and it sends it *after* the viewer is counted — so
+			// waiting on "any frame" here can finish on that attach, before
+			// the keystroke has gone anywhere, and then compare the attach's
+			// JSON against the bytes this test wrote. That is exactly how
+			// this failed in CI.
+			before := daemon.countOfType(wire.TypeInput)
 
 			f, err := wire.SessionFrame(wire.TypeInput, sessionID, payload)
 			if err != nil {
@@ -130,14 +137,15 @@ func TestBytesSurviveARealSocketInBothDirections(t *testing.T) {
 				t.Fatalf("%s: write: %v", name, err)
 			}
 
-			waitFor(t, func() bool { return daemon.count() > before }, name+": never reached the daemon")
+			waitFor(t, func() bool { return daemon.countOfType(wire.TypeInput) > before },
+				name+": never reached the daemon")
 
-			got := daemon.lastFrame()
+			got, ok := daemon.lastOfType(wire.TypeInput)
+			if !ok {
+				t.Fatalf("%s: no input frame reached the daemon", name)
+			}
 			if !bytes.Equal(got.Payload, payload) {
 				t.Errorf("%s changed on the way in:\n got %#v\nwant %#v", name, got.Payload, payload)
-			}
-			if got.Type != wire.TypeInput {
-				t.Errorf("%s arrived as %s", name, got.Type)
 			}
 		}
 	})
