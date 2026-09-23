@@ -51,7 +51,11 @@ https://github.com/obra/superpowers/tree/main/skills/systematic-debugging
 - If the repository has a plugin manifest, `.agentrq/plugin.json` or else Muse's `.muse-plugin/plugin.json`, its `capabilities.skills` list decides.
 - Otherwise every directory with a `SKILL.md` is a skill.
 
-**Which files are kept:** a skill's `SKILL.md` and the files it references, then the files those reference in turn. A file counts as referenced when it is named by its path, by a relative path, or through a folder written with a trailing `/`. Everything else is left out.
+**Which files are kept:**
+- every Markdown (`.md`) file in the skill's folder, referenced or not, except a repository's own `README.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `CHANGELOG.md`, `LICENSE.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`
+- any other file that `SKILL.md` or a kept file references, in turn. A file counts as referenced when it is named by its path, by a relative path, or through a folder written with a trailing `/`.
+
+Everything else is left out, including one of those meta files unless something references it.
 
 **The import report** lists what was imported and, for everything skipped, the reason. For example:
 - a `SKILL.md` over 16 KiB, which skips the whole skill
