@@ -64,6 +64,10 @@ Each line says what the note will stop you getting wrong.
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one
   workspace trigger tasks in another; publishing is agent-driven, not automatic.
+- **[Skills](docs/agents/skills.md)** — why content is never in the database and
+  the blob is written first, why an oversized file is refused rather than cut,
+  why the importer builds its own GitHub URLs and keeps only referenced files,
+  and why the UI never lists a skill's other files.
 
 ## Rules that hold everywhere
 
