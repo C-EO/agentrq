@@ -72,7 +72,7 @@ func TestCheckContent_Limits(t *testing.T) {
 	if err := CheckContent(FileName, filled(MaxSkillFileBytes)); err != nil {
 		t.Errorf("SKILL.md at the limit: %v", err)
 	}
-	if err := CheckContent(FileName, filled(MaxSkillFileBytes+1)); err == nil || !strings.Contains(err.Error(), "16 KiB") {
+	if err := CheckContent(FileName, filled(MaxSkillFileBytes+1)); err == nil || !strings.Contains(err.Error(), "32 KiB") {
 		t.Errorf("SKILL.md over the limit: got %v", err)
 	}
 	if err := CheckContent("references/big.md", filled(MaxSubFileBytes)); err != nil {
@@ -116,7 +116,7 @@ func TestParseSkillFile(t *testing.T) {
 			content:  "\ufeff---\r\nname: crlf\r\ndescription: Works on Windows files.\r\n---\r\nbody",
 			wantName: "crlf", wantDesc: "Works on Windows files.",
 		},
-		{name: "too large", content: "---\n" + strings.Repeat("a", MaxSkillFileBytes), err: "16 KiB"},
+		{name: "too large", content: "---\n" + strings.Repeat("a", MaxSkillFileBytes), err: "32 KiB"},
 		{name: "no frontmatter", content: "# Just a heading\n", err: "must start with YAML frontmatter"},
 		{name: "unclosed", content: "---\ndescription: x\n", err: "not closed"},
 		{name: "bad yaml", content: "---\ndescription: [unclosed\n---\n", err: "not valid YAML"},

@@ -120,7 +120,7 @@
             </div>
             <div class="flex items-center gap-3">
               <span v-if="current.path === SKILL_FILE && current.sizeBytes" class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
-                {{ skillFullness(current.sizeBytes) }}% of the 16 KB limit
+                {{ skillFullness(current.sizeBytes) }}% of the 32 KB limit
               </span>
               <button type="button" @click="showRaw = !showRaw"
                       :class="showRaw ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"

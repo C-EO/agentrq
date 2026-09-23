@@ -243,7 +243,7 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 		reasons[sk.Path] = sk.Reason
 	}
 	for p, want := range map[string]string{
-		"skills/brainstorming":                  "16 KiB",
+		"skills/brainstorming":                  "32 KiB",
 		"skills/no-description":                 "needs a description",
 		"skills/linked":                         "links are not imported",
 		"skills/dupe-b":                         "already called",
@@ -665,7 +665,7 @@ func TestFetch_OversizedSkillFileQuotesItsOwnLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "16 KiB") {
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "32 KiB") {
 		t.Errorf("skipped: %+v", res.Skipped)
 	}
 }
