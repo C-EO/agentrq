@@ -180,6 +180,7 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 		Title:            title,
 		Body:             body,
 		AllowAllCommands: trigger.AllowAllCommands,
+		ClearContext:     ws.ClearContextDefault,
 		TriggerID:        trigger.EventID,
 		EventID:          trigger.EmitEventID,
 	}
@@ -264,6 +265,7 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 		Title:            title,
 		Body:             body,
 		AllowAllCommands: step.AllowAllCommands,
+		ClearContext:     ws.ClearContextDefault,
 		TriggerID:        step.EventID,
 		EventID:          step.EmitEventID,
 		WorkflowID:       step.WorkflowID,

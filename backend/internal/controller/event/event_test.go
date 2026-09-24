@@ -5,6 +5,7 @@ package event
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -401,4 +402,53 @@ func TestProcessEvent_WorkflowDepthLimit(t *testing.T) {
 		WorkflowID: 7,
 		Depth:      maxWorkflowDepth,
 	})
+}
+
+// Tasks an event or workflow creates are agent-created, so they start with the
+// workspace's clear-context default, like every other agent-created task.
+func TestProcessEvent_TasksInheritWorkspaceClearContextDefault(t *testing.T) {
+	for _, want := range []bool{true, false} {
+		t.Run(fmt.Sprintf("default=%v", want), func(t *testing.T) {
+			c, mockRepo, mockPubSub, mockIDGen := newTestController(t)
+
+			mockRepo.EXPECT().
+				SystemListWorkflowStepsByEvent(gomock.Any(), int64(7), int64(42)).
+				Return([]model.WorkflowStep{
+					{ID: 1, WorkflowID: 7, EventID: 42, WorkspaceID: 10, Title: "workflow step", Assignee: "agent"},
+				}, nil)
+			mockRepo.EXPECT().
+				SystemListEventTriggersByEventID(gomock.Any(), int64(42)).
+				Return([]model.EventTrigger{
+					{ID: 2, EventID: 42, WorkspaceID: 20, Title: "global subscriber", Assignee: "agent"},
+				}, nil)
+
+			mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(10)).
+				Return(model.Workspace{ID: 10, UserID: 100, ClearContextDefault: want}, nil)
+			mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(20)).
+				Return(model.Workspace{ID: 20, UserID: 100, ClearContextDefault: want}, nil)
+			mockIDGen.EXPECT().NextID().Return(int64(111))
+			mockIDGen.EXPECT().NextID().Return(int64(222))
+
+			created := make(map[string]model.Task)
+			mockRepo.EXPECT().
+				CreateTask(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, task model.Task) (model.Task, error) {
+					created[task.Title] = task
+					return task, nil
+				}).Times(2)
+			mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).Times(2)
+
+			c.processEvent(context.Background(), entity.EventPublishedPayload{
+				EventID:    42,
+				Name:       "code_changed",
+				WorkflowID: 7,
+			})
+
+			for _, title := range []string{"workflow step", "global subscriber"} {
+				if got := created[title].ClearContext; got != want {
+					t.Errorf("%s task ClearContext = %v, want %v", title, got, want)
+				}
+			}
+		})
+	}
 }
