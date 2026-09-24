@@ -26,16 +26,17 @@ type SkillsConfig struct {
 
 var newS3 = s3.New
 
-// newSkillStorage returns local unless skills.storage asks for S3. An unknown
-// value refuses to start, rather than silently writing skills to disk.
-func newSkillStorage(c config.Service, local storage.Service) (storage.Service, error) {
+// newSkillStorage stores skills under localDir unless skills.storage asks for
+// S3. An unknown value refuses to start, rather than silently writing skills
+// to disk.
+func newSkillStorage(c config.Service, localDir string) (storage.Service, error) {
 	var cfg SkillsConfig
 	if err := c.Populate("skills", &cfg); err != nil {
 		return nil, err
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Storage)) {
 	case "", skillStorageLocal:
-		return local, nil
+		return storage.NewNested(localDir)
 	case skillStorageS3:
 	default:
 		return nil, fmt.Errorf("unknown skills storage %q: want %q or %q", cfg.Storage, skillStorageLocal, skillStorageS3)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -82,7 +83,7 @@ func newSkillEnv(t *testing.T) *skillEnv {
 		}
 	}
 	dir := t.TempDir()
-	store, err := storage.New(dir)
+	store, err := storage.NewNested(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,11 +121,17 @@ func (e *skillEnv) save(t *testing.T, ws int64, name, path, content string) *ent
 // nothing leaked, and nothing was lost.
 func (e *skillEnv) blobs(t *testing.T) int {
 	t.Helper()
-	entries, err := os.ReadDir(e.dir)
+	n := 0
+	err := filepath.WalkDir(e.dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			n++
+		}
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return len(entries)
+	return n
 }
 
 func wantSkillErr(t *testing.T, err error, kind SkillErrorKind, contains string) {
@@ -150,6 +157,20 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 	// Replacing a file drops its old blob.
 	if n := e.blobs(t); n != 2 {
 		t.Errorf("storage holds %d blobs, want 2", n)
+	}
+	// Each blob is filed under its workspace and skill.
+	var sk model.Skill
+	e.db.Where("name = ?", "pr-reviewer").First(&sk)
+	var files []model.SkillFile
+	e.db.Where("skill_id = ?", sk.ID).Find(&files)
+	dir := "w-" + monoflake.ID(skWS).String() + "/skill-" + monoflake.ID(sk.ID).String() + "/"
+	for _, f := range files {
+		if !strings.HasPrefix(f.StorageID, dir) {
+			t.Errorf("blob %q is not under %q", f.StorageID, dir)
+		}
+		if _, err := os.Stat(filepath.Join(e.dir, filepath.FromSlash(f.StorageID))); err != nil {
+			t.Errorf("blob %q: %v", f.StorageID, err)
+		}
 	}
 
 	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
@@ -180,6 +201,9 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 	}
 	if n := e.blobs(t); n != 0 {
 		t.Errorf("storage holds %d blobs after deleting the skill, want 0", n)
+	}
+	if entries, _ := os.ReadDir(e.dir); len(entries) != 0 {
+		t.Errorf("deleting the skill left %v behind", entries)
 	}
 	if _, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "pr-reviewer"}); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("deleted skill: %v", err)

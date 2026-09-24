@@ -14,8 +14,6 @@ import (
 
 	"github.com/robfig/cron/v3"
 	zlog "github.com/rs/zerolog/log"
-
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
 
 type Config struct {
@@ -71,8 +69,8 @@ func (s *service) Start(ctx context.Context) {
 }
 
 // RunOnce scans the storage directory and removes files older than the retention period.
-// Database files and skill blobs are always skipped: a skill is kept until
-// it is deleted, not for the retention period.
+// Database files are always skipped, and so are directories: skill blobs live
+// under skills/ and are kept until deleted, not for the retention period.
 func (s *service) RunOnce(ctx context.Context) error {
 	cutoff := time.Now().Add(-s.retentionPeriod)
 
@@ -86,7 +84,7 @@ func (s *service) RunOnce(ctx context.Context) error {
 		if entry.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(strings.ToLower(entry.Name()), ".db") || strings.HasPrefix(entry.Name(), storage.SkillPrefix) {
+		if strings.HasSuffix(strings.ToLower(entry.Name()), ".db") {
 			continue
 		}
 

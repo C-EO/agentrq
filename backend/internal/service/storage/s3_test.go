@@ -71,7 +71,7 @@ func TestS3Storage(t *testing.T) {
 		if err := s.Save("x", "not-base64-!!!"); err == nil {
 			t.Error("bad base64 saved")
 		}
-		for _, id := range []string{"", ".", "..", "../x", "a/b"} {
+		for _, id := range []string{"", ".", "..", "../x", "a/../b", "a//b", "/a", "a/"} {
 			if err := s.Save(id, b64); err == nil {
 				t.Errorf("save %q accepted", id)
 			}
@@ -153,11 +153,12 @@ func TestS3Storage_RealClient(t *testing.T) {
 	}
 	s := NewS3(client, "skills")
 
-	if err := s.Save("skill-1", base64.StdEncoding.EncodeToString([]byte("# tdd"))); err != nil {
+	const key = "w-1/skill-2/3"
+	if err := s.Save(key, base64.StdEncoding.EncodeToString([]byte("# tdd"))); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(bucket.objects["/b/skills/skill-1"]); got != "# tdd" {
-		t.Fatalf("bucket holds %q at /b/skills/skill-1: %v", got, bucket.objects)
+	if got := string(bucket.objects["/b/skills/"+key]); got != "# tdd" {
+		t.Fatalf("bucket holds %q at /b/skills/%s: %v", got, key, bucket.objects)
 	}
 	if len(bucket.acls) != 1 || bucket.acls[0] != "" {
 		t.Errorf("a skill was uploaded with ACL %q", bucket.acls)
@@ -166,14 +167,14 @@ func TestS3Storage_RealClient(t *testing.T) {
 	if len(bucket.checksums) != 1 || bucket.checksums[0] != "" {
 		t.Errorf("upload asked for checksum %q", bucket.checksums)
 	}
-	raw, err := s.LoadRaw("skill-1")
+	raw, err := s.LoadRaw(key)
 	if err != nil || string(raw) != "# tdd" {
 		t.Fatalf("load: %q, %v", raw, err)
 	}
-	if err := s.Delete("skill-1"); err != nil {
+	if err := s.Delete(key); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadRaw("skill-1"); err == nil {
+	if _, err := s.LoadRaw(key); err == nil {
 		t.Error("a deleted skill still loads")
 	}
 }

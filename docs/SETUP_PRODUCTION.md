@@ -180,7 +180,7 @@ Skill files are not attachments: cleanup never deletes them.
 
 ### Skill Storage
 
-Skill file content is kept in the local `storage/` directory by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…). Objects are written privately under the `skills/` prefix, and the server refuses to start on any other value.
+Skill file content is kept in the local `storage/skills/` directory by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), where objects are written privately; the server refuses to start on any other value. Either way each file is kept at `skills/w-<workspace id>/skill-<skill id>/<file id>`.
 
 | Variable | Default | Description |
 |---|---|---|

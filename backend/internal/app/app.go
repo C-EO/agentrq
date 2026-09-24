@@ -264,7 +264,7 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
 
-	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, storageSvc)
+	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, "./_storage/skills")
 	if err != nil {
 		return nil, fmt.Errorf("skill storage: %w", err)
 	}
