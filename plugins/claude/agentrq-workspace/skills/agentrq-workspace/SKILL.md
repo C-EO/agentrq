@@ -51,6 +51,10 @@ You are a **workspace agent** executing tasks within a specific AgentRQ workspac
 
 5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to `completed`. Use `blocked` if you are stuck and need human help.
 
+6. **REMEMBER**: This workspace has a memory that outlives the task. Call `loadMemory` before you start — with no arguments it reads `memory.md`, the index of everything this workspace remembers, and it may already answer what you were about to ask. Load the `memory://<name>` entries it links that look relevant. When you learn something that would save the next agent the same detour, `saveMemory` it and link it from the index.
+
+7. **SKILLS**: This workspace may have skills, playbooks for kinds of task. Call `searchSkills` at the start of a task and `loadSkill` the `SKILL.md` of any skill whose description matches, then follow it. Load a skill's other files only when its `SKILL.md` points you to them. When you improve one of this workspace's own skills, save it with `saveSkill`.
+
 ## Example Workflows
 
 ### 1. Starting a Task
@@ -62,8 +66,14 @@ When you receive a channel message with a task:
 // Step 2: Get workspace context
 // Call getWorkspace (no params needed)
 
-// Step 3: Read task messages for full context
-{ "taskId": "zX9vW7tS5rQ", "cursor": 0, "limit": 10 }
+// Step 3: Read what the workspace remembers
+// Call loadMemory (no params reads memory.md, the index)
+
+// Step 4: Find a skill that matches the task
+{ "q": "release" }
+
+// Step 5: Read the task and its conversation for full context
+{ "taskId": "zX9vW7tS5rQ", "includeConversation": true, "cursor": 0, "limit": 10 }
 ```
 
 ### 2. Sending Progress Updates

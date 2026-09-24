@@ -65,11 +65,10 @@ func listedNames(t *testing.T, srv *sdkmcp.Server) []string {
 }
 
 // TestSubActionIDCoversEveryRegisteredToolResourceAndPrompt is the test that
-// actually compares the map against the servers, the way
-// frontend/test/workspaceSettings.test.js does for the workspace tool list:
-// a name added to either live server without a matching entry here would
-// otherwise just record SubActionIDUnknown forever, silently, the same trap
-// ActionMCPMethodCall sat in before this column existed.
+// actually compares the map against the servers: a name added to either live
+// server without a matching entry here would otherwise just record
+// SubActionIDUnknown forever, silently, the same trap ActionMCPMethodCall sat
+// in before this column existed.
 func TestSubActionIDCoversEveryRegisteredToolResourceAndPrompt(t *testing.T) {
 	// Nil-heavy on purpose: listing tools/resources/prompts never calls a
 	// single handler, so nothing here is ever invoked.

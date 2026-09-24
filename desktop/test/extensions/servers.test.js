@@ -16,9 +16,6 @@ import taskStats from '../../../examples/extensions/task-stats/agentrq-extension
  * The lists are written down here and registered in Go, so the only thing worth
  * testing is that the two agree. A tool added on one side has to fail on the
  * other or the install screen starts lying about what an extension can have.
- *
- * Same arrangement as `frontend/test/workspaceSettings.test.js`, which guards
- * the settings snippet against the same source.
  */
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../..')

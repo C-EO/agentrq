@@ -16,6 +16,20 @@ The supervisor MCP URL is a plugin setting (`agentrq_supervisor_mcp_url`), defau
 For a single workspace rather than the whole account, see
 [`agentrq-workspace`](../agentrq-workspace/README.md).
 
+## Permissions
+
+A plugin cannot pre-approve its own tools, so Claude Code asks before each call until you
+allow them. One wildcard in `.claude/settings.local.json` covers every tool the server
+offers, including any added later:
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__plugin_agentrq_agentrq__*"]
+  }
+}
+```
+
 Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MCP server (account-level — manage workspaces and tasks across all of them).
 
 **Tools:**
@@ -67,6 +81,10 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `getWorkflowText` | Read a workflow's graph as the indented document text mode edits |
 | `replaceWorkflowFromText` | Replace a workflow's entire graph with a document |
 | `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd |
+
+**Resources:** `agentrq://guides/new-workspace` and `agentrq://guides/agentrqd-setup`.
+
+**Prompts:** `new-workspace`, `setup-agentrqd` and `workspace-status`.
 
 The tables here are checked against the server in CI — see
 `backend/internal/handler/coremcp/plugin_docs_test.go`. A tool added to the server

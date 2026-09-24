@@ -364,28 +364,12 @@ Create a `.mcp.json` file in your local project directory (the leading dot is re
 
 ### Step 2 — `.claude/settings.local.json`
 
-Add a `.claude/settings.local.json` file in the same project directory to pre-approve the AgentRQ tools and avoid permission prompts on every action. The list below covers every tool the workspace exposes — drop any line you would rather be asked about:
+Add a `.claude/settings.local.json` file in the same project directory to pre-approve the AgentRQ tools and avoid permission prompts on every action. The wildcard covers every tool the workspace exposes, including any added later:
 
 ```json
 {
   "permissions": {
-    "allow": [
-      "mcp__agentrq-WORKSPACE_ID__createTask",
-      "mcp__agentrq-WORKSPACE_ID__updateTaskStatus",
-      "mcp__agentrq-WORKSPACE_ID__reply",
-      "mcp__agentrq-WORKSPACE_ID__downloadAttachment",
-      "mcp__agentrq-WORKSPACE_ID__getWorkspace",
-      "mcp__agentrq-WORKSPACE_ID__getTask",
-      "mcp__agentrq-WORKSPACE_ID__publishEvent",
-      "mcp__agentrq-WORKSPACE_ID__loadMemory",
-      "mcp__agentrq-WORKSPACE_ID__saveMemory",
-      "mcp__agentrq-WORKSPACE_ID__deleteMemory",
-      "mcp__agentrq-WORKSPACE_ID__searchSkills",
-      "mcp__agentrq-WORKSPACE_ID__loadSkill",
-      "mcp__agentrq-WORKSPACE_ID__saveSkill",
-      "mcp__agentrq-WORKSPACE_ID__deleteSkill",
-      "mcp__agentrq-WORKSPACE_ID__elicit"
-    ]
+    "allow": ["mcp__agentrq-WORKSPACE_ID__*"]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": ["agentrq-WORKSPACE_ID"]
