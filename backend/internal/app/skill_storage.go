@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
@@ -25,6 +26,17 @@ type SkillsConfig struct {
 }
 
 var newS3 = s3.New
+
+// defaultStorageDir is where files go when storage.dir is not set.
+const defaultStorageDir = "./_storage"
+
+// storageDir is the configured storage.dir, or the default when it is unset.
+func storageDir(c cleanup.Config) string {
+	if dir := strings.TrimSpace(c.StorageDir); dir != "" {
+		return dir
+	}
+	return defaultStorageDir
+}
 
 // newSkillStorage stores skills under localDir unless skills.storage asks for
 // S3. An unknown value refuses to start, rather than silently writing skills

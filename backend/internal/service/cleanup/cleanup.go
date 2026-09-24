@@ -19,8 +19,8 @@ import (
 type Config struct {
 	// RetentionPeriod accepts Go duration strings ("168h") or day-suffixed values ("7d").
 	RetentionPeriod string `yaml:"attachmentRetentionPeriod"`
-	// StorageDir is injected at runtime, not read from YAML.
-	StorageDir string
+	// StorageDir holds attachments, and skills under skills/ when they are local.
+	StorageDir string `yaml:"dir"`
 }
 
 type Service interface {

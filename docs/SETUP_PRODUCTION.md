@@ -180,10 +180,11 @@ Skill files are not attachments: cleanup never deletes them.
 
 ### Skill Storage
 
-Skill file content is kept in the local `storage/skills/` directory by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), where objects are written privately; the server refuses to start on any other value. Either way each file is kept at `skills/w-<workspace id>/skill-<skill id>/<file id>`.
+Skill file content is kept in the `skills/` directory under `AGENTRQ_STORAGE_DIR` (the same directory attachments use; `/storage` in docker-compose, `./_storage` otherwise) by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), where objects are written privately; the server refuses to start on any other value. Either way each file is kept at `skills/w-<workspace id>/skill-<skill id>/<file id>`.
 
 | Variable | Default | Description |
 |---|---|---|
+| `AGENTRQ_STORAGE_DIR` | `./_storage` | Writable directory for attachments, and for skills when they are local. |
 | `AGENTRQ_SKILLS_STORAGE` | `local` | `local` or `s3`. |
 | `AGENTRQ_S3_ENDPOINT` | | The S3 endpoint URL, e.g. `https://s3.us-east-1.amazonaws.com`. Addressed path-style. |
 | `AGENTRQ_S3_ACCESS_KEY` | | Access key id. |
@@ -191,7 +192,7 @@ Skill file content is kept in the local `storage/skills/` directory by default. 
 | `AGENTRQ_S3_REGION` | `us-east-1` | Bucket region. |
 | `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
 
-Switching an existing deployment does not move skills already saved, so re-import them, or copy the `skill-*` files from `storage/` to `skills/` in the bucket first.
+Switching an existing deployment does not move skills already saved, so copy the `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket first, or re-import them.
 
 ## Reverse Proxy Setup (Nginx Example)
 

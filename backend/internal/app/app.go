@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -259,17 +260,17 @@ func New(cfg Config) (*App, error) {
 	repo := base.New(db)
 	bus := eventbus.New()
 
-	storageSvc, err := storage.New("./_storage")
+	cfg.Storage.StorageDir = storageDir(cfg.Storage)
+	storageSvc, err := storage.New(cfg.Storage.StorageDir)
 	if err != nil {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
 
-	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, "./_storage/skills")
+	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, "skills"))
 	if err != nil {
 		return nil, fmt.Errorf("skill storage: %w", err)
 	}
 
-	cfg.Storage.StorageDir = "./_storage"
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
