@@ -58,6 +58,9 @@ func TestActionString(t *testing.T) {
 		{ActionAgentConcurrencySelect, "agent_concurrency_select"},
 		{ActionAgentLaunchClaudeCode, "agent_launch_claude_code"},
 		{ActionAgentLaunchACPGateway, "agent_launch_acp_gateway"},
+		{ActionSkillImport, "skill_import"},
+		{ActionSkillView, "skill_view"},
+		{ActionSkillSearch, "skill_search"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

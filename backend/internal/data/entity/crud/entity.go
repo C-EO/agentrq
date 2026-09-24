@@ -1142,6 +1142,7 @@ const (
 	// session to a machine, so neither could be folded into the four above.
 	ResourceMachine
 	ResourceSession
+	ResourceSkill
 )
 
 func (r ResourceType) String() string {
@@ -1158,6 +1159,8 @@ func (r ResourceType) String() string {
 		return "machine"
 	case ResourceSession:
 		return "session"
+	case ResourceSkill:
+		return "skill"
 	}
 	return "unknown"
 }
@@ -1306,6 +1309,12 @@ const (
 	// buried inside one bucket.
 	ActionAgentLaunchClaudeCode Action = 72
 	ActionAgentLaunchACPGateway Action = 73
+	// Skills used from the interface. An agent's skill tools are already
+	// counted as MCP tool calls, so these skip an MCP-origin context rather
+	// than count the same read twice.
+	ActionSkillImport Action = 74
+	ActionSkillView   Action = 75
+	ActionSkillSearch Action = 76
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1426,6 +1435,12 @@ func (a Action) String() string {
 		return "agent_launch_claude_code"
 	case ActionAgentLaunchACPGateway:
 		return "agent_launch_acp_gateway"
+	case ActionSkillImport:
+		return "skill_import"
+	case ActionSkillView:
+		return "skill_view"
+	case ActionSkillSearch:
+		return "skill_search"
 	}
 	return "unknown"
 }

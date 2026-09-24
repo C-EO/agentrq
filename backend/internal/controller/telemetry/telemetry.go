@@ -212,6 +212,12 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDAgentLaunchClaudeCode
 	case entity.ActionAgentLaunchACPGateway:
 		action = model.ActionIDAgentLaunchACPGateway
+	case entity.ActionSkillImport:
+		action = model.ActionIDSkillImport
+	case entity.ActionSkillView:
+		action = model.ActionIDSkillView
+	case entity.ActionSkillSearch:
+		action = model.ActionIDSkillSearch
 	default:
 		return
 	}

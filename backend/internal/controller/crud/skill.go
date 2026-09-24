@@ -164,7 +164,24 @@ func (c *controller) SearchSkills(ctx context.Context, req entity.SearchSkillsRe
 		}
 		skills[i] = fromModelSkill(s, sharedFrom)
 	}
+	c.emitSkillEvent(ctx, entity.ActionSkillSearch, uid, req.WorkspaceID, 0)
 	return &entity.SearchSkillsResponse{Skills: skills, Total: int(total)}, nil
+}
+
+// emitSkillEvent counts a skill used from the interface. An MCP-origin call is
+// skipped: the tool call that made it is already counted, with which tool.
+func (c *controller) emitSkillEvent(ctx context.Context, action entity.Action, uid, workspaceID, skillID int64) {
+	if entity.GetOrigin(ctx) == entity.OriginMCP {
+		return
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       action,
+		UserID:       uid,
+		WorkspaceID:  workspaceID,
+		ResourceType: entity.ResourceSkill,
+		ResourceID:   skillID,
+		Actor:        entity.ActorHuman,
+	})
 }
 
 func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error) {
@@ -217,6 +234,7 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, fmt.Errorf("load skill file content: %w", err)
 	}
+	c.emitSkillEvent(ctx, entity.ActionSkillView, uid, req.WorkspaceID, s.ID)
 	return &entity.GetSkillFileResponse{
 		Skill: fromModelSkill(s, sharedFrom),
 		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content)},
@@ -462,6 +480,7 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 			continue
 		}
 		out.Imported = append(out.Imported, fromModelSkill(saved, 0))
+		c.emitSkillEvent(ctx, entity.ActionSkillImport, uid, req.WorkspaceID, saved.ID)
 	}
 	return out, nil
 }

@@ -753,6 +753,7 @@ func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallT
 
 func (s *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.CallToolRequest, args SearchSkillsParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "searchSkills", parseID(args.WorkspaceID))
+	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	res, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{
 		UserID:      getUserID(ctx),
 		WorkspaceID: parseID(args.WorkspaceID),
@@ -772,6 +773,7 @@ func (s *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.CallT
 func (s *WorkspaceServer) handleGetSkill(ctx context.Context, req *mcp.CallToolRequest, args GetSkillParams) (*mcp.CallToolResult, any, error) {
 	workspaceID := parseID(args.WorkspaceID)
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getSkill", workspaceID)
+	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	name, p, err := skill.ParseURI(args.URI)
 	if err != nil {
 		return errorResponse(err), nil, nil

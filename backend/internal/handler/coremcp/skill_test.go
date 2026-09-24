@@ -23,14 +23,17 @@ type mockSkillCrud struct {
 	get     entity.GetSkillRequest
 
 	listErr, fileErr, getErr error
+	origins                  []entity.Origin
 }
 
-func (m *mockSkillCrud) SearchSkills(_ context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
+func (m *mockSkillCrud) SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
+	m.origins = append(m.origins, entity.GetOrigin(ctx))
 	m.list = req
 	return &entity.SearchSkillsResponse{Skills: []entity.Skill{{Name: "tdd", Description: "Test first.", SharedFromWorkspaceID: 301}}, Total: 1}, m.listErr
 }
 
-func (m *mockSkillCrud) GetSkillFile(_ context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
+func (m *mockSkillCrud) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
+	m.origins = append(m.origins, entity.GetOrigin(ctx))
 	m.getFile = req
 	return &entity.GetSkillFileResponse{Skill: entity.Skill{Name: req.Name}, File: entity.SkillFile{Path: req.Path, Content: "body of " + req.Path}}, m.fileErr
 }
@@ -107,5 +110,17 @@ func TestSkillTools_ReportFailures(t *testing.T) {
 		if !res.isError || !strings.Contains(res.text, tc.want) {
 			t.Errorf("%s: got %+v, want an error containing %q", tc.name, res, tc.want)
 		}
+	}
+}
+
+// A supervisor's skill reads are counted as its tool calls, so the controller
+// must be told they came over MCP or it counts them again as the interface's.
+func TestSkillReadsAreMCPOrigin(t *testing.T) {
+	ctrl := &mockSkillCrud{}
+	s := &WorkspaceServer{crud: ctrl}
+	toolResult(s.handleSearchSkills(authedContext(), nil, SearchSkillsParams{WorkspaceID: base62(testWorkspace)}))
+	toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "skill://tdd"}))
+	if len(ctrl.origins) != 2 || ctrl.origins[0] != entity.OriginMCP || ctrl.origins[1] != entity.OriginMCP {
+		t.Errorf("origins = %v, want both MCP", ctrl.origins)
 	}
 }

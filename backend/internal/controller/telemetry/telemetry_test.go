@@ -447,6 +447,9 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionAgentConcurrencySelect, model.ActionIDAgentConcurrencySelect, "agent concurrency select"},
 		{entity.ActionAgentLaunchClaudeCode, model.ActionIDAgentLaunchClaudeCode, "agent launch claude-code"},
 		{entity.ActionAgentLaunchACPGateway, model.ActionIDAgentLaunchACPGateway, "agent launch acp-gateway"},
+		{entity.ActionSkillImport, model.ActionIDSkillImport, "skill import"},
+		{entity.ActionSkillView, model.ActionIDSkillView, "skill view"},
+		{entity.ActionSkillSearch, model.ActionIDSkillSearch, "skill search"},
 	}
 
 	for _, tc := range cases {
