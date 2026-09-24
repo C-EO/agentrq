@@ -35,6 +35,7 @@ func refusal(err error) error {
 }
 
 func (s *skillStore) SearchSkills(ctx context.Context, q string, limit, offset int) ([]mcp.SkillSummary, int, error) {
+	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	rs, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Query: q, Limit: limit, Offset: offset})
 	if err != nil {
 		return nil, 0, refusal(err)
@@ -62,6 +63,7 @@ func (s *skillStore) SearchSkills(ctx context.Context, q string, limit, offset i
 // LoadSkillFile reads one file, and for a SKILL.md the paths of its skill's
 // files as well, which is what loadSkill lists after it.
 func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (string, []string, bool, error) {
+	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	file, err := s.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path})
 	if errors.Is(err, base.ErrNotFound) {
 		return "", nil, false, nil

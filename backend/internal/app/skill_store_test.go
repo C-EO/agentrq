@@ -25,13 +25,15 @@ type fakeSkillCrud struct {
 	listErr, getErr, fileErr, err error
 	scopes                        []string
 	search                        entity.SearchSkillsRequest
+	origins                       []entity.Origin
 }
 
 func (f *fakeSkillCrud) scope(workspaceID int64, userID string) {
 	f.scopes = append(f.scopes, userID+"@"+string(rune('0'+workspaceID)))
 }
 
-func (f *fakeSkillCrud) SearchSkills(_ context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
+func (f *fakeSkillCrud) SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
+	f.origins = append(f.origins, entity.GetOrigin(ctx))
 	f.scope(req.WorkspaceID, req.UserID)
 	f.search = req
 	return &entity.SearchSkillsResponse{Skills: f.skills, Total: len(f.skills) + 10}, f.listErr
@@ -50,7 +52,8 @@ func (f *fakeSkillCrud) GetSkill(_ context.Context, req entity.GetSkillRequest) 
 	return &entity.GetSkillResponse{Skill: entity.Skill{Files: []entity.SkillFile{{Path: "SKILL.md"}, {Path: "a.md"}}}}, f.getErr
 }
 
-func (f *fakeSkillCrud) GetSkillFile(_ context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
+func (f *fakeSkillCrud) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
+	f.origins = append(f.origins, entity.GetOrigin(ctx))
 	f.scope(req.WorkspaceID, req.UserID)
 	return &entity.GetSkillFileResponse{File: entity.SkillFile{Content: "content of " + req.Path}}, f.fileErr
 }
@@ -182,5 +185,21 @@ func TestSkillStore_Errors(t *testing.T) {
 				t.Errorf("delete %s with %v: deleted %v err %v", name, tc.err, deleted, err)
 			}
 		}
+	}
+}
+
+// An agent's skill reads are counted as its tool calls, so the controller must
+// be told they came over MCP or it counts them a second time as the interface's.
+func TestSkillStore_ReadsAreMCPOrigin(t *testing.T) {
+	f := &fakeSkillCrud{}
+	s := newSkillStore(f)
+	if _, _, err := s.SearchSkills(context.Background(), "", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.LoadSkillFile(context.Background(), "tdd", "a.md"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []entity.Origin{entity.OriginMCP, entity.OriginMCP}; !reflect.DeepEqual(f.origins, want) {
+		t.Errorf("origins = %v, want %v", f.origins, want)
 	}
 }

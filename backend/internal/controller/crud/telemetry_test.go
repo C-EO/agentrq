@@ -70,6 +70,10 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"machine_terminal_open",
 		"machine_terminal_close",
 		"machine_enrol_code_create",
+		// Skills: the server observes every import, read and search itself.
+		"skill_import",
+		"skill_view",
+		"skill_search",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

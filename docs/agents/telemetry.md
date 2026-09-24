@@ -51,6 +51,10 @@ makes them self-evidently true. A few happen entirely in the browser and are
   one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
+- **Skills used from the interface** (`skill_import`/`_view`/`_search`) share
+  controller methods with the MCP skill tools, so MCP callers mark their ctx
+  `OriginMCP` and the controller skips it; drop the mark and every agent read
+  counts twice.
 - **Rollups live in three separate tables** (`internal/service/telemetryaggregator`):
   hourly sums the raw `telemetries` table, daily sums hourly, monthly sums
   daily — never the raw table twice. Monthly re-runs **every day**, not once

@@ -587,6 +587,11 @@ const (
 	// with a kind attribute.
 	ActionIDAgentLaunchClaudeCode
 	ActionIDAgentLaunchACPGateway
+	// Skills imported, read and searched from the interface; an agent's are
+	// ActionIDMCPToolCall rows instead.
+	ActionIDSkillImport
+	ActionIDSkillView
+	ActionIDSkillSearch
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
