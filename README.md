@@ -132,6 +132,15 @@ Open a running session from any browser and you are at the prompt. Keystrokes go
 </td>
 <td width="50%"><img src="https://agentrq.com/assets/feature-machines-poster.png" alt="AgentRQ live terminal attached to a claude-code session on an enrolled machine" width="320" /></td>
 </tr>
+<tr>
+<td colspan="2" valign="middle">
+
+### Skills
+
+Give a workspace's agents the playbooks your team already follows. A skill is a `SKILL.md` plus the files it points to, in the same format Claude Code uses. Paste a public GitHub link, such as [obra/superpowers](https://github.com/obra/superpowers), and every skill in it is imported. Write your own, or let an agent save one. Share a skill with your other workspaces and they all read the same copy, so an edit reaches every one of them. Every agent that connects to the workspace is told to search its skills at the start of a task and load the ones that match, over MCP, whatever harness it runs in. [How skills work →](docs/SKILLS.md)
+
+</td>
+</tr>
 </table>
 
 See the full list at [agentrq.com/features](https://agentrq.com/features).
@@ -406,7 +415,14 @@ When connected, the AI agent has access to:
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
 ### Skills
-Skills are `SKILL.md` playbooks that agents load when a task matches one. Each workspace has its own, can import them from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and can share them with the account's other workspaces. See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
+Skills are `SKILL.md` playbooks that agents load when a task matches one. Each workspace has its own, can import them from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and can share them with the account's other workspaces. Shared skills are read-only live references, not copies.
+
+- **Import:** in a workspace's **Settings → Skills**, paste a GitHub link to a repository, branch or folder and choose **Import**. The report lists what was imported and why anything was skipped. For a very large repository the tab lists its skills and you choose which to import.
+- **Use:** agents are told to call `searchSkills` at the start of a task, then `loadSkill` the `SKILL.md` of any match. Every file is addressed as `skill://<name>/<path>`.
+- **Write:** an agent can create or edit the workspace's own skills with `saveSkill`, so a lesson learned in one task becomes a playbook for the next.
+- **Supervisor:** the account-wide server can search any workspace's skills and read them with `searchSkills` and `getSkill`.
+
+See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
 
 ## 🌉 ACP Gateway (Bridge for ACP Agents)
 

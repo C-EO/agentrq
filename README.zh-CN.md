@@ -48,6 +48,10 @@ AgentRQ 的重点不是让 Agent 无限制执行，而是把人放在工作流�
 
 MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `getTask`、`reply`、`updateTaskStatus` 和 `createTask`。
 
+### Skill
+
+Skill（技能）是 Agent 在任务匹配时加载的操作手册：一个 `SKILL.md` 加上它引用的文件，格式与 Claude Code 相同。可以从公开的 GitHub 仓库一键导入，可以自己编写，也可以由 Agent 保存；共享给同一账号下的其他 Workspace 时共享的是同一份技能，修改会同步到所有 Workspace。连接到 Workspace 的每个 Agent 都会被要求在任务开始时搜索技能，并通过 MCP 加载匹配的技能，无论它运行在哪个 harness 中。详见下文 [技能（Skills）](#技能skills)。
+
 ### CoreMCP 与 Workspace MCP
 
 AgentRQ 有两层 MCP：
@@ -283,6 +287,8 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `SKILL.md` 最大 96 KiB，其他文件每个最大 64 KiB；超限的文件会被拒绝而不是截断，导入时会在报告中列出被跳过的内容及原因。
 - 导入会保留技能目录中的所有 Markdown（`.md`）文件（`README.md`、`CLAUDE.md`、`AGENTS.md` 等仓库元文件除外），其他文件则只保留被 `SKILL.md` 或已保留文件直接或间接引用到的；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
 - 文件地址形如 `skill://<name>/<path>`，`skill://<name>` 即该技能的 `SKILL.md`。界面中不单独列出子文件，点击 `SKILL.md` 中的引用即可打开。
+- 在 Workspace 的 **Settings → Skills** 中粘贴 GitHub 仓库、分支或目录链接并点击 **Import** 即可导入；超大仓库会先列出其中的技能，由你勾选要导入的。
+- Agent 会被要求在任务开始时调用 `searchSkills`，再用 `loadSkill` 读取匹配技能的 `SKILL.md`；也可以用 `saveSkill` 创建或修改本 Workspace 的技能，把一次任务中学到的经验沉淀下来。
 
 详见 [docs/SKILLS.md](docs/SKILLS.md)（英文）。
 
