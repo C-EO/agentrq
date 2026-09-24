@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
-	"github.com/agentrq/agentrq/backend/internal/service/locksmith"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
@@ -25,10 +24,7 @@ type SkillsConfig struct {
 	Storage string `yaml:"storage"`
 }
 
-var (
-	newS3        = s3.New
-	newLocksmith = locksmith.New
-)
+var newS3 = s3.New
 
 // newSkillStorage returns local unless skills.storage asks for S3. An unknown
 // value refuses to start, rather than silently writing skills to disk.
@@ -44,14 +40,7 @@ func newSkillStorage(c config.Service, local storage.Service) (storage.Service, 
 	default:
 		return nil, fmt.Errorf("unknown skills storage %q: want %q or %q", cfg.Storage, skillStorageLocal, skillStorageS3)
 	}
-	var ls locksmith.Service
-	if locksmith.Configured(c) {
-		var err error
-		if ls, err = newLocksmith(locksmith.Params{Config: c}); err != nil {
-			return nil, fmt.Errorf("locksmith: %w", err)
-		}
-	}
-	client, err := newS3(s3.Params{Config: c, Locksmith: ls})
+	client, err := newS3(s3.Params{Config: c})
 	if err != nil {
 		return nil, fmt.Errorf("s3: %w", err)
 	}

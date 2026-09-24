@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentrq/agentrq/backend/internal/service/locksmith"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"gopkg.in/yaml.v3"
@@ -81,35 +80,11 @@ func TestNewSkillStorage(t *testing.T) {
 		}
 	})
 
-	t.Run("S3PassesLocksmithOnlyWhenKeyed", func(t *testing.T) {
-		old := newS3
-		defer func() { newS3 = old }()
-		var seen []locksmith.Service
-		newS3 = func(p s3.Params) (s3.Service, error) {
-			seen = append(seen, p.Locksmith)
-			return fakeS3{}, nil
-		}
-		if _, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}\nlocksmith: {encryptionKey: "+key+"}"), local); err != nil {
-			t.Fatal(err)
-		}
-		if len(seen) != 2 || seen[0] != nil || seen[1] == nil {
-			t.Errorf("locksmith handed to s3: %v", seen)
-		}
-	})
-
 	t.Run("S3Errors", func(t *testing.T) {
-		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}\nlocksmith: {encryptionKey: abcd}"), local)
-		if err == nil || !strings.HasPrefix(err.Error(), "locksmith:") {
-			t.Errorf("bad key: %v", err)
-		}
-
 		old := newS3
 		defer func() { newS3 = old }()
 		newS3 = func(s3.Params) (s3.Service, error) { return nil, errors.New("no creds") }
-		_, err = newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local)
+		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local)
 		if err == nil || err.Error() != "s3: no creds" {
 			t.Errorf("s3 failure: %v", err)
 		}

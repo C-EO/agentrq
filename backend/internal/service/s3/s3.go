@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
-	"github.com/agentrq/agentrq/backend/internal/service/locksmith"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -20,8 +19,7 @@ import (
 
 type (
 	Params struct {
-		Config    config.Service
-		Locksmith locksmith.Service
+		Config config.Service
 	}
 	Service interface {
 		CreateNamespace(ctx context.Context, namespace string) error
@@ -43,7 +41,6 @@ type (
 	service struct {
 		client          S3API
 		presigner       S3PresignAPI
-		locksmith       locksmith.Service
 		bucket          string
 		publicBucketURL string
 	}
@@ -92,7 +89,6 @@ func New(p Params) (Service, error) {
 	return &service{
 		client:          client,
 		presigner:       s3.NewPresignClient(client),
-		locksmith:       p.Locksmith,
 		bucket:          cfg.Bucket,
 		publicBucketURL: cfg.PublicBucketURL,
 	}, nil

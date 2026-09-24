@@ -89,11 +89,6 @@ s3:
   bucket: "${AGENTRQ_S3_BUCKET:}"
   publicBucketURL: "${AGENTRQ_S3_PUBLIC_BUCKET_URL:}"
 
-# Optional. The encryption key is 64 hex characters (32 bytes); locksmith is
-# only built when it is set.
-locksmith:
-  salt: "${AGENTRQ_LOCKSMITH_SALT:}"
-  encryptionKey: "${AGENTRQ_LOCKSMITH_ENCRYPTION_KEY:}"
 
 # The node id must be unique across running instances: monoflake ids collide
 # otherwise. It is also what identifies this process when a daemon socket is

@@ -191,8 +191,6 @@ Skill file content is kept in the local `storage/` directory by default. Set `AG
 | `AGENTRQ_S3_REGION` | `us-east-1` | Bucket region. |
 | `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
 | `AGENTRQ_S3_PUBLIC_BUCKET_URL` | | Optional public base URL for the bucket. |
-| `AGENTRQ_LOCKSMITH_ENCRYPTION_KEY` | | Optional. 64 hex characters (32 bytes). |
-| `AGENTRQ_LOCKSMITH_SALT` | | Optional salt used with the key. |
 
 Switching an existing deployment does not move skills already saved, so re-import them, or copy the `skill-*` files from `storage/` to `skills/` in the bucket first.
 
