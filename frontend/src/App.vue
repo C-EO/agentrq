@@ -18,20 +18,30 @@
          buttons are drawn on top of the sidebar. -->
     <div v-if="isMacDesktop" class="app-drag fixed top-0 inset-x-0 h-10 z-[150]" aria-hidden="true"></div>
 
-    <!-- PWA Update Banner -->
+    <!-- PWA Update Banner. On desktop it stays up once "Update now" is
+         clicked, and becomes the progress bar for the install. -->
     <Transition name="slide-down">
-      <div v-if="needRefresh && !isUpdating"
+      <div v-if="updateProgress || (needRefresh && !isUpdating)"
            :class="[
-             'fixed inset-x-0 z-[200] flex items-center justify-between gap-3 px-4 py-2.5 bg-black text-white text-xs font-medium shadow-lg',
+             'fixed inset-x-0 z-[200] flex items-center justify-between gap-3 px-4 py-2.5 bg-black text-white text-xs font-medium shadow-lg overflow-hidden',
              isMacDesktop ? 'top-10' : 'top-0'
            ]">
-        <div class="flex items-center gap-2">
-          <svg class="w-3.5 h-3.5 shrink-0 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <div class="flex items-center gap-2 min-w-0">
+          <svg :class="['w-3.5 h-3.5 shrink-0 text-green-400', updateProgress && updateProgress.phase !== 'installed' ? 'animate-spin' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <span>A new version of AgentRQ is available.</span>
+          <span class="truncate">{{ updateProgress ? progressLabel(updateProgress) : 'A new version of AgentRQ is available.' }}</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div v-if="updateProgress" class="flex items-center gap-2 shrink-0 min-h-6">
+          <span v-if="updateProgress.percent !== null && updateProgress.phase === 'downloading'"
+                class="tabular-nums text-gray-300">{{ Math.floor(updateProgress.percent) }}%</span>
+          <button v-if="updateProgress.phase === 'installed'" @click="dismissUpdateProgress()" class="text-gray-400 hover:text-white transition-colors p-0.5" title="Dismiss">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-else class="flex items-center gap-2 shrink-0">
           <button @click="handleUpdateNow()"
                   class="px-3 py-1 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-100 active:scale-95 transition-all">
             Update now
@@ -41,6 +51,18 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+        <!-- The bar itself: filled to the download percentage, or sweeping
+             while there is no number to show. -->
+        <div v-if="updateProgress && updateProgress.phase !== 'installed'"
+             class="absolute inset-x-0 bottom-0 h-0.5 bg-white/15"
+             role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             :aria-valuenow="updateProgress.percent ?? undefined"
+             :aria-label="progressLabel(updateProgress)">
+          <div v-if="updateProgress.percent !== null"
+               class="h-full bg-green-400 transition-[width] duration-300 ease-out"
+               :style="{ width: `${updateProgress.percent}%` }"></div>
+          <div v-else class="update-progress-sweep h-full w-1/3 bg-green-400"></div>
         </div>
       </div>
     </Transition>
@@ -466,6 +488,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
+import { progressLabel } from './desktop/useDesktopUpdates'
 import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
@@ -509,14 +532,24 @@ import { useExtensionShortcuts } from './composables/useExtensionShortcuts'
 import ExtensionViewPanel from './components/ExtensionViewPanel.vue'
 
 const appVersion = __APP_VERSION__
-const { needRefresh, updateServiceWorker } = useRegisterSW()
+const registeredSW = useRegisterSW()
+const { needRefresh, updateServiceWorker } = registeredSW
+// Desktop only: the web build reloads the moment it updates, so has nothing to show.
+const updateProgress = registeredSW.progress ?? ref(null)
+const dismissUpdateProgress = () => registeredSW.dismissProgress?.()
 
 const isUpdating = ref(false)
 
 const handleUpdateNow = async () => {
   isUpdating.value = true
   needRefresh.value = false
-  await updateServiceWorker(true)
+  try {
+    await updateServiceWorker(true)
+  } finally {
+    // On the web the page has reloaded by now. On desktop a failed install
+    // puts the offer back, and the banner has to be free to show it.
+    isUpdating.value = false
+  }
 }
 
 const { toKebabCase } = useFormat()
@@ -1080,6 +1113,13 @@ watch(isLoginPage, (val) => {
 </script>
 
 <style scoped>
+.update-progress-sweep {
+  animation: update-progress-sweep 1.4s ease-in-out infinite;
+}
+@keyframes update-progress-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
 .slide-down-enter-active,
 .slide-down-leave-active {
   transition: transform 0.25s ease, opacity 0.25s ease;

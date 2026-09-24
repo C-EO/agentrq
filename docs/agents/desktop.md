@@ -53,6 +53,9 @@ Consequences worth knowing before changing anything here:
   it is a bridge request answered by `desktop/src/main/files.js`, which opens
   only file types that are read rather than run and reveals everything else in
   the file manager.
+- **The update installer writes to a file, never a pipe.** It quits this app
+  mid-install, and a pipe with no reader would kill it there; the same file is
+  what the update banner's progress bar is read from.
 - **Copying from the renderer goes through the shell on desktop.**
   `navigator.clipboard.writeText` throws in a window that is not frontmost, so
   `writeClipboard` prefers `window.agentrq.clipboard` and falls back to the

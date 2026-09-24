@@ -17,7 +17,8 @@ import { ref, watch } from 'vue'
  * identical to the web one, and App.vue needs no knowledge of either.
  *
  * The shape must match what App.vue destructures: a writable `needRefresh` ref
- * and an awaitable `updateServiceWorker`.
+ * and an awaitable `updateServiceWorker`. `progress` is the one addition, and
+ * App.vue treats it as optional since the web build has none.
  *
  * With no bridge present — the frontend's own test run, say — everything stays
  * inert, exactly as the plain stub does.
@@ -27,6 +28,11 @@ export function useRegisterSW() {
   const offlineReady = ref(false)
   /** Whether this build has to shell out to the installer to update itself. */
   const useInstaller = ref(false)
+  /**
+   * How far an update the user asked for has got, or null before they ask:
+   * `{ phase, percent, version }`, where percent is null when unknown.
+   */
+  const progress = ref(null)
 
   /** The version currently being offered, and the one the user waved away. */
   let offeredVersion = ''
@@ -49,6 +55,7 @@ export function useRegisterSW() {
   const updates = globalThis.window?.agentrq?.updates
   if (updates) {
     updates.onStatus((state) => {
+      if (progress.value) followProgress(state)
       if (!isOfferable(state)) return
 
       // Raised here, never lowered.
@@ -71,22 +78,54 @@ export function useRegisterSW() {
     })
   }
 
+  /** Move the bar on, or take it down and offer again if the install failed. */
+  function followProgress(state) {
+    const version = progress.value.version
+    if (state.status === 'installing' && state.progress) {
+      progress.value = { ...state.progress, version }
+    } else if (state.status === 'installed') {
+      progress.value = { phase: 'installed', percent: 100, version }
+    } else if (state.status === 'error') {
+      progress.value = null
+    }
+  }
+
+  /** Put the offer back after an install that did not start. */
+  function restoreOffer() {
+    progress.value = null
+    needRefresh.value = true
+  }
+
   return {
     needRefresh,
     offlineReady,
     useInstaller,
+    progress,
+    /** Take down the "installed, restart to finish" notice. */
+    dismissProgress: () => {
+      progress.value = null
+    },
     updateServiceWorker: async () => {
-      // App.vue clears needRefresh and awaits this; on success the app is
-      // replaced by the new version, so nothing after it runs.
-      //
+      // App.vue clears needRefresh before calling this, which the watch above
+      // takes for a dismissal. It was not one: if the install fails, the offer
+      // has to come back.
+      dismissedVersion = null
+      const version = offeredVersion
+
       // Two routes, because a build that cannot replace itself still has one:
       // an unsigned macOS app is refused by Squirrel.Mac every time, and the
       // installer that swaps the whole bundle is the only way it ever updates.
       if (useInstaller.value) {
-        await updates?.installViaScript()
+        progress.value = { phase: 'preparing', percent: null, version }
+        const result = await updates?.installViaScript()
+        if (updates && !result?.ok) restoreOffer()
         return
       }
-      await updates?.installNow()
+
+      // Already downloaded, so all that is left is the restart.
+      progress.value = { phase: 'restarting', percent: null, version }
+      const installed = await updates?.installNow()
+      if (updates && !installed) restoreOffer()
     },
   }
 }
@@ -117,4 +156,26 @@ export function isOfferable(state) {
   // by the remedy rather than by parsing the message again, since the main
   // process has already made that judgement.
   return state.status === 'error' && Boolean(state.remedy)
+}
+
+/**
+ * What the banner says while an update is under way.
+ *
+ * Exported so the wording is tested here, where coverage reaches, rather than
+ * only in App.vue's template.
+ */
+export function progressLabel(progress) {
+  const name = progress?.version ? `AgentRQ ${progress.version}` : 'the update'
+  switch (progress?.phase) {
+    case 'downloading':
+      return `Downloading ${name}…`
+    case 'installing':
+      return `Installing ${name}…`
+    case 'restarting':
+      return 'Restarting to update…'
+    case 'installed':
+      return `${progress.version ? `AgentRQ ${progress.version}` : 'The update'} is installed. Restart AgentRQ to finish.`
+    default:
+      return `Preparing ${name}…`
+  }
 }

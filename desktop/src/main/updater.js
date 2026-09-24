@@ -35,6 +35,10 @@ export const UpdateStatus = {
   Available: 'available',
   Downloading: 'downloading',
   Ready: 'ready',
+  /** The one-command installer is running; `progress` says how far it is. */
+  Installing: 'installing',
+  /** The installer finished but this app is still running the old version. */
+  Installed: 'installed',
   UpToDate: 'up-to-date',
   Error: 'error',
   Disabled: 'disabled',
@@ -131,6 +135,36 @@ export function remedyForUpdateError(error) {
   return UNSIGNED.test(message) ? INSTALL_COMMAND : ''
 }
 
+/** How often a running installer's log is read for progress. */
+export const INSTALL_POLL_INTERVAL_MS = 250
+
+/**
+ * Read how far install.sh has got from what it has written so far.
+ *
+ * The percentages are curl's `--progress-bar`, which it writes even when stderr
+ * is a file. Only those after "Downloading" count: the lookup and checksum
+ * requests are `-s` and never print one, but that is install.sh's choice, not
+ * ours to rely on.
+ *
+ * @returns {{phase: string, percent: number|null, error: string}}
+ */
+export function parseInstallerLog(text) {
+  const log = String(text ?? '')
+  const error = log.match(/^error: (.*)$/m)?.[1]?.trim() ?? ''
+
+  if (/installed to |already installed/.test(log)) return { phase: 'installed', percent: 100, error }
+  if (/Checksum verified|checksum verification|No published checksum|Quitting AgentRQ|Installing to /.test(log)) {
+    return { phase: 'installing', percent: null, error }
+  }
+
+  const downloading = log.indexOf('Downloading ')
+  if (downloading === -1) return { phase: 'preparing', percent: null, error }
+
+  const percents = log.slice(downloading).match(/\d+(?:\.\d+)?%/g)
+  const percent = percents ? Math.min(100, parseFloat(percents.at(-1))) : 0
+  return { phase: 'downloading', percent, error }
+}
+
 /**
  * Whether a status change should interrupt the user.
  *
@@ -153,6 +187,10 @@ export function shouldAnnounce(status, { manual }) {
  * @param {{ warn: Function }} [deps.logger]
  * @param {(cmd: string, args: string[], opts: object) => {unref?: Function}} [deps.spawn]
  * @param {string} [deps.platform]
+ * @param {() => {stdio: Array, read: () => string, close: () => void}} [deps.createInstallLog]
+ *   Where the installer writes, so its progress can be read back. A file, not a
+ *   pipe: the installer quits this app, and a pipe with no reader would kill it
+ *   halfway through the install.
  */
 export function createUpdater({
   autoUpdater,
@@ -163,6 +201,7 @@ export function createUpdater({
   logger = console,
   spawn = null,
   platform = process.platform,
+  createInstallLog = null,
 }) {
   const disabledReason = updaterDisabledReason({ isPackaged })
 
@@ -172,16 +211,19 @@ export function createUpdater({
   let manual = false
   let timer = null
   let version = ''
+  let progress = null
 
-  function publish(next, nextDetail = '', nextRemedy = '') {
+  function publish(next, nextDetail = '', nextRemedy = '', nextProgress = null) {
     status = next
     detail = nextDetail
     remedy = nextRemedy
+    progress = nextProgress
     onStatus({
       status,
       detail,
       remedy,
       version,
+      progress,
       manual,
       announce: shouldAnnounce(next, { manual }),
       // Carried on every status, not only read from `state`: this is what the
@@ -198,7 +240,8 @@ export function createUpdater({
       publish(UpdateStatus.Available)
     })
     autoUpdater.on('download-progress', (progress) => {
-      publish(UpdateStatus.Downloading, `${Math.round(progress?.percent ?? 0)}%`)
+      const percent = Math.round(progress?.percent ?? 0)
+      publish(UpdateStatus.Downloading, `${percent}%`, '', { phase: 'downloading', percent })
     })
     autoUpdater.on('update-downloaded', (info) => {
       version = info?.version ?? version
@@ -220,6 +263,12 @@ export function createUpdater({
       return { ok: false, reason: disabledReason }
     }
 
+    // A background check would replace the installer's progress with
+    // 'checking', and the banner would lose track of an install still running.
+    if (status === UpdateStatus.Installing) {
+      return { ok: false, reason: 'An update is already being installed' }
+    }
+
     manual = isManual
     try {
       await autoUpdater.checkForUpdates()
@@ -231,6 +280,47 @@ export function createUpdater({
       publish(UpdateStatus.Error, reason, remedyForUpdateError(error))
       return { ok: false, reason }
     }
+  }
+
+  /**
+   * Report the installer's progress until it exits.
+   *
+   * On macOS it quits this app first, so the exit is usually never seen. When
+   * it is, the install either failed — offer it again with the error — or
+   * finished without restarting us, which is what happens on Linux.
+   */
+  function followInstaller(child, log) {
+    let last = ''
+    const report = () => {
+      const parsed = parseInstallerLog(log.read())
+      const key = `${parsed.phase}:${parsed.percent}`
+      if (key !== last) {
+        last = key
+        publish(UpdateStatus.Installing, '', '', { phase: parsed.phase, percent: parsed.percent })
+      }
+      return parsed
+    }
+
+    report()
+    const poll = setTimer(report, INSTALL_POLL_INTERVAL_MS)
+    let done = false
+    const finish = (code, spawnError) => {
+      if (done) return
+      done = true
+      clearTimer(poll)
+      const parsed = parseInstallerLog(log.read())
+      log.close()
+
+      if (!parsed.error && !spawnError && parsed.phase === 'installed') {
+        publish(UpdateStatus.Installed, 'Restart AgentRQ to finish updating')
+        return
+      }
+      const reason = parsed.error || describeUpdateError(spawnError ?? `The installer stopped (exit code ${code})`)
+      logger.warn?.('installer failed:', reason)
+      publish(UpdateStatus.Error, reason, INSTALL_COMMAND)
+    }
+    child?.on?.('exit', (code) => finish(code))
+    child?.on?.('error', (error) => finish(null, error))
   }
 
   return {
@@ -277,8 +367,9 @@ export function createUpdater({
      * process group and lets the parent exit without it, which is what makes
      * this safe rather than a way to destroy an installation.
      *
-     * stdio is discarded for the same reason: there is nothing left to read it
-     * once the app has gone.
+     * Its output goes to a file for the same reason — a pipe would die with
+     * the app and take the installer with it — and the file is what the
+     * progress bar is read from.
      */
     installViaScript() {
       if (!canInstallViaScript(platform)) {
@@ -288,14 +379,18 @@ export function createUpdater({
         return { ok: false, reason: 'Updates cannot be installed from here' }
       }
 
+      let log = null
       try {
+        log = createInstallLog?.() ?? null
         const child = spawn('/bin/sh', ['-c', INSTALL_SCRIPT_COMMAND], {
           detached: true,
-          stdio: 'ignore',
+          stdio: log?.stdio ?? 'ignore',
         })
         child?.unref?.()
+        if (log) followInstaller(child, log)
         return { ok: true }
       } catch (error) {
+        log?.close()
         const reason = describeUpdateError(error)
         logger.warn?.('installer failed to start:', error)
         publish(UpdateStatus.Error, reason, INSTALL_COMMAND)
@@ -314,6 +409,7 @@ export function createUpdater({
         detail,
         remedy,
         version,
+        progress,
         enabled: !disabledReason,
         // What the banner needs to choose a button: whether the app can
         // replace itself, or has to shell out to the installer to do it.

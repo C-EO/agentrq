@@ -51,6 +51,7 @@ import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
+import { createInstallLog } from './install-log.js'
 import { createDiscovery } from './extensions/discovery.js'
 import { decorate } from './extensions/catalogue.js'
 import { createInstaller } from './extensions/install.js'
@@ -1545,6 +1546,7 @@ function installUpdater() {
     // detached — see installViaScript. Injected rather than imported so the
     // whole path stays testable without spawning anything.
     spawn,
+    createInstallLog: () => createInstallLog({ dir: app.getPath('temp') }),
     // The real guard: unpackaged means no release to compare against, and no
     // business replacing a development checkout with a downloaded build.
     isPackaged: app.isPackaged,
