@@ -6,7 +6,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -44,54 +43,14 @@ type (
 
 // New inits a new Config based on env name
 func New() (Service, error) {
-	// expand env vars mapper
-	mapper := func(placeholderName string) string {
-		split := strings.Split(placeholderName, ":")
-		defaultValue := ""
-		if len(split) >= 2 {
-			placeholderName = split[0]
-			defaultValue = strings.Join(split[1:], ":")
-		}
-
-		val, ok := os.LookupEnv(placeholderName)
-		if !ok {
-			return defaultValue
-		}
-
-		return val
-	}
-
-	// read base yaml file
-	basefilename, err := filepath.Abs(_configPath + "/base.yaml")
+	baseCfg, err := load(_configPath + "/base.yaml")
 	if err != nil {
 		return nil, err
 	}
 
-	baseYaml, err := os.ReadFile(basefilename)
-	if err != nil {
-		return nil, err
-	}
-
-	baseExpanded := os.Expand(string(baseYaml), mapper)
-	baseCfg := map[string]any{}
-	if err := yaml.Unmarshal([]byte(baseExpanded), &baseCfg); err != nil {
-		return nil, err
-	}
-
-	// read env yaml file
 	env := env()
-	envfilename, err := filepath.Abs(fmt.Sprintf(_configPath+"/%s.yaml", env))
+	envCfg, err := load(fmt.Sprintf(_configPath+"/%s.yaml", env))
 	if err != nil {
-		return nil, err
-	}
-	envYaml, err := os.ReadFile(envfilename)
-	if err != nil {
-		return nil, err
-	}
-
-	envExpanded := os.Expand(string(envYaml), mapper)
-	envCfg := map[string]any{}
-	if err := yaml.Unmarshal([]byte(envExpanded), &envCfg); err != nil {
 		return nil, err
 	}
 
@@ -151,6 +110,59 @@ func env() string {
 		return env
 	}
 	return _envDefault
+}
+
+// load parses a yaml file and only then fills in its ${VAR:default}
+// placeholders, so an env value is always taken as a literal string: a quote,
+// colon or newline in it cannot break the parse.
+func load(filename string) (map[string]any, error) {
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, err
+	}
+	expandNode(&doc)
+
+	cfg := map[string]any{}
+	if doc.Kind == 0 {
+		return cfg, nil
+	}
+	if err := doc.Decode(&cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func expandNode(n *yaml.Node) {
+	for _, c := range n.Content {
+		expandNode(c)
+	}
+	if n.Kind != yaml.ScalarNode || !strings.Contains(n.Value, "$") {
+		return
+	}
+	n.Value = os.Expand(n.Value, lookupEnv)
+	if n.Style == 0 {
+		// An unquoted value is typed by what it expands to, e.g. a port.
+		n.Tag = ""
+	}
+}
+
+// lookupEnv resolves VAR or VAR:default. One pair of surrounding quotes is
+// dropped, as `docker run --env-file` passes them through verbatim.
+func lookupEnv(placeholder string) string {
+	name, def, _ := strings.Cut(placeholder, ":")
+	val, ok := os.LookupEnv(name)
+	if !ok {
+		return def
+	}
+	if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
+		return val[1 : len(val)-1]
+	}
+	return val
 }
 
 func mergeMaps(a, b map[string]any) map[string]any {

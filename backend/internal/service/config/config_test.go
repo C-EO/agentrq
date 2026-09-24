@@ -158,3 +158,79 @@ func TestErrError(t *testing.T) {
 		t.Errorf("expected 'test error', got %s", e.Error())
 	}
 }
+
+func TestEnvValuesAreLiteral(t *testing.T) {
+	origWd, _ := os.Getwd()
+	os.Chdir(t.TempDir())
+	defer os.Chdir(origWd)
+	os.Mkdir("_config", 0755)
+
+	os.WriteFile("_config/base.yaml", []byte(`
+s3:
+  bucket: "${T_BUCKET:}"
+  secret: "${T_SECRET:}"
+  endpoint: ${T_ENDPOINT:}
+  region: "${T_REGION:us-east-1}"
+  port: ${T_PORT:3000}
+  dsn: "host=${T_HOST:localhost} port=5432"
+`), 0644)
+	os.WriteFile("_config/development.yaml", nil, 0644)
+
+	t.Setenv("T_BUCKET", `"my-bucket"`)
+	t.Setenv("T_SECRET", "a\"b: #c\nd")
+	t.Setenv("T_ENDPOINT", `'https://s3.example.com'`)
+	t.Setenv("T_PORT", "9000")
+	t.Setenv("T_HOST", "db")
+
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	var got struct {
+		Bucket   string `yaml:"bucket"`
+		Secret   string `yaml:"secret"`
+		Endpoint string `yaml:"endpoint"`
+		Region   string `yaml:"region"`
+		Port     int    `yaml:"port"`
+		DSN      string `yaml:"dsn"`
+	}
+	if err := s.Populate("s3", &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{
+		"bucket":   {got.Bucket, "my-bucket"},
+		"secret":   {got.Secret, "a\"b: #c\nd"},
+		"endpoint": {got.Endpoint, "https://s3.example.com"},
+		"region":   {got.Region, "us-east-1"},
+		"dsn":      {got.DSN, "host=db port=5432"},
+	}
+	for k, v := range want {
+		if v[0] != v[1] {
+			t.Errorf("%s = %q, want %q", k, v[0], v[1])
+		}
+	}
+	if got.Port != 9000 {
+		t.Errorf("port = %d, want 9000", got.Port)
+	}
+}
+
+func TestLoadErrors(t *testing.T) {
+	origWd, _ := os.Getwd()
+	dir := t.TempDir()
+	if _, err := load(dir + "/missing.yaml"); err == nil {
+		t.Error("expected error for a missing file")
+	}
+	os.Chdir(dir)
+	defer os.Chdir(origWd)
+	os.Mkdir("_config", 0755)
+	os.WriteFile("_config/base.yaml", []byte("a: b\n"), 0644)
+	t.Setenv("ENV", "staging")
+	if _, err := New(); err == nil {
+		t.Error("expected error for a missing env file")
+	}
+
+	os.WriteFile(dir+"/list.yaml", []byte("- a\n- b\n"), 0644)
+	if _, err := load(dir + "/list.yaml"); err == nil {
+		t.Error("expected error for a non-mapping document")
+	}
+}
