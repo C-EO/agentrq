@@ -12,8 +12,22 @@
     <meta name="apple-mobile-web-app-title" content="AgentRQ" />
     <meta name="theme-color" content="#f4f4f5" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <script>
+      // Apply the saved theme before first paint. iOS colours the status bar
+      // from the page background and reads theme-color at launch, so waiting
+      // for the Vue app leaves a light strip above a dark page.
+      (function () {
+        var theme = null
+        try { theme = localStorage.getItem('theme') } catch (e) {}
+        var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (!dark) return
+        document.documentElement.classList.add('dark')
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#09090b')
+        document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').setAttribute('content', 'black')
+      })()
+    </script>
   </head>
-  <body class="bg-slate-50 text-slate-900 font-sans antialiased">
+  <body class="bg-zinc-100 dark:bg-zinc-950 text-slate-900 font-sans antialiased">
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
