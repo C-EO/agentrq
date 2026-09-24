@@ -87,7 +87,6 @@ s3:
   secretAccessKey: "${AGENTRQ_S3_SECRET_ACCESS_KEY:}"
   region: "${AGENTRQ_S3_REGION:us-east-1}"
   bucket: "${AGENTRQ_S3_BUCKET:}"
-  publicBucketURL: "${AGENTRQ_S3_PUBLIC_BUCKET_URL:}"
 
 
 # The node id must be unique across running instances: monoflake ids collide
