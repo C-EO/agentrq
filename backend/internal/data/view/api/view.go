@@ -461,8 +461,18 @@ type (
 	}
 
 	ImportSkillsRequest struct {
-		URL       string `json:"url"`
-		Overwrite bool   `json:"overwrite"`
+		URL       string   `json:"url"`
+		Overwrite bool     `json:"overwrite"`
+		Skills    []string `json:"skills,omitempty"`
+	}
+
+	// SkillImportCandidate is a skill offered to choose from, by a
+	// repository too large to import whole.
+	SkillImportCandidate struct {
+		Name      string `json:"name"`
+		Path      string `json:"path"`
+		SizeBytes int64  `json:"sizeBytes"`
+		Reason    string `json:"reason,omitempty"`
 	}
 
 	ImportedSkill struct {
@@ -479,11 +489,14 @@ type (
 	}
 
 	ImportSkillsResponse struct {
-		Imported     []ImportedSkill     `json:"imported"`
-		Skipped      []SkippedSkillEntry `json:"skipped"`
-		SourceRepo   string              `json:"sourceRepo"`
-		SourceRef    string              `json:"sourceRef"`
-		SourceCommit string              `json:"sourceCommit"`
+		Imported []ImportedSkill     `json:"imported"`
+		Skipped  []SkippedSkillEntry `json:"skipped"`
+		// Candidates, when present, are the skills to choose from; nothing
+		// was imported.
+		Candidates   []SkillImportCandidate `json:"candidates,omitempty"`
+		SourceRepo   string                 `json:"sourceRepo"`
+		SourceRef    string                 `json:"sourceRef"`
+		SourceCommit string                 `json:"sourceCommit"`
 	}
 
 	SkillShare struct {

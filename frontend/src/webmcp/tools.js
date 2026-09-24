@@ -269,16 +269,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       name: 'importWorkspaceSkills',
       description:
         'Import skills from a public GitHub repository into a workspace, e.g. https://github.com/obra/superpowers ' +
-        'or a /tree/<ref>/<path> link to part of one. Returns what was imported and what was skipped, with why.',
+        'or a /tree/<ref>/<path> link to part of one. Returns what was imported and what was skipped, with why. ' +
+        'A repository too large to import whole imports nothing and returns `candidates`; import again naming the wanted ones in `skills`.',
       properties: {
         workspaceId: WORKSPACE_ID,
         url: str('The GitHub link.'),
         overwrite: bool('Replace skills this workspace already has under the same name.'),
+        skills: { type: 'array', items: { type: 'string' }, description: 'Import only these skills, by the `path` a candidate gives.' },
       },
       required: ['workspaceId', 'url'],
       // With overwrite, it replaces skills the workspace already had.
       destructive: true,
-      run: ({ workspaceId, url, overwrite }) => api.importWorkspaceSkills(workspaceId, url, overwrite),
+      run: ({ workspaceId, url, overwrite, skills }) => api.importWorkspaceSkills(workspaceId, url, overwrite, skills),
     }),
     tool({
       name: 'deleteWorkspaceSkill',

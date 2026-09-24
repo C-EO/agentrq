@@ -771,16 +771,29 @@ type (
 		Skill Skill
 	}
 
+	// ImportSkillsRequest imports every skill the URL names, or only those
+	// whose directories Skills lists.
 	ImportSkillsRequest struct {
 		WorkspaceID int64
 		UserID      string
 		URL         string
 		Overwrite   bool
+		Skills      []string
+	}
+
+	// SkillImportCandidate is a skill a repository too large to import whole
+	// offers, for the import to be asked again naming the ones wanted.
+	SkillImportCandidate struct {
+		Name       string
+		Path       string
+		SkillBytes int64
+		Reason     string
 	}
 
 	ImportSkillsResponse struct {
 		Imported     []Skill
 		Skipped      []SkillImportSkip
+		Candidates   []SkillImportCandidate
 		SourceRepo   string
 		SourceRef    string
 		SourceCommit string

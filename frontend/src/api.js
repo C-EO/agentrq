@@ -692,11 +692,13 @@ export async function getWorkspaceSkillFile(workspaceId, name, path) {
   return res.json();
 }
 
-export async function importWorkspaceSkills(workspaceId, url, overwrite = false) {
+// `skills` names the skills to import by their directory, as the `candidates`
+// of a repository too large to import whole give them.
+export async function importWorkspaceSkills(workspaceId, url, overwrite = false, skills = []) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, overwrite }),
+    body: JSON.stringify(skills?.length ? { url, overwrite, skills } : { url, overwrite }),
   });
   if (!res.ok) throw await skillError(res, 'Failed to import skills');
   return res.json();

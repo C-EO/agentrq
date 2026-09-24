@@ -280,7 +280,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 技能是 Agent 在任务匹配时加载的 `SKILL.md` 操作手册，可附带它所引用的其他文件。每个 Workspace 拥有自己的技能，可以从公开的 GitHub 仓库（如 [obra/superpowers](https://github.com/obra/superpowers)）导入，也可以共享给同一账号下的其他 Workspace（共享为只读的实时引用）。
 
 - `SKILL.md` 须以 YAML frontmatter 开头，`description` 必填（最多 1024 个字符）；`name` 可选，默认取目录名。
-- `SKILL.md` 最大 32 KiB，其他文件每个最大 64 KiB；超限的文件会被拒绝而不是截断，导入时会在报告中列出被跳过的内容及原因。
+- `SKILL.md` 最大 96 KiB，其他文件每个最大 64 KiB；超限的文件会被拒绝而不是截断，导入时会在报告中列出被跳过的内容及原因。
 - 导入会保留技能目录中的所有 Markdown（`.md`）文件（`README.md`、`CLAUDE.md`、`AGENTS.md` 等仓库元文件除外），其他文件则只保留被 `SKILL.md` 或已保留文件直接或间接引用到的；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
 - 文件地址形如 `skill://<name>/<path>`，`skill://<name>` 即该技能的 `SKILL.md`。界面中不单独列出子文件，点击 `SKILL.md` 中的引用即可打开。
 

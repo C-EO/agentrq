@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { searchWorkspaceSkills } from '../src/api';
+import { importWorkspaceSkills, searchWorkspaceSkills } from '../src/api';
 
 // The search query travels in the URL, relative so the desktop app's proxy
 // carries it, with only the parameters that were given.
@@ -30,5 +30,28 @@ describe('searchWorkspaceSkills', () => {
       Promise.resolve(new Response(JSON.stringify({ error: { message: 'search query "ab" is too short' } }), { status: 422 })),
     ));
     await expect(searchWorkspaceSkills('ws1', { q: 'ab' })).rejects.toMatchObject({ message: 'search query "ab" is too short', status: 422 });
+  });
+});
+
+// The skills chosen from a repository too large to import whole go in the
+// body; without a choice the body is what it always was.
+describe('importWorkspaceSkills', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('names the chosen skills only when there are some', async () => {
+    const bodies = [];
+    vi.stubGlobal('fetch', vi.fn((_url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return Promise.resolve(new Response(JSON.stringify({ imported: [], skipped: [] }), { status: 200 }));
+    }));
+
+    await importWorkspaceSkills('ws1', 'https://github.com/a/b');
+    await importWorkspaceSkills('ws1', 'https://github.com/a/b', true, []);
+    await importWorkspaceSkills('ws1', 'https://github.com/a/b', false, ['ship', 'tools/guard']);
+    expect(bodies).toEqual([
+      { url: 'https://github.com/a/b', overwrite: false },
+      { url: 'https://github.com/a/b', overwrite: true },
+      { url: 'https://github.com/a/b', overwrite: false, skills: ['ship', 'tools/guard'] },
+    ]);
   });
 });

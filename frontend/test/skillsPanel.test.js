@@ -44,7 +44,7 @@ const api = vi.hoisted(() => ({
   importWorkspaceSkills: vi.fn(() =>
     Promise.resolve({
       imported: [{ name: 'tdd', fileCount: 2, totalBytes: 300 }],
-      skipped: [{ path: 'skills/brainstorming', reason: 'SKILL.md is 40000 bytes; the limit is 32768 bytes (32 KiB)' }],
+      skipped: [{ path: 'skills/brainstorming', reason: 'SKILL.md is 100000 bytes; the limit is 98304 bytes (96 KiB)' }],
       sourceRepo: 'obra/superpowers',
       sourceRef: 'main',
       sourceCommit: '0123456789',
@@ -104,7 +104,7 @@ describe('the Skills tab', () => {
     const el = await mount();
     await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
     expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('systematic-debugging/SKILL.md');
-    expect(text(el)).toContain('25% of the 32 KB limit');
+    expect(text(el)).toContain('8% of the 96 KB limit');
     // Plain code that is no file stays plain.
     expect(el.querySelector('[data-test="skill-body"]').innerHTML).toContain('<code>npm test</code>');
 
@@ -158,12 +158,81 @@ describe('the Skills tab', () => {
     el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await settle();
 
-    expect(api.importWorkspaceSkills).toHaveBeenCalledWith('ws1', 'https://github.com/obra/superpowers', false);
+    expect(api.importWorkspaceSkills).toHaveBeenCalledWith('ws1', 'https://github.com/obra/superpowers', false, undefined);
     const report = text(el.querySelector('[data-test="skill-import-report"]'));
     expect(report).toContain('Imported 1 skill from obra/superpowers@0123456');
-    expect(report).toContain('skills/brainstorming — SKILL.md is 40000 bytes');
+    expect(report).toContain('skills/brainstorming — SKILL.md is 100000 bytes');
     // The list is fetched again, so what arrived shows up.
     expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers the skills of a repository too large to import whole, and imports only those chosen', async () => {
+    api.importWorkspaceSkills.mockImplementationOnce(() =>
+      Promise.resolve({
+        imported: [],
+        skipped: [],
+        candidates: [
+          { name: 'ship', path: 'ship', sizeBytes: 131838, reason: 'SKILL.md is 131838 bytes; the limit is 96 KiB' },
+          { name: 'guard', path: 'guard', sizeBytes: 3401 },
+          { name: 'careful', path: 'tools/careful', sizeBytes: 3516 },
+        ],
+        sourceRepo: 'garrytan/gstack',
+        sourceRef: 'main',
+      }),
+    );
+    const el = await mount();
+    const input = el.querySelector('#skill-import-url');
+    input.value = 'https://github.com/garrytan/gstack';
+    input.dispatchEvent(new Event('input'));
+    await nextTick();
+    el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+
+    const choice = el.querySelector('[data-test="skill-import-choice"]');
+    expect(text(choice)).toContain('garrytan/gstack is too large to import whole');
+    expect(el.querySelector('[data-test="skill-import-report"]')).toBeNull();
+    expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(1);
+    // Those that can be chosen come first; one that cannot says why.
+    const rows = [...el.querySelectorAll('[data-test="skill-candidate"]')];
+    expect(rows.map((r) => r.querySelector('[data-test="skill-candidate-name"]').textContent)).toEqual(['careful', 'guard', 'ship']);
+    expect(text(rows[0])).toContain('tools/careful');
+    expect(text(rows[2])).toContain('the limit is 96 KiB');
+    expect(rows[2].querySelector('input').disabled).toBe(true);
+    const importChosen = el.querySelector('[data-test="skill-import-chosen"]');
+    expect(importChosen.disabled).toBe(true);
+
+    await click(el.querySelector('[data-test="skill-choice-all"]'));
+    expect(text(choice)).toContain('2 of 2 selected');
+    await click(el.querySelector('[data-test="skill-choice-none"]'));
+    expect(text(choice)).toContain('0 of 2 selected');
+    rows[1].querySelector('input').click();
+    await settle();
+    expect(text(importChosen)).toContain('Import 1 selected');
+
+    // The link it came from is imported, whatever is typed since.
+    input.value = 'https://github.com/other/repo';
+    input.dispatchEvent(new Event('input'));
+    await click(importChosen);
+    expect(api.importWorkspaceSkills).toHaveBeenLastCalledWith('ws1', 'https://github.com/garrytan/gstack', false, ['guard']);
+    expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
+    expect(text(el.querySelector('[data-test="skill-import-report"]'))).toContain('Imported 1 skill');
+    expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('puts a choice away on cancel', async () => {
+    api.importWorkspaceSkills.mockImplementationOnce(() =>
+      Promise.resolve({ imported: [], skipped: [], candidates: [{ name: 'guard', path: 'guard', sizeBytes: 1 }], sourceRepo: 'garrytan/gstack' }),
+    );
+    const el = await mount();
+    const input = el.querySelector('#skill-import-url');
+    input.value = 'https://github.com/garrytan/gstack';
+    input.dispatchEvent(new Event('input'));
+    await nextTick();
+    el.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const cancel = [...el.querySelectorAll('[data-test="skill-import-choice"] button')].find((b) => b.textContent.trim() === 'Cancel');
+    await click(cancel);
+    expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
   });
 
   it('offers delete and share only on the workspace\'s own skills', async () => {
