@@ -10,7 +10,9 @@ import {
   SKILL_LIMIT_BYTES,
   SkillsState,
   dirOf,
+  choosablePaths,
   formatSkillSize,
+  orderCandidates,
   githubImportUrlValid,
   inlineCodeFileMatch,
   orderSkillFiles,
@@ -250,5 +252,25 @@ describe('renderMarkdown in a skill', () => {
     // The context does not outlive the call that was given it.
     renderMarkdown(md, ctx);
     expect(links(renderMarkdown(md))).toEqual([]);
+  });
+});
+
+describe('choosing from a repository too large to import whole', () => {
+  const candidates = [
+    { name: 'ship', path: 'ship', sizeBytes: 9, reason: 'too big' },
+    { name: 'guard', path: 'b/guard', sizeBytes: 1 },
+    { name: 'guard', path: 'a/guard', sizeBytes: 1 },
+    { name: 'careful', path: 'careful', sizeBytes: 1 },
+    { name: 'audit', path: 'audit', sizeBytes: 1, reason: 'too big' },
+  ];
+
+  it('orders those that can be chosen first, then by name and path', () => {
+    expect(orderCandidates(candidates).map((c) => c.path)).toEqual(['careful', 'a/guard', 'b/guard', 'audit', 'ship']);
+    expect(orderCandidates()).toEqual([]);
+  });
+
+  it('chooses only those without a reason', () => {
+    expect(choosablePaths(candidates)).toEqual(['b/guard', 'a/guard', 'careful']);
+    expect(choosablePaths()).toEqual([]);
   });
 });

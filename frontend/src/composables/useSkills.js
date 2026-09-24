@@ -17,7 +17,7 @@ import { formatMemorySize } from './useMemories';
 export const SKILL_FILE = 'SKILL.md';
 
 /** What SKILL.md may weigh; the meter is measured against it. */
-export const SKILL_LIMIT_BYTES = 32 * 1024;
+export const SKILL_LIMIT_BYTES = 96 * 1024;
 
 /**
  * Where `renderMarkdown` parks a reference to a skill file. The sanitizer
@@ -164,7 +164,7 @@ export function orderSkillFiles(files = []) {
 /** A size in the units a person reads — the same as a memory's. */
 export const formatSkillSize = formatMemorySize;
 
-/** How full a SKILL.md is against its 32 KB cap, as a percentage 0–100. */
+/** How full a SKILL.md is against its 96 KB cap, as a percentage 0–100. */
 export function skillFullness(bytes) {
   const n = Number(bytes);
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -194,6 +194,19 @@ const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?(\.
  */
 export function githubImportUrlValid(url) {
   return GITHUB_URL.test(String(url ?? '').trim());
+}
+
+/**
+ * The skills a repository too large to import whole offers, those that can be
+ * chosen first, each by name. A candidate with a reason cannot be imported.
+ */
+export function orderCandidates(candidates = []) {
+  return [...candidates].sort((a, b) => Number(!!a.reason) - Number(!!b.reason) || a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+}
+
+/** The paths of the candidates that can be chosen. */
+export function choosablePaths(candidates = []) {
+  return candidates.filter((c) => !c.reason).map((c) => c.path);
 }
 
 /** What the panel should be showing. */

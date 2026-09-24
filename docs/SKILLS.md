@@ -29,7 +29,7 @@ description: Use when reviewing a pull request, before leaving any comments.
 | File name | Exactly `SKILL.md` |
 | `name` | Lowercase letters and digits joined by single hyphens, at most 64 characters. Unique among the skills a workspace can use, including skills shared into it |
 | `description` | Required, at most 1024 characters, no `<` or `>` |
-| `SKILL.md` size | At most 32 KiB |
+| `SKILL.md` size | At most 96 KiB |
 | Other files | At most 64 KiB each, UTF-8 text only |
 | Paths | Relative to the skill. No `..`, no absolute paths, no hidden files, at most 255 characters |
 | Files per skill | At most 64, including `SKILL.md` |
@@ -58,12 +58,14 @@ https://github.com/obra/superpowers/tree/main/skills/systematic-debugging
 Everything else is left out, including one of those meta files unless something references it.
 
 **The import report** lists what was imported and, for everything skipped, the reason. For example:
-- a `SKILL.md` over 32 KiB, which skips the whole skill
+- a `SKILL.md` over 96 KiB, which skips the whole skill
 - a binary, symlink or hidden file
 - a file nothing references
 - a name the workspace already uses
 
 Every skill in obra/superpowers fits these limits, so importing it brings in all of them.
+
+**Large repositories.** A repository whose download is over 20 MB compressed or 64 MB unpacked, such as garrytan/gstack, is not imported whole. The tab lists its skills instead, with each `SKILL.md`'s size and, greyed out, any that are over a limit. Tick the ones you want and choose **Import selected**: only their files are downloaded.
 
 **Overwrite existing** replaces skills this workspace already owns under the same name. A skill shared into the workspace is never replaced.
 

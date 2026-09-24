@@ -532,6 +532,9 @@ paths:
         own README, CLAUDE, AGENTS and similar meta files, and any other file
         its kept files reference, directly or in turn. Anything left out is
         listed in `skipped` with the reason, rather than failing the import.
+        A repository too large to download whole imports nothing: its skills
+        come back in `candidates`, and the import is asked again with the
+        wanted ones in `skills`, which are then read file by file.
       requestBody:
         required: true
         content:
@@ -552,6 +555,14 @@ paths:
                   description: >
                     Replace a skill this workspace owns that has the same name.
                     A skill shared into the workspace is never replaced.
+                skills:
+                  type: array
+                  maxItems: 256
+                  items: { type: string }
+                  example: [ship, careful]
+                  description: >
+                    Import only these skills, by their directory in the
+                    repository as `candidates` gives it.
       responses:
         '200':
           description: What was imported, and what was left out
@@ -565,7 +576,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '502':
-          description: GitHub could not be reached, or the repository is too large to import whole
+          description: GitHub could not be reached, or would not list a repository too large to import whole
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2263,7 +2274,7 @@ components:
         path: { type: string, maxLength: 255 }
         sizeBytes:
           type: integer
-          description: At most 32768 for SKILL.md and 65536 for any other file.
+          description: At most 98304 for SKILL.md and 65536 for any other file.
         updatedAt: { type: string, format: date-time }
         content:
           type: string
@@ -2294,6 +2305,19 @@ components:
             properties:
               name: { type: string }
               path: { type: string }
+              reason: { type: string }
+        candidates:
+          type: array
+          description: >
+            Present only when the repository is too large to import whole and
+            no skills were chosen: the skills to choose from, with the reason
+            one cannot be imported when that is already known.
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              path: { type: string }
+              sizeBytes: { type: integer, description: The size of its SKILL.md }
               reason: { type: string }
         sourceRepo: { type: string }
         sourceRef: { type: string }

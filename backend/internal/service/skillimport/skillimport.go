@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
@@ -38,6 +39,15 @@ const (
 	maxExtractedBytes = 64 * 1024 * 1024
 	maxCollectedBytes = 16 * 1024 * 1024
 	requestTimeout    = 30 * time.Second
+
+	// MaxSelected caps the skills one import may choose.
+	MaxSelected = 256
+	// maxTreeBytes caps GitHub's listing of a repository's files.
+	maxTreeBytes = 32 * 1024 * 1024
+	// maxRawFiles caps the files one import reads one by one, and
+	// rawParallel how many it reads at a time.
+	maxRawFiles = 1024
+	rawParallel = 8
 )
 
 var (
@@ -87,6 +97,18 @@ type (
 		Reason string
 	}
 
+	// Candidate is a skill a repository offers, found before any of its
+	// files are read.
+	Candidate struct {
+		Name string
+		// Path is the skill's directory in the repository, and what an
+		// import names to choose it.
+		Path       string
+		SkillBytes int64
+		// Reason says why it cannot be imported, when that is already known.
+		Reason string
+	}
+
 	// Result is everything an import found.
 	Result struct {
 		Repo    string
@@ -94,17 +116,24 @@ type (
 		Commit  string
 		Skills  []Skill
 		Skipped []Skip
+		// Candidates are set instead of Skills when the repository is too
+		// large to import whole and no skills were chosen: the import is
+		// asked again, naming the ones wanted.
+		Candidates []Candidate
 	}
 
 	// Service imports skills from GitHub.
 	Service interface {
-		Fetch(ctx context.Context, rawURL string) (*Result, error)
+		// Fetch imports the skills a link names; only, when not empty, is the
+		// directories of the skills wanted.
+		Fetch(ctx context.Context, rawURL string, only []string) (*Result, error)
 	}
 
 	service struct {
 		client       *http.Client
 		apiBase      string
 		codeloadBase string
+		rawBase      string
 		// Byte budgets for one download: compressed, extracted, and held in
 		// memory. Fields rather than constants so tests can reach them.
 		maxDownload, maxExtracted, maxCollected int64
@@ -114,7 +143,14 @@ type (
 		path    string
 		content []byte
 		reason  string
+		// unread is a file listed by GitHub's tree whose content has not
+		// been downloaded; its size is what the tree says.
+		unread bool
+		size   int64
 	}
+
+	// tooLargeError is an archive over the download budgets.
+	tooLargeError struct{ msg string }
 
 	// manifest is the part of a plugin.json an import reads.
 	manifest struct {
@@ -133,6 +169,7 @@ func New() Service {
 		client:       &http.Client{Timeout: requestTimeout},
 		apiBase:      "https://api.github.com",
 		codeloadBase: "https://codeload.github.com",
+		rawBase:      "https://raw.githubusercontent.com",
 		maxDownload:  maxDownloadBytes,
 		maxExtracted: maxExtractedBytes,
 		maxCollected: maxCollectedBytes,
@@ -172,7 +209,9 @@ func ParseURL(raw string) (Source, error) {
 	return src, nil
 }
 
-func (s *service) Fetch(ctx context.Context, rawURL string) (*Result, error) {
+func (e tooLargeError) Error() string { return e.msg }
+
+func (s *service) Fetch(ctx context.Context, rawURL string, only []string) (*Result, error) {
 	src, err := ParseURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -196,11 +235,35 @@ func (s *service) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 		archiveRef = commit
 	}
 
-	entries, manifests, err := s.download(ctx, repo, archiveRef, src.SubPath)
+	// A chosen few skills are read file by file: their repository was too
+	// large for the archive, or they would not have been chosen.
+	var entries []entry
+	var manifests map[string][]byte
+	if len(only) == 0 {
+		entries, manifests, err = s.download(ctx, repo, archiveRef, src.SubPath)
+	}
+	var big tooLargeError
+	tooLarge := errors.As(err, &big)
+	if len(only) > 0 || tooLarge {
+		if entries, manifests, err = s.listTree(ctx, repo, archiveRef, src.SubPath); err != nil {
+			if tooLarge {
+				return nil, fmt.Errorf("%v, and GitHub would not list its files to choose from: %w", big, err)
+			}
+			return nil, err
+		}
+		if len(only) == 0 {
+			res := offer(entries, manifests, src)
+			res.Repo, res.Ref, res.Commit = repo, src.Ref, commit
+			return res, nil
+		}
+		if err := s.readChosen(ctx, repo, archiveRef, entries, manifests, src, only); err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	res := collect(entries, manifests, src)
+	res := collect(entries, manifests, src, only)
 	res.Repo, res.Ref, res.Commit = repo, src.Ref, commit
 	return res, nil
 }
@@ -292,7 +355,7 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 
 	// The whole archive is read whatever directory the link names, so a
 	// narrower link does not help; say what the limits are instead.
-	tooLarge := fmt.Errorf("%s is too large to import: its archive may be at most %d MB compressed and %d MB unpacked", repo, s.maxDownload>>20, s.maxExtracted>>20)
+	tooLarge := tooLargeError{fmt.Sprintf("%s is too large to import: its archive may be at most %d MB compressed and %d MB unpacked", repo, s.maxDownload>>20, s.maxExtracted>>20)}
 	gz, err := gzip.NewReader(&limitedReader{r: resp.Body, left: s.maxDownload})
 	if err != nil {
 		if errors.Is(err, errTooLarge) {
@@ -366,8 +429,9 @@ func (s *service) download(ctx context.Context, repo, ref, subPath string) ([]en
 }
 
 // collect groups what was downloaded into skills, and each file belongs to
-// the innermost skill above it.
-func collect(entries []entry, manifests map[string][]byte, src Source) *Result {
+// the innermost skill above it. Only the skills in only are kept, when it
+// names any.
+func collect(entries []entry, manifests map[string][]byte, src Source, only []string) *Result {
 	res := &Result{}
 	dirs, ids, skips := skillDirs(entries, manifests, src)
 	res.Skipped = append(res.Skipped, skips...)
@@ -384,21 +448,19 @@ func collect(entries []entry, manifests map[string][]byte, src Source) *Result {
 	}
 	sort.Strings(ordered)
 
+	chosen := map[string]bool{}
+	for _, p := range only {
+		chosen[p] = true
+	}
 	seen := map[string]bool{}
 	budget := MaxImportBytes
 	for _, d := range ordered {
 		repoPath := path.Join(src.SubPath, d)
-		dirName := path.Base(d)
-		if d == "" {
-			dirName = path.Base(src.SubPath)
-			if src.SubPath == "" {
-				dirName = src.Repo
-			}
+		if len(only) > 0 && !chosen[repoPath] {
+			continue
 		}
-		if id := ids[d]; id != "" {
-			dirName = id
-		}
-		sk, skips, reason := buildSkill(d, dirName, byDir[d], repoPath)
+		delete(chosen, repoPath)
+		sk, skips, reason := buildSkill(d, defaultName(d, ids, src), byDir[d], repoPath)
 		switch {
 		case reason != "":
 		case seen[sk.Name]:
@@ -418,7 +480,216 @@ func collect(entries []entry, manifests map[string][]byte, src Source) *Result {
 		res.Skills = append(res.Skills, sk)
 		res.Skipped = append(res.Skipped, skips...)
 	}
+	for _, p := range only {
+		if chosen[p] {
+			delete(chosen, p)
+			res.Skipped = append(res.Skipped, Skip{Path: p, Reason: "is not a skill in this repository"})
+		}
+	}
 	return res
+}
+
+// defaultName is what the skill in directory d is called when its SKILL.md
+// names nothing: its manifest id, else its directory's name.
+func defaultName(d string, ids map[string]string, src Source) string {
+	if id := ids[d]; id != "" {
+		return id
+	}
+	if d != "" {
+		return path.Base(d)
+	}
+	if src.SubPath != "" {
+		return path.Base(src.SubPath)
+	}
+	return src.Repo
+}
+
+// offer lists the skills a listed repository holds, for an import to choose
+// from, with what is already known to keep one out.
+func offer(entries []entry, manifests map[string][]byte, src Source) *Result {
+	dirs, ids, skips := skillDirs(entries, manifests, src)
+	res := &Result{Skipped: skips, Candidates: []Candidate{}}
+	files := map[string]entry{}
+	for _, e := range entries {
+		files[e.path] = e
+	}
+	for d := range dirs {
+		f := files[path.Join(d, skill.FileName)]
+		reason := f.reason
+		if reason != "" {
+			reason = skill.FileName + " " + reason
+		}
+		res.Candidates = append(res.Candidates, Candidate{
+			Name: defaultName(d, ids, src), Path: path.Join(src.SubPath, d), SkillBytes: f.size, Reason: reason,
+		})
+	}
+	sort.Slice(res.Candidates, func(i, j int) bool { return res.Candidates[i].Path < res.Candidates[j].Path })
+	return res
+}
+
+// listTree lists the files under subPath, and reads the plugin manifests at
+// the repository's root, from GitHub's tree of the ref: one API call, where
+// the archive would download everything. Contents are read later, and only
+// for the skills chosen.
+func (s *service) listTree(ctx context.Context, repo, ref, subPath string) ([]entry, map[string][]byte, error) {
+	resp, err := s.get(ctx, s.apiBase+"/repos/"+repo+"/git/trees/"+ref+"?recursive=1", "application/vnd.github+json")
+	if err != nil {
+		return nil, nil, fmt.Errorf("reach GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil, fmt.Errorf("%w: %s has no branch, tag or commit %q", ErrNotFound, repo, ref)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("GitHub answered %d listing the files of %s", resp.StatusCode, repo)
+	}
+	var body struct {
+		Truncated bool `json:"truncated"`
+		Tree      []struct {
+			Path string `json:"path"`
+			Mode string `json:"mode"`
+			Type string `json:"type"`
+			Size int64  `json:"size"`
+		} `json:"tree"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxTreeBytes)).Decode(&body); err != nil {
+		return nil, nil, fmt.Errorf("GitHub sent a file list for %s that could not be read: %w", repo, err)
+	}
+	if body.Truncated {
+		return nil, nil, fmt.Errorf("%s has more files than GitHub will list at once", repo)
+	}
+
+	prefix := ""
+	if subPath != "" {
+		prefix = subPath + "/"
+	}
+	var entries []entry
+	manifests := map[string][]byte{}
+	for _, t := range body.Tree {
+		if t.Type != "blob" {
+			continue
+		}
+		if slices.Contains(manifestPaths, t.Path) && t.Size <= skill.MaxSubFileBytes {
+			content, err := s.readRaw(ctx, repo, ref, t.Path)
+			if err != nil {
+				return nil, nil, err
+			}
+			manifests[t.Path] = content
+			continue
+		}
+		if !strings.HasPrefix(t.Path, prefix) {
+			continue
+		}
+		e := entry{path: t.Path[len(prefix):], size: t.Size, unread: true}
+		switch {
+		case t.Mode == "120000":
+			e.reason, e.unread = "links are not imported", false
+		case t.Size > fileLimit(e.path):
+			e.reason, e.unread = fmt.Sprintf("is %d bytes; the limit is %d KiB", t.Size, fileLimit(e.path)/1024), false
+		}
+		entries = append(entries, e)
+	}
+	return entries, manifests, nil
+}
+
+// readChosen downloads what the chosen skills keep: SKILL.md, their Markdown,
+// and each file one of those references, and so on — the files collect would
+// keep from the archive, so both ways import the same skill. The rest stay
+// unread and are reported as unreferenced.
+func (s *service) readChosen(ctx context.Context, repo, ref string, entries []entry, manifests map[string][]byte, src Source, only []string) error {
+	dirs, _, _ := skillDirs(entries, manifests, src)
+	byDir := map[string][]int{}
+	for i, e := range entries {
+		if d, ok := owningDir(e.path, dirs); ok && slices.Contains(only, path.Join(src.SubPath, d)) {
+			byDir[d] = append(byDir[d], i)
+		}
+	}
+	prefix := ""
+	if src.SubPath != "" {
+		prefix = src.SubPath + "/"
+	}
+	budget, count := s.maxCollected, 0
+	read := func(batch []int) error {
+		for _, i := range batch {
+			if count++; count > maxRawFiles {
+				return fmt.Errorf("the chosen skills have more than %d files to read; choose fewer", maxRawFiles)
+			}
+			if budget -= entries[i].size; budget < 0 {
+				return fmt.Errorf("the chosen skills are larger than %d MB; choose fewer", s.maxCollected>>20)
+			}
+		}
+		return s.readEntries(ctx, repo, ref, prefix, entries, batch)
+	}
+
+	for d, idx := range byDir {
+		repoPath := path.Join(src.SubPath, d)
+		rel := func(i int) string { return strings.TrimPrefix(strings.TrimPrefix(entries[i].path, d), "/") }
+		reached := map[int]bool{}
+		var batch []int
+		for _, i := range idx {
+			if r := rel(i); entries[i].unread && (r == skill.FileName || isSkillMarkdown(r)) {
+				reached[i] = true
+				batch = append(batch, i)
+			}
+		}
+		for len(batch) > 0 {
+			if err := read(batch); err != nil {
+				return err
+			}
+			var next []int
+			for _, from := range batch {
+				text, dir := string(entries[from].content), dirOf(rel(from))
+				for _, i := range idx {
+					if !reached[i] && entries[i].unread && mentions(text, dir, rel(i), repoPath) {
+						reached[i] = true
+						next = append(next, i)
+					}
+				}
+			}
+			batch = next
+		}
+	}
+	return nil
+}
+
+// readEntries downloads the entries at idx, a few at a time.
+func (s *service) readEntries(ctx context.Context, repo, ref, prefix string, entries []entry, idx []int) error {
+	var wg sync.WaitGroup
+	errs := make([]error, len(idx))
+	sem := make(chan struct{}, rawParallel)
+	for n, i := range idx {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			content, err := s.readRaw(ctx, repo, ref, prefix+entries[i].path)
+			entries[i].content, entries[i].unread, errs[n] = content, false, err
+		}()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// readRaw downloads one file of the repository at ref.
+func (s *service) readRaw(ctx context.Context, repo, ref, p string) ([]byte, error) {
+	segs := strings.Split(p, "/")
+	for i := range segs {
+		segs[i] = url.PathEscape(segs[i])
+	}
+	resp, err := s.get(ctx, s.rawBase+"/"+repo+"/"+ref+"/"+strings.Join(segs, "/"), "")
+	if err != nil {
+		return nil, fmt.Errorf("download from GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub answered %d downloading %s from %s", resp.StatusCode, p, repo)
+	}
+	content, err := io.ReadAll(io.LimitReader(resp.Body, fileLimit(p)+1))
+	if err != nil {
+		return nil, fmt.Errorf("download %s from %s: %w", p, repo, err)
+	}
+	return content, nil
 }
 
 // skillDirs finds the skills' directories. The first plugin manifest that

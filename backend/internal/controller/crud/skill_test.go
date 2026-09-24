@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,13 +43,14 @@ const (
 var skUserStr = monoflake.ID(skUser).String()
 
 type fakeImporter struct {
-	res *skillimport.Result
-	err error
-	url string
+	res  *skillimport.Result
+	err  error
+	url  string
+	only []string
 }
 
-func (f *fakeImporter) Fetch(ctx context.Context, rawURL string) (*skillimport.Result, error) {
-	f.url = rawURL
+func (f *fakeImporter) Fetch(ctx context.Context, rawURL string, only []string) (*skillimport.Result, error) {
+	f.url, f.only = rawURL, only
 	return f.res, f.err
 }
 
@@ -453,7 +455,7 @@ func githubResult(skills ...skillimport.Skill) *skillimport.Result {
 	return &skillimport.Result{
 		Repo: "obra/superpowers", Ref: "main", Commit: strings.Repeat("a", 40),
 		Skills:  skills,
-		Skipped: []skillimport.Skip{{Name: "brainstorming", Path: "skills/brainstorming", Reason: "SKILL.md is 40000 bytes; the limit is 32768 bytes (32 KiB)"}},
+		Skipped: []skillimport.Skip{{Name: "brainstorming", Path: "skills/brainstorming", Reason: "SKILL.md is 100000 bytes; the limit is 98304 bytes (96 KiB)"}},
 	}
 }
 
@@ -490,7 +492,7 @@ func TestSkills_Import(t *testing.T) {
 	for _, s := range rs.Skipped {
 		reasons[s.Name] = s.Reason
 	}
-	for name, want := range map[string]string{"brainstorming": "32 KiB", "tdd": "overwrite", "lint": "shared into this workspace"} {
+	for name, want := range map[string]string{"brainstorming": "96 KiB", "tdd": "overwrite", "lint": "shared into this workspace"} {
 		if !strings.Contains(reasons[name], want) {
 			t.Errorf("skipped %s: %q, want %q", name, reasons[name], want)
 		}
@@ -545,6 +547,33 @@ func TestSkills_ImportErrors(t *testing.T) {
 	e.c.skillImport = nil
 	_, err = e.c.ImportSkills(e.ctx, req)
 	wantSkillErr(t, err, SkillUpstream, "not available")
+}
+
+// A repository too large to import whole imports nothing and passes on the
+// skills it offers; the choice made from them reaches the importer.
+func TestSkills_ImportOffersAndChooses(t *testing.T) {
+	e := newSkillEnv(t)
+	e.importer.res = &skillimport.Result{
+		Repo: "garrytan/gstack", Ref: "main", Commit: "abc",
+		Candidates: []skillimport.Candidate{{Name: "ship", Path: "ship", SkillBytes: 77710, Reason: "SKILL.md is too big"}, {Name: "careful", Path: "careful", SkillBytes: 3516}},
+	}
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []entity.SkillImportCandidate{{Name: "ship", Path: "ship", SkillBytes: 77710, Reason: "SKILL.md is too big"}, {Name: "careful", Path: "careful", SkillBytes: 3516}}
+	if len(rs.Imported) != 0 || !slices.Equal(rs.Candidates, want) || rs.SourceRepo != "garrytan/gstack" {
+		t.Fatalf("got %+v", rs)
+	}
+
+	e.importer.res = githubResult(importedSkill("careful", "Careful."))
+	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Skills: []string{"careful"}})
+	if err != nil || len(rs.Imported) != 1 || len(rs.Candidates) != 0 || !slices.Equal(e.importer.only, []string{"careful"}) {
+		t.Fatalf("got %+v, %v; importer saw %v", rs, err, e.importer.only)
+	}
+
+	_, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Skills: make([]string, skillimport.MaxSelected+1)})
+	wantSkillErr(t, err, SkillInvalid, "at most 256 skills")
 }
 
 // A storage failure part-way through an import leaves no blob behind.

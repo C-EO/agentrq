@@ -84,7 +84,7 @@ func FromHTTPRequestToImportSkillsRequestEntity(c *fiber.Ctx) *entity.ImportSkil
 	if err := c.BodyParser(&rq); err != nil || rq.URL == "" {
 		return nil
 	}
-	return &entity.ImportSkillsRequest{WorkspaceID: workspaceID, URL: rq.URL, Overwrite: rq.Overwrite}
+	return &entity.ImportSkillsRequest{WorkspaceID: workspaceID, URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills}
 }
 
 func FromHTTPRequestToListSkillSharesRequestEntity(c *fiber.Ctx) *entity.ListSkillSharesRequest {
@@ -144,6 +144,9 @@ func FromImportSkillsResponseEntityToHTTPResponse(rs *entity.ImportSkillsRespons
 	}
 	for i, s := range rs.Skipped {
 		out.Skipped[i] = view.SkippedSkillEntry{Name: s.Name, Path: s.Path, Reason: s.Reason}
+	}
+	for _, s := range rs.Candidates {
+		out.Candidates = append(out.Candidates, view.SkillImportCandidate{Name: s.Name, Path: s.Path, SizeBytes: s.SkillBytes, Reason: s.Reason})
 	}
 	payload, _ := json.Marshal(out)
 	return payload

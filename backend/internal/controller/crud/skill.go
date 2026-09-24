@@ -380,9 +380,11 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 }
 
 // ImportSkills copies every skill in a GitHub repository (or one directory of
-// it) into the workspace. A skill whose name is already taken is reported and
-// left alone, unless overwrite asks to replace one this workspace owns; a
-// skill shared in from elsewhere is never replaced.
+// it) into the workspace, or only the skills req.Skills names. A repository
+// too large to import whole imports nothing and offers its skills to choose
+// from instead. A skill whose name is already taken is reported and left
+// alone, unless overwrite asks to replace one this workspace owns; a skill
+// shared in from elsewhere is never replaced.
 func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRequest) (*entity.ImportSkillsResponse, error) {
 	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
@@ -394,7 +396,10 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 	if c.limiter != nil && !c.limiter.AllowSkillImport(uid) {
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
-	res, err := c.skillImport.Fetch(ctx, req.URL)
+	if len(req.Skills) > skillimport.MaxSelected {
+		return nil, skillErr(SkillInvalid, "choose at most %d skills in one import", skillimport.MaxSelected)
+	}
+	res, err := c.skillImport.Fetch(ctx, req.URL, req.Skills)
 	if err != nil {
 		if errors.Is(err, skillimport.ErrInvalidURL) || errors.Is(err, skillimport.ErrNotFound) {
 			return nil, skillErr(SkillInvalid, "%v", err)
@@ -428,6 +433,9 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 	}
 	for _, sk := range res.Skipped {
 		out.Skipped = append(out.Skipped, entity.SkillImportSkip{Name: sk.Name, Path: sk.Path, Reason: sk.Reason})
+	}
+	for _, cd := range res.Candidates {
+		out.Candidates = append(out.Candidates, entity.SkillImportCandidate{Name: cd.Name, Path: cd.Path, SkillBytes: cd.SkillBytes, Reason: cd.Reason})
 	}
 
 	for _, sk := range res.Skills {

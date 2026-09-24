@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,7 @@ func (s *skillCrud) ImportSkills(_ context.Context, rq entity.ImportSkillsReques
 	return &entity.ImportSkillsResponse{
 		Imported:   []entity.Skill{{Name: "tdd", FileCount: 2, TotalBytes: 30}},
 		Skipped:    []entity.SkillImportSkip{{Path: "skills/big", Reason: "too big"}},
+		Candidates: []entity.SkillImportCandidate{{Name: "ship", Path: "ship", SkillBytes: 77710, Reason: "SKILL.md is too big"}, {Name: "careful", Path: "careful", SkillBytes: 3516}},
 		SourceRepo: "obra/superpowers", SourceRef: "main",
 	}, s.err
 }
@@ -142,6 +144,9 @@ func TestSkillRoutes(t *testing.T) {
 		{"import", http.MethodPost, prefix + "/import", `{"url":"https://github.com/obra/superpowers","overwrite":true}`, 200,
 			entity.ImportSkillsRequest{WorkspaceID: 4242, UserID: "user-1", URL: "https://github.com/obra/superpowers", Overwrite: true},
 			[]string{`"imported":[{"name":"tdd","fileCount":2,"totalBytes":30}]`, `"skipped":[{"path":"skills/big","reason":"too big"}]`, `"sourceRef":"main"`}},
+		{"import, choosing skills", http.MethodPost, prefix + "/import", `{"url":"https://github.com/garrytan/gstack","skills":["ship","careful"]}`, 200,
+			entity.ImportSkillsRequest{WorkspaceID: 4242, UserID: "user-1", URL: "https://github.com/garrytan/gstack", Skills: []string{"ship", "careful"}},
+			[]string{`"candidates":[{"name":"ship","path":"ship","sizeBytes":77710,"reason":"SKILL.md is too big"},{"name":"careful","path":"careful","sizeBytes":3516}]`}},
 		{"delete", http.MethodDelete, prefix + "/tdd", "", 204, entity.DeleteSkillRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd"}, nil},
 		{"shares", http.MethodGet, prefix + "/tdd/shares", "", 200, entity.ListSkillSharesRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd"},
 			[]string{`"shares":[{"targetWorkspaceId":"` + skillTarget + `"`}},
@@ -156,7 +161,7 @@ func TestSkillRoutes(t *testing.T) {
 			if status != tc.status {
 				t.Fatalf("status %d, want %d: %s", status, tc.status, body)
 			}
-			if c.saw != tc.want {
+			if !reflect.DeepEqual(c.saw, tc.want) {
 				t.Errorf("controller saw %+v, want %+v", c.saw, tc.want)
 			}
 			for _, s := range tc.contains {

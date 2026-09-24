@@ -43,6 +43,42 @@
         </span>
       </div>
       <p v-if="importError" class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ importError }}</p>
+      <!-- A repository too large to import whole: choose what to take. -->
+      <div v-if="choice" data-test="skill-import-choice" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
+        <p class="font-bold break-words">
+          {{ choice.repo }} is too large to import whole. Choose the skills to import:
+        </p>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" data-test="skill-choice-all" @click="chosen = choosablePaths(choice.candidates)"
+                  class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Select all</button>
+          <button type="button" data-test="skill-choice-none" @click="chosen = []"
+                  class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Select none</button>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500">{{ chosen.length }} of {{ choosablePaths(choice.candidates).length }} selected</span>
+        </div>
+        <ul class="max-h-72 overflow-y-auto space-y-1 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-sm p-2">
+          <li v-for="c in choice.candidates" :key="c.path" data-test="skill-candidate">
+            <label class="flex items-start gap-2 min-w-0" :class="c.reason ? 'opacity-50' : 'cursor-pointer'">
+              <input v-model="chosen" type="checkbox" :value="c.path" :disabled="!!c.reason" class="mt-0.5 shrink-0 rounded-sm border-gray-300 dark:border-zinc-600" />
+              <span class="min-w-0 flex-1">
+                <span class="flex flex-wrap items-baseline gap-x-2">
+                  <span data-test="skill-candidate-name" class="font-mono font-bold break-all">{{ c.name }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">{{ formatSkillSize(c.sizeBytes) }}</span>
+                  <span v-if="c.path && c.path !== c.name" class="text-[10px] font-mono text-gray-400 dark:text-zinc-500 break-all">{{ c.path }}</span>
+                </span>
+                <span v-if="c.reason" class="block break-words text-amber-600 dark:text-amber-400">{{ c.reason }}</span>
+              </span>
+            </label>
+          </li>
+        </ul>
+        <div class="flex items-center gap-2">
+          <button type="button" data-test="skill-import-chosen" :disabled="importing || !chosen.length" @click="importChosen"
+                  class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-[11px] font-black uppercase tracking-widest disabled:opacity-40">
+            {{ importing ? 'Importing…' : `Import ${chosen.length} selected` }}
+          </button>
+          <button type="button" @click="choice = null"
+                  class="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">Cancel</button>
+        </div>
+      </div>
       <div v-if="importReport" data-test="skill-import-report" class="space-y-2 text-[11px] text-gray-700 dark:text-zinc-300">
         <p class="font-bold">
           Imported {{ importReport.imported.length }} {{ importReport.imported.length === 1 ? 'skill' : 'skills' }}
@@ -120,7 +156,7 @@
             </div>
             <div class="flex items-center gap-3">
               <span v-if="current.path === SKILL_FILE && current.sizeBytes" class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
-                {{ skillFullness(current.sizeBytes) }}% of the 32 KB limit
+                {{ skillFullness(current.sizeBytes) }}% of the 96 KB limit
               </span>
               <button type="button" @click="showRaw = !showRaw"
                       :class="showRaw ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
@@ -189,8 +225,10 @@ import { renderMarkdown } from '../utils/markdown';
 import {
   SKILL_FILE,
   SkillsState,
+  choosablePaths,
   formatSkillSize,
   githubImportUrlValid,
+  orderCandidates,
   orderSkills,
   skillBody,
   skillBreadcrumb,
@@ -319,19 +357,39 @@ const importOverwrite = ref(false);
 const importing = ref(false);
 const importReport = ref(null);
 const importError = ref('');
+// A repository too large to import whole offers its skills instead: the link
+// they came from, and which of them are ticked.
+const choice = ref(null);
+const chosen = ref([]);
 
-async function runImport() {
+async function doImport(url, skills) {
   importing.value = true;
   importError.value = '';
   importReport.value = null;
   try {
-    importReport.value = await importWorkspaceSkills(props.workspaceId, importUrl.value.trim(), importOverwrite.value);
+    const res = await importWorkspaceSkills(props.workspaceId, url, importOverwrite.value, skills);
+    if (res.candidates?.length) {
+      choice.value = { url, repo: res.sourceRepo, candidates: orderCandidates(res.candidates) };
+      chosen.value = [];
+      return;
+    }
+    choice.value = null;
+    importReport.value = res;
     await loadSkills();
   } catch (err) {
     importError.value = err.message;
   } finally {
     importing.value = false;
   }
+}
+
+function runImport() {
+  choice.value = null;
+  return doImport(importUrl.value.trim());
+}
+
+function importChosen() {
+  return doImport(choice.value.url, [...chosen.value]);
 }
 
 // ── Deleting and sharing ────────────────────────────────────────────────────

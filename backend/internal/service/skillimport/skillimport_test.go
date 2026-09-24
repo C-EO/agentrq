@@ -73,7 +73,13 @@ type fakeGitHub struct {
 	commitBody   string
 	tarStatus    int
 	tarball      []byte
-	requests     []string
+	treeStatus   int
+	treeBody     string
+	// raw is the files served one by one, by their path in the repository;
+	// rawStatus answers for any other.
+	raw       map[string]string
+	rawStatus int
+	requests  []string
 }
 
 func (f *fakeGitHub) server(t *testing.T) (*service, func()) {
@@ -81,6 +87,21 @@ func (f *fakeGitHub) server(t *testing.T) (*service, func()) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.requests = append(f.requests, r.URL.Path)
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/repos/") && strings.Contains(r.URL.Path, "/git/trees/"):
+			if r.URL.Query().Get("recursive") != "1" {
+				t.Errorf("tree must be listed recursively, got %s", r.URL.RawQuery)
+			}
+			w.WriteHeader(orDefault(f.treeStatus))
+			w.Write([]byte(f.treeBody))
+		case strings.HasPrefix(r.URL.Path, "/raw/"):
+			// /raw/<owner>/<repo>/<ref>/<path>
+			parts := strings.SplitN(r.URL.Path, "/", 6)
+			body, ok := f.raw[parts[5]]
+			if !ok {
+				w.WriteHeader(orDefault(f.rawStatus))
+				return
+			}
+			w.Write([]byte(body))
 		case strings.HasPrefix(r.URL.Path, "/api/repos/") && strings.Contains(r.URL.Path, "/commits/"):
 			if r.Header.Get("Accept") != "application/vnd.github.sha" {
 				t.Errorf("commit lookup must ask for the bare SHA, got Accept %q", r.Header.Get("Accept"))
@@ -99,7 +120,7 @@ func (f *fakeGitHub) server(t *testing.T) (*service, func()) {
 		}
 	}))
 	return &service{
-		client: srv.Client(), apiBase: srv.URL + "/api", codeloadBase: srv.URL + "/codeload",
+		client: srv.Client(), apiBase: srv.URL + "/api", codeloadBase: srv.URL + "/codeload", rawBase: srv.URL + "/raw",
 		maxDownload: maxDownloadBytes, maxExtracted: maxExtractedBytes, maxCollected: maxCollectedBytes,
 	}, srv.Close
 }
@@ -113,7 +134,7 @@ func orDefault(status int) int {
 
 func TestNew(t *testing.T) {
 	s := New().(*service)
-	if s.apiBase != "https://api.github.com" || s.codeloadBase != "https://codeload.github.com" || s.client.Timeout == 0 {
+	if s.apiBase != "https://api.github.com" || s.codeloadBase != "https://codeload.github.com" || s.rawBase != "https://raw.githubusercontent.com" || s.client.Timeout == 0 {
 		t.Errorf("New must talk to github.com with a timeout, got %+v", s)
 	}
 }
@@ -194,7 +215,7 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/obra/superpowers")
+	res, err := s.Fetch(context.Background(), "https://github.com/obra/superpowers", nil)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -243,7 +264,7 @@ func TestFetch_SuperpowersShapedRepository(t *testing.T) {
 		reasons[sk.Path] = sk.Reason
 	}
 	for p, want := range map[string]string{
-		"skills/brainstorming":                  "32 KiB",
+		"skills/brainstorming":                  "96 KiB",
 		"skills/no-description":                 "needs a description",
 		"skills/linked":                         "links are not imported",
 		"skills/dupe-b":                         "already called",
@@ -276,7 +297,7 @@ func TestFetch_SubPathAndRootSkill(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main/skills/pr-reviewer")
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main/skills/pr-reviewer", nil)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -306,7 +327,7 @@ func TestFetch_RepositoryRootSkillIsNamedAfterTheRepository(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/my-skill")
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/my-skill", nil)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -334,7 +355,7 @@ func TestFetch_Limits(t *testing.T) {
 	s, done := gh.server(t)
 	defer done()
 
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main")
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -384,7 +405,7 @@ func TestFetch_Errors(t *testing.T) {
 			gh := tc.gh
 			s, done := gh.server(t)
 			defer done()
-			res, err := s.Fetch(context.Background(), tc.url)
+			res, err := s.Fetch(context.Background(), tc.url, nil)
 			if tc.want == "" && tc.is == nil {
 				// An empty archive is not an error, just an import of nothing.
 				if err != nil || len(res.Skills) != 0 {
@@ -423,7 +444,7 @@ func TestFetch_TruncatedFileBody(t *testing.T) {
 	gh := &fakeGitHub{commitStatus: 404, tarball: gzipped(raw.Bytes())}
 	s, done := gh.server(t)
 	defer done()
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -432,10 +453,10 @@ func TestFetch_NetworkError(t *testing.T) {
 	gh := &fakeGitHub{}
 	s, done := gh.server(t)
 	done() // nothing is listening any more
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/b"); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/b", nil); err == nil || !strings.Contains(err.Error(), "reach GitHub") {
 		t.Errorf("repo lookup: %v", err)
 	}
-	if _, err := s.Fetch(context.Background(), "https://github.com/a/b/tree/main"); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
+	if _, err := s.Fetch(context.Background(), "https://github.com/a/b/tree/main", nil); err == nil || !strings.Contains(err.Error(), "download from GitHub") {
 		t.Errorf("download: %v", err)
 	}
 }
@@ -470,7 +491,7 @@ func TestFetch_TooLarge(t *testing.T) {
 			s, done := gh.server(t)
 			defer done()
 			tc.limit(s)
-			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main")
+			_, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil)
 			if err == nil || !strings.Contains(err.Error(), "too large to import:") {
 				t.Fatalf("got %v", err)
 			}
@@ -481,7 +502,7 @@ func TestFetch_TooLarge(t *testing.T) {
 		s, done := gh.server(t)
 		defer done()
 		s.maxExtracted = 3000
-		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main"); err == nil || !strings.Contains(err.Error(), "too large to import:") {
+		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "too large to import:") {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -517,7 +538,7 @@ func TestFetch_PluginManifest(t *testing.T) {
 		gh := &fakeGitHub{commitStatus: 404, tarball: buildTarball(t, entries)}
 		s, done := gh.server(t)
 		defer done()
-		res, err := s.Fetch(context.Background(), url)
+		res, err := s.Fetch(context.Background(), url, nil)
 		if err != nil {
 			t.Fatalf("Fetch: %v", err)
 		}
@@ -571,7 +592,7 @@ func TestFetch_PluginManifest(t *testing.T) {
 		gh := &fakeGitHub{commitStatus: 404, tarball: gzipped(raw.Bytes())}
 		s, done := gh.server(t)
 		defer done()
-		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main"); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		if _, err := s.Fetch(context.Background(), "https://github.com/a/r/tree/main", nil); err == nil || !strings.Contains(err.Error(), "could not be read") {
 			t.Fatalf("got %v", err)
 		}
 	})
@@ -625,7 +646,7 @@ func TestFetch_KeepsFilesNamedByTheirRepositoryPath(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +666,7 @@ func TestFetch_ManifestWithNothingUnderTheLinkFallsBackToLooking(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main/extra")
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main/extra", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,15 +678,15 @@ func TestFetch_ManifestWithNothingUnderTheLinkFallsBackToLooking(t *testing.T) {
 // A SKILL.md too big even to read is reported against its own limit.
 func TestFetch_OversizedSkillFileQuotesItsOwnLimit(t *testing.T) {
 	gh := &fakeGitHub{commitStatus: 404, tarball: buildTarball(t, []tarEntry{
-		{name: "repo-main/big/SKILL.md", body: strings.Repeat("x", skill.MaxSubFileBytes+1)},
+		{name: "repo-main/big/SKILL.md", body: strings.Repeat("x", skill.MaxSkillFileBytes+1)},
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "32 KiB") {
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "96 KiB") {
 		t.Errorf("skipped: %+v", res.Skipped)
 	}
 }
@@ -687,7 +708,7 @@ func TestFetch_KeepsUnreferencedMarkdownButNotRepoMetaFiles(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -719,7 +740,7 @@ func TestFetch_KeepsAMetaFileSkillMDReferences(t *testing.T) {
 	})}
 	s, done := gh.server(t)
 	defer done()
-	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main")
+	res, err := s.Fetch(context.Background(), "https://github.com/a/repo/tree/main", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
