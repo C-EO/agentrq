@@ -13,6 +13,8 @@ import {
   INSTALL_COMMAND,
   INSTALL_SCRIPT_COMMAND,
   canInstallViaScript,
+  parseInstallerLog,
+  INSTALL_POLL_INTERVAL_MS,
   shouldAnnounce,
   updaterDisabledReason,
 } from '../src/main/updater.js'
@@ -189,6 +191,18 @@ describe('createUpdater', () => {
 
     autoUpdater.emit('download-progress', {})
     expect(onStatus.mock.calls.at(-1)[0].detail).toBe('0%')
+  })
+
+  it('carries the download percentage as a number the banner can draw', () => {
+    const { updater, autoUpdater, onStatus } = setup()
+    updater.start()
+
+    autoUpdater.emit('download-progress', { percent: 42.4 })
+    expect(onStatus.mock.calls.at(-1)[0].progress).toEqual({ phase: 'downloading', percent: 42 })
+
+    // And it is gone again once the download is done.
+    autoUpdater.emit('update-downloaded', { version: '0.5.0' })
+    expect(updater.state.progress).toBeNull()
   })
 
   it('reports being up to date', () => {
@@ -484,5 +498,191 @@ describe('what the renderer is told', () => {
     expect(published.canInstallViaScript).toBe(true)
     expect(published.status).toBe(UpdateStatus.Available)
     expect(published.version).toBe('1.2.0')
+  })
+})
+
+describe('parseInstallerLog', () => {
+  // What install.sh really writes: `say` lines, and curl's --progress-bar,
+  // which redraws with a carriage return rather than a newline.
+  const lookingUp = 'Looking up the latest AgentRQ release...\n'
+  const downloading = `${lookingUp}Downloading AgentRQ-1.2.0-arm64.dmg...\n`
+
+  it('starts out preparing', () => {
+    expect(parseInstallerLog('')).toEqual({ phase: 'preparing', percent: null, error: '' })
+    expect(parseInstallerLog(undefined).phase).toBe('preparing')
+    expect(parseInstallerLog(lookingUp).phase).toBe('preparing')
+  })
+
+  it('reads the latest percentage off the progress bar', () => {
+    expect(parseInstallerLog(downloading)).toEqual({ phase: 'downloading', percent: 0, error: '' })
+    expect(parseInstallerLog(`${downloading}\r#=#=#   \r##      3.1%\r#####     41.7%`).percent).toBe(41.7)
+    expect(parseInstallerLog(`${downloading}\r######## 100.0%\n`).percent).toBe(100)
+  })
+
+  it('ignores a percentage printed before the download began', () => {
+    expect(parseInstallerLog(`50%\n${downloading}`).percent).toBe(0)
+  })
+
+  it('moves on to installing once the download is verified', () => {
+    for (const line of [
+      '  Checksum verified.',
+      '  No published checksum for x.dmg; skipping verification.',
+      '  openssl not found; skipping checksum verification.',
+      'Quitting AgentRQ...',
+      'Installing to /Applications/AgentRQ.app...',
+    ]) {
+      expect(parseInstallerLog(`${downloading}\r### 100.0%\n${line}\n`), line).toEqual({
+        phase: 'installing',
+        percent: null,
+        error: '',
+      })
+    }
+  })
+
+  it('recognises a finished install, and one there was nothing to do for', () => {
+    expect(parseInstallerLog('AgentRQ 1.2.0 installed to /home/me/.local/bin/agentrq').phase).toBe('installed')
+    expect(parseInstallerLog('AgentRQ 1.2.0 is already installed. Nothing to do.').phase).toBe('installed')
+  })
+
+  it('picks out the reason the installer died', () => {
+    const log = `${downloading}curl: (6) Could not resolve host\nerror: download failed: https://x \n`
+    expect(parseInstallerLog(log).error).toBe('download failed: https://x')
+  })
+})
+
+describe('following the installer', () => {
+  /** A child process we can end by hand, and a log we can write to. */
+  function running({ platform = 'darwin' } = {}) {
+    const child = new EventEmitter()
+    child.unref = vi.fn()
+    let text = ''
+    const log = { stdio: ['ignore', 7, 7], read: vi.fn(() => text), close: vi.fn() }
+    const onStatus = vi.fn()
+    const setTimer = vi.fn(() => 'poll-id')
+    const clearTimer = vi.fn()
+    const logger = { warn: vi.fn() }
+    const spawn = vi.fn(() => child)
+    const updater = createUpdater({
+      autoUpdater: fakeAutoUpdater(),
+      isPackaged: true,
+      onStatus,
+      spawn,
+      platform,
+      setTimer,
+      clearTimer,
+      logger,
+      createInstallLog: () => log,
+    })
+    const poll = () => setTimer.mock.calls.find(([, ms]) => ms === INSTALL_POLL_INTERVAL_MS)[0]()
+    return { updater, child, log, onStatus, setTimer, clearTimer, spawn, logger, poll, write: (s) => (text += s) }
+  }
+
+  it('hands the installer the log file, not a pipe', () => {
+    const { updater, spawn, log } = running()
+
+    expect(updater.installViaScript()).toEqual({ ok: true })
+    expect(spawn.mock.calls[0][2]).toEqual({ detached: true, stdio: log.stdio })
+  })
+
+  it('reports each step of the install as it happens', () => {
+    const { updater, onStatus, poll, write } = running()
+    updater.installViaScript()
+
+    expect(updater.state).toMatchObject({ status: UpdateStatus.Installing, progress: { phase: 'preparing', percent: null } })
+
+    write('Downloading AgentRQ-1.2.0-arm64.dmg...\n\r##   12.5%')
+    poll()
+    expect(updater.state.progress).toEqual({ phase: 'downloading', percent: 12.5 })
+
+    // Nothing new written: nothing new published.
+    const published = onStatus.mock.calls.length
+    poll()
+    expect(onStatus.mock.calls.length).toBe(published)
+
+    write('\r######## 100.0%\n  Checksum verified.\n')
+    poll()
+    expect(updater.state.progress).toEqual({ phase: 'installing', percent: null })
+  })
+
+  it('offers the update again, with the reason, when the installer fails', () => {
+    const { updater, child, log, clearTimer, write } = running()
+    updater.installViaScript()
+
+    write('error: could not fetch https://api.github.com -- no such release\n')
+    child.emit('exit', 1)
+
+    expect(updater.state).toMatchObject({
+      status: UpdateStatus.Error,
+      detail: 'could not fetch https://api.github.com -- no such release',
+      remedy: INSTALL_COMMAND,
+      progress: null,
+    })
+    expect(clearTimer).toHaveBeenCalledWith('poll-id')
+    expect(log.close).toHaveBeenCalledOnce()
+  })
+
+  it('says why when the installer stops without explaining itself', () => {
+    const { updater, child } = running()
+    updater.installViaScript()
+
+    child.emit('exit', 137)
+
+    expect(updater.state.detail).toBe('The installer stopped (exit code 137)')
+  })
+
+  it('reports a shell that never started', () => {
+    const { updater, child, log } = running()
+    updater.installViaScript()
+
+    child.emit('error', new Error('spawn /bin/sh ENOENT'))
+    // Node follows a failed spawn with 'exit' as well; it must not report twice.
+    child.emit('exit', null)
+
+    expect(updater.state).toMatchObject({ status: UpdateStatus.Error, detail: 'spawn /bin/sh ENOENT' })
+    expect(log.close).toHaveBeenCalledOnce()
+  })
+
+  it('asks for a restart when the install finished and this app is still running', () => {
+    // Linux: install.sh swaps the AppImage without quitting us, and the macOS
+    // relaunch that follows it fails there — which is not the install failing.
+    const { updater, child, write } = running({ platform: 'linux' })
+    updater.installViaScript()
+
+    write('AgentRQ 1.2.0 installed to /home/me/.local/bin/agentrq\n')
+    child.emit('exit', 127)
+
+    expect(updater.state).toMatchObject({ status: UpdateStatus.Installed, detail: 'Restart AgentRQ to finish updating' })
+  })
+
+  it('does not let a background check interrupt an install', async () => {
+    const { updater, setTimer } = running()
+    updater.start()
+    updater.installViaScript()
+
+    const scheduledCheck = setTimer.mock.calls.find(([, ms]) => ms === UPDATE_CHECK_INTERVAL_MS)[0]
+    scheduledCheck()
+
+    expect(await updater.checkNow()).toEqual({ ok: false, reason: 'An update is already being installed' })
+    expect(updater.state.status).toBe(UpdateStatus.Installing)
+  })
+
+  it('closes the log when the installer cannot be started', () => {
+    const log = { stdio: ['ignore', 7, 7], read: () => '', close: vi.fn() }
+    const updater = createUpdater({
+      autoUpdater: fakeAutoUpdater(),
+      isPackaged: true,
+      onStatus: () => {},
+      spawn: () => {
+        throw new Error('EPERM')
+      },
+      platform: 'darwin',
+      setTimer: vi.fn(),
+      clearTimer: vi.fn(),
+      logger: { warn: vi.fn() },
+      createInstallLog: () => log,
+    })
+
+    expect(updater.installViaScript().ok).toBe(false)
+    expect(log.close).toHaveBeenCalledOnce()
   })
 })

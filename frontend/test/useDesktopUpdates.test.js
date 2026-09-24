@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
-import { isOfferable, useRegisterSW } from '../src/desktop/useDesktopUpdates'
+import { isOfferable, progressLabel, useRegisterSW } from '../src/desktop/useDesktopUpdates'
 
 /** Install a fake desktop bridge and return the status callback it captured. */
 function withBridge({ installNow = vi.fn(), installViaScript = vi.fn() } = {}) {
@@ -164,6 +164,123 @@ describe('useRegisterSW on the desktop', () => {
 
     expect(needRefresh.value).toBe(false)
     await expect(updateServiceWorker(true)).resolves.toBeUndefined()
+  })
+})
+
+describe('progress once the user clicks Update now', () => {
+  const unsigned = { status: 'available', version: '1.2.0', canInstallViaScript: true }
+
+  /** What App.vue does on click: clear the banner, then update. */
+  async function clickUpdate(sw) {
+    sw.needRefresh.value = false
+    await sw.updateServiceWorker(true)
+  }
+
+  it('shows nothing before anyone asks, even while a download runs', () => {
+    // A background download is not something the user asked to watch.
+    const bridge = withBridge()
+    const { progress } = useRegisterSW()
+
+    bridge.emit({ status: 'downloading', progress: { phase: 'downloading', percent: 40 } })
+    expect(progress.value).toBeNull()
+  })
+
+  it('follows the installer from click to finish', async () => {
+    const bridge = withBridge({ installViaScript: vi.fn(async () => ({ ok: true })) })
+    const sw = useRegisterSW()
+    bridge.emit(unsigned)
+
+    await clickUpdate(sw)
+    expect(sw.progress.value).toEqual({ phase: 'preparing', percent: null, version: '1.2.0' })
+
+    bridge.emit({ status: 'installing', progress: { phase: 'downloading', percent: 42.5 } })
+    expect(sw.progress.value).toEqual({ phase: 'downloading', percent: 42.5, version: '1.2.0' })
+
+    // A status with nothing to say about progress leaves the bar where it is.
+    bridge.emit({ status: 'installing' })
+    bridge.emit({ status: 'checking' })
+    expect(sw.progress.value.percent).toBe(42.5)
+
+    bridge.emit({ status: 'installing', progress: { phase: 'installing', percent: null } })
+    expect(sw.progress.value.phase).toBe('installing')
+
+    bridge.emit({ status: 'installed', detail: 'Restart AgentRQ to finish updating' })
+    expect(sw.progress.value).toEqual({ phase: 'installed', percent: 100, version: '1.2.0' })
+
+    sw.dismissProgress()
+    expect(sw.progress.value).toBeNull()
+  })
+
+  it('offers the update again when the installer fails', async () => {
+    // Clicking cleared needRefresh, which reads as a dismissal; it must not
+    // keep the offer down after a failure the user never saw coming.
+    const bridge = withBridge({ installViaScript: vi.fn(async () => ({ ok: true })) })
+    const sw = useRegisterSW()
+    bridge.emit(unsigned)
+    await clickUpdate(sw)
+
+    bridge.emit({ ...unsigned, status: 'error', detail: 'download failed', remedy: 'curl …' })
+
+    expect(sw.progress.value).toBeNull()
+    expect(sw.needRefresh.value).toBe(true)
+  })
+
+  it('offers it again when the installer would not start', async () => {
+    const bridge = withBridge({ installViaScript: vi.fn(async () => ({ ok: false, reason: 'EPERM' })) })
+    const sw = useRegisterSW()
+    bridge.emit(unsigned)
+
+    await clickUpdate(sw)
+
+    expect(sw.progress.value).toBeNull()
+    expect(sw.needRefresh.value).toBe(true)
+  })
+
+  it('shows a restart for an update that is already downloaded', async () => {
+    const bridge = withBridge({ installNow: vi.fn(async () => true) })
+    const sw = useRegisterSW()
+    bridge.emit({ status: 'ready', version: '1.2.0' })
+
+    await clickUpdate(sw)
+
+    expect(sw.progress.value).toEqual({ phase: 'restarting', percent: null, version: '1.2.0' })
+    expect(sw.needRefresh.value).toBe(false)
+  })
+
+  it('puts the offer back when the restart is refused', async () => {
+    const bridge = withBridge({ installNow: vi.fn(async () => false) })
+    const sw = useRegisterSW()
+    bridge.emit({ status: 'ready', version: '1.2.0' })
+
+    await clickUpdate(sw)
+
+    expect(sw.progress.value).toBeNull()
+    expect(sw.needRefresh.value).toBe(true)
+  })
+
+  it('leaves everything alone with no bridge', async () => {
+    const sw = useRegisterSW()
+    await clickUpdate(sw)
+
+    expect(sw.needRefresh.value).toBe(false)
+  })
+})
+
+describe('progressLabel', () => {
+  it('names the version when it is known', () => {
+    expect(progressLabel({ phase: 'preparing', version: '1.2.0' })).toBe('Preparing AgentRQ 1.2.0…')
+    expect(progressLabel({ phase: 'downloading', version: '1.2.0' })).toBe('Downloading AgentRQ 1.2.0…')
+    expect(progressLabel({ phase: 'installing', version: '1.2.0' })).toBe('Installing AgentRQ 1.2.0…')
+    expect(progressLabel({ phase: 'restarting', version: '1.2.0' })).toBe('Restarting to update…')
+    expect(progressLabel({ phase: 'installed', version: '1.2.0' })).toBe(
+      'AgentRQ 1.2.0 is installed. Restart AgentRQ to finish.',
+    )
+  })
+
+  it('still reads when it is not', () => {
+    expect(progressLabel({ phase: 'downloading' })).toBe('Downloading the update…')
+    expect(progressLabel({ phase: 'installed' })).toBe('The update is installed. Restart AgentRQ to finish.')
+    expect(progressLabel(null)).toBe('Preparing the update…')
   })
 })
 
