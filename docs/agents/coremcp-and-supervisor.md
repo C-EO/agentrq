@@ -12,14 +12,13 @@ carries a *second* server entry, named `agentrq`, pointing at coremcp
 `buildMcpServers`). That is the only wiring a coremcp addition needs; nothing
 per-workspace has to change for it to be reachable.
 
-**Adding or renaming a *tool*** here means updating `SUPERVISOR_MCP_TOOLS`
-(`frontend/src/composables/useWorkspaceSettings.js`) and `SUPERVISOR_TOOLS`
-(`desktop/src/main/extensions/servers.js`) — both are regex-compared against
-every non-test `.go` file in this package by
-`frontend/test/workspaceSettings.test.js` and
-`desktop/test/extensions/servers.test.js`, so a mismatch fails `npm test`. The
-two Claude plugin docs (`plugins/claude/agentrq/README.md` and its `SKILL.md`)
-need a table row too — `plugin_docs_test.go` checks those.
+**Adding or renaming a *tool*** here means updating `SUPERVISOR_TOOLS`
+(`desktop/src/main/extensions/servers.js`), which
+`desktop/test/extensions/servers.test.js` regex-compares against every non-test
+`.go` file in this package, so a mismatch fails `npm test`. The two Claude
+plugin docs (`plugins/claude/agentrq/README.md` and its `SKILL.md`) need a
+table row too — `plugin_docs_test.go` checks those. The setup tab's permissions
+snippet allows this server as `mcp__agentrq__*`, so it needs nothing.
 
 **Adding a *resource* or *prompt* trips none of the above.** Those parity
 tests match only `mcp.AddTool(s.server, &mcp.Tool{Name: "..."` — an

@@ -1308,8 +1308,6 @@ const mcpConfig = computed(() => ({
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
 
-// The allow list is built from the composable's tool list rather than spelled
-// out here, so it stays in step with what the MCP server actually registers.
 const permissionsConfig = computed(() => buildClaudePermissionsConfig(serverName.value, workspace.value?.name));
 
 const permissionsConfigJson = computed(() => JSON.stringify(permissionsConfig.value, null, 2));

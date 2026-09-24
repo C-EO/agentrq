@@ -21,10 +21,9 @@
  *
  * Asking a server what it offers means an MCP session: initialize, `tools/list`,
  * and a transport this app does not yet have. Writing the lists down is what
- * makes the install screen work today, and a test keeps them honest — the same
- * arrangement `frontend/src/composables/useWorkspaceSettings.js` already uses
- * for the settings snippet, checked against the Go source so a tool added on one
- * side fails the build on the other.
+ * makes the install screen work today, and a test keeps them honest, checked
+ * against the Go source so a tool added on one side fails the build on the
+ * other.
  *
  * ## What that costs, stated rather than hidden
  *

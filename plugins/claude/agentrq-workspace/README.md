@@ -15,18 +15,32 @@ Each workspace has its own MCP URL and token, both shown in the workspace's **Se
 
 To supervise several workspaces from one session, see [`agentrq`](../agentrq/README.md).
 
+## Permissions
+
+A plugin cannot pre-approve its own tools, so Claude Code asks before each call until you
+allow them. One wildcard in `.claude/settings.local.json` covers every tool the server
+offers, including any added later:
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__plugin_agentrq-workspace_agentrq-workspace__*"]
+  }
+}
+```
+
 ## Tools
 
 
 | Tool | Description |
 | --- | --- |
-| `createTask` | Create a task for the human user. Returns the task ID. |
-| `updateTaskStatus` | Update the status of a task. Useful for moving tasks to ongoing or completed. |
+| `createTask` | Create a task for the human or another agent, optionally on a cron schedule. Returns the task ID. |
+| `updateTaskStatus` | Update the status of a task: `ongoing` when you start, `completed` when you finish, or `blocked` when you need something from the human. |
 | `reply` | Send a message to the current ongoing task. You can optionally include attachments. |
 | `downloadAttachment` | Download the content of an attachment by its ID |
-| `getWorkspace` | Returns the workspace title and mission description. |
+| `getWorkspace` | Returns the workspace title, mission description and task statistics. |
 | `getTask` | Fetch a task. With no taskId, returns the next available "not started" task assigned to the agent (dequeues the work queue). With a taskId, returns that specific task. Set `includeConversation=true` to also include the task's chat history. |
-| `publishEvent` | Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. |
+| `publishEvent` | Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When a task carries a `publishEvent` instruction, copy its name and `taskId` exactly. |
 | `loadMemory` | Read what the workspace remembers. With no name it reads `memory.md`, the index of everything remembered there. |
 | `saveMemory` | Write something worth remembering, so the next task starts with it. Replaces the named memory entirely. |
 | `deleteMemory` | Delete one of the workspace's memories. |

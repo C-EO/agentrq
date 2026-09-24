@@ -45,13 +45,13 @@ Each line says what the note will stop you getting wrong.
   terminal must never size itself; and the self-update rules, which are the one
   place here where getting it wrong cannot be undone.
 - **[The MCP server, and tasks](docs/agents/mcp-and-tasks.md)** — adding or
-  renaming a tool on the server is a change in five other places, and only one
+  renaming a tool on the server is a change in four other places, and only one
   of them is guarded by a test that really compares the two.
   Also cron granularity, valid task statuses, and how workspace memory is keyed.
 - **[CoreMCP, and the supervisor workspace](docs/agents/coremcp-and-supervisor.md)**
   — `backend/internal/handler/coremcp/`, the account-wide server every account's
   auto-created "supervisor" workspace talks to. A new tool there is a change in
-  four places with tests on two of them; a new resource or prompt is invisible
+  three places, all of them tested; a new resource or prompt is invisible
   to all of them and needs its own test instead.
 - **[WebMCP](docs/agents/webmcp.md)** — the tool catalogue mirrors
   `frontend/src/api.js` function for function, and a test fails when it stops

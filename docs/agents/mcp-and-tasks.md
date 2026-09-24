@@ -6,7 +6,7 @@
 - Cron validation: `validateCronGranularity` enforces hourly-minimum granularity. Minute field must be a single fixed integer (0-59); wildcards/steps/ranges/comma-lists are rejected.
 - Creating a task with `cron_schedule` sets `status="cron"` on the model.
 
-## A tool on the server is a tool in five other places
+## A tool on the server is a tool in four other places
 
 The `mcp.AddTool(mcpSrv, …)` block in `server.go` is the source of truth for
 what a workspace offers — 15 tools as of 2026-09-23. Every other list of them
@@ -33,31 +33,17 @@ the test file*; it never reads the Go source. Add a tool to the server and it
 stays green. It catches only the reverse — a CLI verb that stops calling a tool
 it used to.
 
-The one test that really compares the two is
-`frontend/test/workspaceSettings.test.js`: it regex-reads the `AddTool` block
-out of the Go source and asserts order-for-order equality with
-`WORKSPACE_MCP_TOOLS` in `frontend/src/composables/useWorkspaceSettings.js`,
-the list the setup tab's `.claude/settings.local.json` snippet is generated
-from. It also asserts a literal expected list, so **both** the composable and
-that expectation need the new name. That place cannot be forgotten, and it is
-the only one that cannot.
-
-The Claude plugin docs are checked too: `plugin_docs_test.go` fails when
-`plugins/claude/agentrq-workspace/README.md` or its `SKILL.md` lacks a row for
-a tool.
+The one test that really compares the two is `plugin_docs_test.go`: it fails
+when `plugins/claude/agentrq-workspace/README.md` or its `SKILL.md` lacks a row
+for a tool. The setup tab's `.claude/settings.local.json` snippet needs nothing —
+it allows the server with one `mcp__<server>__*` wildcard.
 
 The remaining copies are documentation and fail silently: `README.md` (the
-settings snippet, and the "Available MCP Tools" list), `README.zh-CN.md` (the
+"Available MCP Tools" list), `README.zh-CN.md` (the
 same list, translated), and `plugins/deepseek-harness/README.md`, whose table
 and hard-coded count are **stale at seven today** — worth knowing because the
 plugin filters nothing, so every server tool reaches the model whatever that
-table says. This repo's own `.claude/settings.local.json` is gitignored, so it
-can never ride along in a PR and has to be edited by hand.
-
-**Why any of this matters:** the allow list exists to stop permission prompts,
-and a list that is merely *mostly* complete fails silently — the agent works
-until its first call to the one missing tool, then stalls waiting on a human
-who is not watching.
+table says.
 
 ## This server is stateful, so it cannot serve 2026-07-28
 

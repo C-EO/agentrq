@@ -255,7 +255,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 }
 ```
 
-也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示；建议把下列全部工具都列进去。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
+也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示：一条通配规则 `mcp__agentrq-WORKSPACE_ID__*` 即可覆盖该 Workspace 的全部工具。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
 
 连接后，Agent 常用的 Workspace MCP 工具包括：
 
