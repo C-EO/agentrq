@@ -89,7 +89,6 @@ mocks:
 		backend/internal/service/mocks/dbconn \
 		backend/internal/service/mocks/pubsub \
 		backend/internal/service/mocks/config \
-		backend/internal/service/mocks/locksmith \
 		backend/internal/service/mocks/s3
 	@cd backend && \
 		mockgen -source=internal/repository/base/repository.go -destination=internal/service/mocks/repository/mock_repository.go -package=repository && \
@@ -105,7 +104,6 @@ mocks:
 		mockgen -source=internal/repository/dbconn/dbconn.go -destination=internal/service/mocks/dbconn/mock_dbconn.go -package=dbconn && \
 		mockgen -source=internal/service/pubsub/pubsub.go -destination=internal/service/mocks/pubsub/mock_pubsub.go -package=pubsub && \
 		mockgen -source=internal/service/config/config.go -destination=internal/service/mocks/config/mock_config.go -package=config && \
-		mockgen -source=internal/service/locksmith/locksmith.go -destination=internal/service/mocks/locksmith/mock_locksmith.go -package=locksmith && \
 		mockgen -source=internal/service/s3/s3.go -destination=internal/service/mocks/s3/mock_s3.go -package=s3
 
 test: mocks

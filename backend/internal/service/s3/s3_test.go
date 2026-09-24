@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	configmocks "github.com/agentrq/agentrq/backend/internal/service/mocks/config"
-	locksmithmocks "github.com/agentrq/agentrq/backend/internal/service/mocks/locksmith"
 	mocks "github.com/agentrq/agentrq/backend/internal/service/mocks/s3"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -33,12 +32,9 @@ func TestS3(t *testing.T) {
 	mockS3 := mocks.NewMockS3API(ctrl)
 	mockPresign := mocks.NewMockS3PresignAPI(ctrl)
 	mockConfig := configmocks.NewMockService(ctrl)
-	mockLocksmith := locksmithmocks.NewMockService(ctrl)
-
 	s := &service{
 		client:          mockS3,
 		presigner:       mockPresign,
-		locksmith:       mockLocksmith,
 		bucket:          "test-bucket",
 		publicBucketURL: "https://public.cdn.com",
 	}
@@ -171,12 +167,12 @@ func TestS3(t *testing.T) {
 
 	t.Run("New", func(t *testing.T) {
 		mockConfig.EXPECT().Populate("s3", gomock.Any()).Return(nil)
-		svc, err := New(Params{Config: mockConfig, Locksmith: mockLocksmith})
+		svc, err := New(Params{Config: mockConfig})
 		assert.NoError(t, err)
 		assert.NotNil(t, svc)
 
 		mockConfig.EXPECT().Populate("s3", gomock.Any()).Return(errors.New("config error"))
-		_, err = New(Params{Config: mockConfig, Locksmith: mockLocksmith})
+		_, err = New(Params{Config: mockConfig})
 		assert.Error(t, err)
 
 		// AWS Config error
@@ -187,7 +183,7 @@ func TestS3(t *testing.T) {
 		}
 		defer func() { loadAWSConfig = oldLoader }()
 
-		_, err = New(Params{Config: mockConfig, Locksmith: mockLocksmith})
+		_, err = New(Params{Config: mockConfig})
 		assert.Error(t, err)
 	})
 
