@@ -21,6 +21,7 @@ type s3Service struct {
 }
 
 // NewS3 stores blobs as private objects under namespace in an S3 bucket.
+// An id may be a slash-separated path, as with NewNested.
 func NewS3(client s3.Service, namespace string) Service {
 	return &s3Service{client: client, namespace: namespace}
 }
@@ -30,7 +31,7 @@ func (s *s3Service) Save(id string, dataBase64 string) error {
 	if err != nil {
 		return fmt.Errorf("decode base64: %w", err)
 	}
-	if err := validID(id); err != nil {
+	if err := validKey(id); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), _s3Timeout)
@@ -48,7 +49,7 @@ func (s *s3Service) Load(id string) (string, error) {
 }
 
 func (s *s3Service) LoadRaw(id string) ([]byte, error) {
-	if err := validID(id); err != nil {
+	if err := validKey(id); err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), _s3Timeout)
@@ -57,7 +58,7 @@ func (s *s3Service) LoadRaw(id string) ([]byte, error) {
 }
 
 func (s *s3Service) Delete(id string) error {
-	if err := validID(id); err != nil {
+	if err := validKey(id); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), _s3Timeout)

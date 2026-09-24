@@ -78,6 +78,9 @@ services:
       AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY: ${AGENTRQ_WEBPUSH_VAPID_PRIVATE_KEY:-}
       AGENTRQ_WEBPUSH_SUBSCRIBER: ${AGENTRQ_WEBPUSH_SUBSCRIBER:-mailto:hi@example.com}
 
+      # Attachments and local skills, on the mounted volume
+      AGENTRQ_STORAGE_DIR: ${AGENTRQ_STORAGE_DIR:-/storage}
+
       # Attachment retention
       AGENTRQ_APP_ATTACHMENT_RETENTION: ${AGENTRQ_APP_ATTACHMENT_RETENTION:-7d}
 

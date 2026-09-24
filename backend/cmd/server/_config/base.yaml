@@ -73,9 +73,11 @@ ratelimit:
   window: ${AGENTRQ_RATELIMIT_WINDOW:60s}
 
 storage:
+  # Attachments, and skills under skills/ when they are local. Must be writable.
+  dir: ${AGENTRQ_STORAGE_DIR:./_storage}
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
 
-# Where skill file content is kept: "local" (./_storage) or "s3", which uses
+# Where skill file content is kept: "local" (<storage dir>/skills) or "s3", which uses
 # the s3 block below.
 skills:
   storage: ${AGENTRQ_SKILLS_STORAGE:local}

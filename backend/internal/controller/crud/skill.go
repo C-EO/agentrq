@@ -19,7 +19,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/gorm"
 )
@@ -279,7 +278,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	s.UpdatedAt = now
 
-	f, err := c.storeSkillFile(path, content, now)
+	f, err := c.storeSkillFile(s, path, content, now)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +302,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 // storeSkillFile writes content to storage and returns the row describing it.
 // The blob goes first so a row never points at nothing; a caller whose row
 // then fails to save deletes the blob.
-func (c *controller) storeSkillFile(path string, content []byte, now time.Time) (model.SkillFile, error) {
+func (c *controller) storeSkillFile(s model.Skill, path string, content []byte, now time.Time) (model.SkillFile, error) {
 	sum := sha256.Sum256(content)
 	f := model.SkillFile{
 		ID:        c.idgen.NextID(),
@@ -312,12 +311,19 @@ func (c *controller) storeSkillFile(path string, content []byte, now time.Time) 
 		Path:      path,
 		SizeBytes: len(content),
 		SHA256:    hex.EncodeToString(sum[:]),
-		StorageID: storage.SkillPrefix + monoflake.ID(c.idgen.NextID()).String(),
+		StorageID: skillStorageID(s, c.idgen.NextID()),
 	}
 	if err := c.skillStorage.Save(f.StorageID, base64.StdEncoding.EncodeToString(content)); err != nil {
 		return model.SkillFile{}, fmt.Errorf("store skill file: %w", err)
 	}
 	return f, nil
+}
+
+// skillStorageID keys a skill file's blob as w-<workspace>/skill-<skill>/<blob>.
+// The blob id is fresh on every write, because a replace stores the new blob
+// before the old one is purged.
+func skillStorageID(s model.Skill, blobID int64) string {
+	return "w-" + monoflake.ID(s.WorkspaceID).String() + "/skill-" + monoflake.ID(s.ID).String() + "/" + monoflake.ID(blobID).String()
 }
 
 func (c *controller) DeleteSkill(ctx context.Context, req entity.DeleteSkillRequest) error {
@@ -474,7 +480,7 @@ func (c *controller) importSkill(ctx context.Context, uid, workspaceID int64, ex
 	files := make([]model.SkillFile, 0, len(sk.Files))
 	var written []string
 	for _, f := range sk.Files {
-		row, err := c.storeSkillFile(f.Path, f.Content, now)
+		row, err := c.storeSkillFile(s, f.Path, f.Content, now)
 		if err != nil {
 			c.purge(written)
 			return model.Skill{}, err
