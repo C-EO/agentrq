@@ -1,0 +1,12 @@
+{
+  "name": "@agentrq/chrome-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AgentRQ in a mobile-sized Chrome toolbar popup",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:ci": "node --test --experimental-test-coverage --test-coverage-exclude=test/** --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100 test/*.test.js"
+  }
+}

@@ -1,0 +1,52 @@
+name: Chrome Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/chrome/**'
+      - '.github/workflows/plugin-chrome.yml'
+  pull_request:
+    paths:
+      - 'plugins/chrome/**'
+      - '.github/workflows/plugin-chrome.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+defaults:
+  run:
+    working-directory: plugins/chrome
+
+jobs:
+  test:
+    name: Test and package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No install step: the extension has no dependencies.
+      - name: Test with coverage thresholds
+        run: npm run test:ci
+
+      # What "Load unpacked" or the Chrome Web Store takes: the manifest and
+      # what it names, and no tests.
+      - name: Package
+        run: zip -r agentrq-chrome-extension.zip manifest.json src icons
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentrq-chrome-extension
+          path: plugins/chrome/agentrq-chrome-extension.zip

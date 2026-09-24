@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AgentRQ extension options</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px/1.5 system-ui, sans-serif; }
+      body { margin: 16px; min-width: 320px; max-width: 480px; }
+      label { display: block; font-weight: 600; margin-bottom: 4px; }
+      input { box-sizing: border-box; width: 100%; padding: 6px 8px; font: inherit; }
+      .row { display: flex; gap: 8px; margin-top: 8px; }
+      p { margin: 8px 0 0; }
+      #status { min-height: 1.5em; }
+      #status.error { color: #c0262d; }
+    </style>
+  </head>
+  <body>
+    <form id="form">
+      <label for="server">AgentRQ server</label>
+      <input id="server" type="text" autocomplete="url" spellcheck="false" />
+      <div class="row">
+        <button type="submit">Save</button>
+        <button type="button" id="reset">Use app.agentrq.com</button>
+      </div>
+      <p id="status" role="status"></p>
+    </form>
+    <script type="module" src="options-page.js"></script>
+  </body>
+</html>
