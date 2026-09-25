@@ -61,7 +61,7 @@ Keyboard shortcuts (change them at chrome://extensions/shortcuts):
 **Single purpose:**
 
 ```
-Shows the user's AgentRQ workspaces (their AI agents' tasks and conversations) in the toolbar popup, and opens AgentRQ full size in a tab.
+Shows the user's AgentRQ workspace (a task manager for AI agents) in the toolbar popup, where they can manage tasks, orchestrate their agents and open an agent's Claude Code terminal, and opens AgentRQ full size in a tab.
 ```
 
 **Permission justifications:**
@@ -69,25 +69,19 @@ Shows the user's AgentRQ workspaces (their AI agents' tasks and conversations) i
 `contextMenus`
 
 ```
-Adds "Open full size" to the toolbar button's right-click menu, which opens AgentRQ in a tab.
+Adds one item, "Open full size", to the right-click menu of the extension's toolbar button. It opens AgentRQ in a normal browser tab. The extension adds nothing to web pages' own context menus.
 ```
 
 `storage`
 
 ```
-Remembers the address of the user's AgentRQ server, which they can change in Options.
+Stores a single setting, the address of the user's AgentRQ server (app.agentrq.com by default, or a self-hosted server entered in Options), so the popup knows which server to show. Nothing else is stored.
 ```
 
-Host permission `https://app.agentrq.com/*`
+**Host permission** (the dashboard asks once, for all of them):
 
 ```
-The popup shows the AgentRQ web app from app.agentrq.com in a frame. Chrome sends the user's existing AgentRQ sign-in cookie to that frame only when the extension has access to the site; without it the app would always appear signed out. The extension also asks the same site whether the user is signed in, so it can offer to sign in in a tab instead (Google and GitHub sign-in cannot be shown inside a frame). It reads nothing from any other site.
-```
-
-Optional host permissions `https://*/*` and `http://*/*`
-
-```
-AgentRQ can be self-hosted at any address. When a user enters their own server's address in Options, the extension asks for access to that one origin only, for the same reason as app.agentrq.com above, and gives it back when they switch to a different server. Nothing is requested unless the user saves an address, and only that address is requested.
+The popup shows the AgentRQ web app from app.agentrq.com in a frame. Chrome sends the user's existing AgentRQ sign-in cookie to that frame only when the extension has access to the site; without it the app would always appear signed out. The extension also calls app.agentrq.com/api/v1/auth/user to check whether the user is signed in, so it can offer sign-in in a tab (Google and GitHub sign-in pages cannot load inside a frame). It reads only the response status, never its content, and accesses no other site. Access to a self-hosted AgentRQ server is optional: it is requested only when the user saves that server's address in Options, only for that one origin, and removed when they switch away.
 ```
 
 **Are you using remote code?** — **No, I am not using remote code.**
@@ -96,13 +90,18 @@ AgentRQ can be self-hosted at any address. When a user enters their own server's
 All of the extension's JavaScript is in the package. The popup shows the AgentRQ website in an iframe, as a web page, and does not load or run any code in the extension's own context.
 ```
 
-**Data usage** — tick nothing in the list of data types.
+**Data usage** — the popup *is* AgentRQ's interface, so disclose what AgentRQ
+collects through it; the store reads it that way, and under-disclosure is what
+gets a listing rejected. Tick:
 
-The extension's own code reads nothing about the user. It stores one setting,
-the server address, in Chrome's storage. When it checks whether you are signed
-in, it looks only at the HTTP status of the answer, never its body. The
-AgentRQ web app inside the popup is a website like any other, and it is covered
-by AgentRQ's privacy policy, not by the extension's disclosures.
+- **Personally identifiable information**: name and email from Google or GitHub sign-in
+- **Personal communications**: the messages exchanged with agents in tasks
+- **User activity**: the web app's interface usage telemetry (shortcuts, searches, copies)
+
+Leave the rest unticked. Authentication information in particular: the browser
+keeps the sign-in cookie, and the extension's code never reads it; its sign-in
+check looks only at the HTTP status. The privacy policy must cover the three
+ticked kinds, because the store checks that the two agree.
 
 Tick all three certifications:
 
