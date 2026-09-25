@@ -129,6 +129,15 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 			},
 		},
 		{
+			// The Gemini CLI extension talks to the same server. Its GEMINI.md is
+			// loaded into every session, so it names tools in prose rather than
+			// repeating the table; only the README carries one.
+			plugin: "gemini",
+			pkg:    "backend/internal/handler/coremcp",
+			re:     coreToolRe,
+			docs:   []string{"plugins/gemini/README.md"},
+		},
+		{
 			plugin: "agentrq-workspace",
 			pkg:    "backend/internal/controller/mcp",
 			re:     workspaceToolRe,
@@ -183,6 +192,8 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/claude/agentrq/skills/agentrq/SKILL.md",
 		"plugins/claude/agentrq-workspace/README.md",
 		"plugins/claude/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
+		"plugins/gemini/README.md",
+		"plugins/gemini/GEMINI.md",
 	}
 
 	for _, doc := range docs {

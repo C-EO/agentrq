@@ -607,8 +607,10 @@ The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks direc
 
 **Installation:**
 ```bash
-gemini extensions install https://github.com/agentrq/agentrq-gemini-extension
+gemini extensions install https://github.com/agentrq/agentrq
 ```
+
+> Previously this lived in a separate `agentrq-gemini-extension` repository. It now ships from [`plugins/gemini`](plugins/gemini/README.md) in this one; if you installed the old one, uninstall it and install again from the URL above.
 
 ### 🐋 DeepSeek Harness
 The [`@agentrq/dsh-plugin-agentrq`](plugins/deepseek-harness/README.md) bundle brings AgentRQ into [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It bridges the workspace's tools to the model as `mcp__agentrq__*` and holds a supervised workspace session, so tasks assigned to the agent and the human's replies arrive over the MCP channel and land in the live session — no polling, and no leaving the harness to work the queue.
