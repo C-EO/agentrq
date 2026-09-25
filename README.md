@@ -133,7 +133,8 @@ Open a running session from any browser and you are at the prompt. Keystrokes go
 <td width="50%"><img src="https://agentrq.com/assets/feature-machines-poster.png" alt="AgentRQ live terminal attached to a claude-code session on an enrolled machine" width="320" /></td>
 </tr>
 <tr>
-<td colspan="2" valign="middle">
+<td width="50%"><img src="https://agentrq.com/assets/feature-distributed-skills.gif" alt="AgentRQ Skills: the Skills tab, choosing skills to import from GitHub, and an opened SKILL.md shared with another workspace" width="320" /></td>
+<td width="50%" valign="middle">
 
 ### Skills
 
