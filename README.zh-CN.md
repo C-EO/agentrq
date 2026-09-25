@@ -350,10 +350,10 @@ Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Sup
 /plugin install agentrq-workspace@agentrq
 ```
 
-Gemini CLI 扩展安装：
+Gemini CLI 扩展安装（扩展已迁移到本仓库的 [`plugins/gemini`](plugins/gemini/README.md)；如果安装过旧的 `agentrq-gemini-extension`，请先卸载，再用下面的地址重新安装）：
 
 ```bash
-gemini extensions install https://github.com/agentrq/agentrq-gemini-extension
+gemini extensions install https://github.com/agentrq/agentrq
 ```
 
 DeepSeek Harness 插件安装（[`@agentrq/dsh-plugin-agentrq`](plugins/deepseek-harness/README.md) 将 AgentRQ 接入 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，把 Workspace 的工具桥接为 `mcp__agentrq__*`，并通过受监督的 workspace session 实时推送任务和回复，无需轮询）：
