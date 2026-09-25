@@ -11,14 +11,15 @@
       :root {
         color-scheme: light dark;
         font: 13px/1.4 system-ui, sans-serif;
-        --bg: #f8fafc;
-        --fg: #0f172a;
-        --muted: #64748b;
-        --line: #e2e8f0;
+        --bg: #ffffff;
+        --fg: #171717;
+        --muted: #737373;
+        --line: #e5e5e5;
         --button: #ffffff;
       }
+      /* The web app's own neutrals, so the header reads as part of it. */
       @media (prefers-color-scheme: dark) {
-        :root { --bg: #0b1220; --fg: #e2e8f0; --muted: #94a3b8; --line: #1e293b; --button: #111a2e; }
+        :root { --bg: #121212; --fg: #e5e5e5; --muted: #a3a3a3; --line: #262626; --button: #1c1c1c; }
       }
       /* The popup takes its size from the page: iPhone 17 Pro Max's width, and
          the 600px that is the tallest Chrome lets a popup be. */

@@ -5,7 +5,7 @@ opened full size in a tab when you want the room.
 
 ## Install
 
-1. Download `agentrq-chrome-extension.zip` from the latest
+1. Download the `agentrq-chrome-extension` artifact from the latest
    [Chrome Plugin workflow run](https://github.com/agentrq/agentrq/actions/workflows/plugin-chrome.yml)
    and unzip it, or use this `plugins/chrome/` folder from a checkout.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**
@@ -43,6 +43,12 @@ however signed in the browser is. A self-hosted server's access is asked for
 when you save it in Options, and given back when you switch away. The other
 permissions are `contextMenus` for the right-click menu and `storage` for your
 settings.
+
+## Publishing
+
+[`PUBLISHING.md`](PUBLISHING.md) covers the Chrome Web Store: the first
+submission by hand, then a `chrome-v<version>` tag for every release after.
+The listing text and images are in [`store/`](store/LISTING.md).
 
 ## Develop
 
