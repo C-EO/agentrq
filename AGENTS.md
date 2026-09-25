@@ -24,7 +24,7 @@ index: the detail lives in `docs/agents/`, one note per subsystem.
 - `desktop/` — Electron shell; its renderer is built from `frontend/src`
 - `daemon/` — `agentrqd`, which runs agents on somebody's machine. A **separate Go module**, wired in with a `replace` directive
 - `cli/` — `cli/agentrq-ws` (npm `@agentrq/agentrq-ws`), a dependency-free command-line client for a workspace, covering every workspace MCP tool
-- `plugins/` — harness plugins published from this repo (`plugins/deepseek-harness` → the `@agentrq/dsh-plugin-agentrq` bundle for DeepSeek Harness)
+- `plugins/` — harness plugins published from this repo (`plugins/deepseek-harness` → the `@agentrq/dsh-plugin-agentrq` bundle for DeepSeek Harness), and `plugins/chrome`, the Chrome extension: a toolbar popup framing the server's own web app. It frames the hosted app rather than bundling `frontend/`, because on the extension's origin the `at` cookie never arrives, and the frame gets it only with host access to the server
 - `docs/agents/` — the notes below. The rest of `docs/` is user-facing documentation
 
 ## The notes

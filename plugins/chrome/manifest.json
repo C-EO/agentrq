@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "AgentRQ",
+  "short_name": "AgentRQ",
+  "version": "1.0.0",
+  "description": "AgentRQ in a mobile-sized popup on your toolbar, and full size when you need the room.",
+  "homepage_url": "https://agentrq.com",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_title": "AgentRQ",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": false
+  },
+  "permissions": [
+    "contextMenus",
+    "storage"
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+A"
+      },
+      "description": "Open AgentRQ"
+    },
+    "open-full-size": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Open AgentRQ full size in a tab"
+    }
+  },
+  "host_permissions": [
+    "https://app.agentrq.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ]
+}
