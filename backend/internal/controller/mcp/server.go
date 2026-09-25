@@ -481,27 +481,15 @@ func NewWorkspaceServer(
 					"- The human is REMOTE and can ONLY see what you send via `reply`. Your stdout/text output is NOT visible to them.\n\n"+
 					"## RULES (follow strictly)\n\n"+
 					"1. **START**: When you receive a task, IMMEDIATELY call `updateTaskStatus` to set it to 'ongoing'. Then call `getWorkspace` to see the mission context.\n\n"+
-					"2. **SHARE EVERYTHING**: The human cannot see your screen. You MUST proactively share:\n"+
-					"   - What you're about to do and why\n"+
-					"   - File paths you're reading or editing\n"+
-					"   - Commands you're running and their output (especially errors)\n"+
-					"   - Key decisions and trade-offs you're making\n"+
-					"   - Code snippets or diffs when relevant\n"+
-					"   - Any unexpected findings or issues\n\n"+
-					"3. **PROGRESS UPDATES**: Send a `reply` every few steps or at every significant milestone. Do NOT go silent for long stretches. Examples of good updates:\n"+
-					"   - \"Reading src/api/handler.go to understand the current structure...\"\n"+
-					"   - \"Found the bug: the nil check on line 42 is missing. Fixing now.\"\n"+
-					"   - \"Tests pass (12/12). Moving on to the frontend changes.\"\n"+
-					"   - \"I ran `npm run build` and got this error: [error]. Investigating.\"\n\n"+
-					"4. **ASK VIA REPLY**: If you need permission, clarification, or more info, use `reply` to ask. Do NOT ask in your text output — the human won't see it.\n\n"+
-					"5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to 'completed'. Use 'blocked' if you are stuck and need human help.\n\n"+
-					"6. **REMEMBER**: This workspace has a memory that outlives the task. Call `loadMemory` before you start — with no arguments it reads "+
-					"`memory.md`, the index of everything this workspace remembers, and it may already answer what you were about to ask. The index links "+
-					"its entries as `memory://<name>`; load the ones that look relevant. When you learn something that would save the next agent the same "+
-					"detour, `saveMemory` it and link it from the index. The memory belongs to the workspace, so everyone working here shares it.\n\n"+
-					"7. **SKILLS**: This workspace may have skills, playbooks for kinds of task. Call `searchSkills` at the start of a task, and `loadSkill` "+
-					"the SKILL.md of any skill whose description matches it, then follow it. Load a skill's other files only when its SKILL.md points you to "+
-					"them, by their `skill://` URI. When you improve one of this workspace's own skills, save it with `saveSkill`.\n",
+					"2. **REMEMBER**: Call `loadMemory` before you start; with no arguments it reads `memory.md`, the index of what this workspace "+
+					"remembers, linking entries as `memory://<name>`. Load the relevant ones. `saveMemory` what would spare the next agent a detour, and link it from the index.\n\n"+
+					"3. **SKILLS**: Call `searchSkills` at the start of a task, `loadSkill` the SKILL.md of any skill whose description matches, and follow it. "+
+					"Load its other files by `skill://` URI only when SKILL.md points to them. Improve this workspace's own skills with `saveSkill`.\n\n"+
+					"4. **SHARE EVERYTHING**: The human cannot see your screen. Proactively `reply` what you're about to do and why, files you touch, "+
+					"commands and their output (especially errors), key decisions, diffs, and unexpected findings.\n\n"+
+					"5. **PROGRESS UPDATES**: `reply` every few steps or at each milestone. Do NOT go silent for long stretches.\n\n"+
+					"6. **ASK VIA REPLY**: Ask for permission, clarification or info with `reply`, never in your text output.\n\n"+
+					"7. **COMPLETE**: When done, `reply` a summary of all changes, then set the task to 'completed'. Use 'blocked' if you need human help.\n",
 				workspaceIDStr,
 			),
 		},

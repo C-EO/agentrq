@@ -368,7 +368,8 @@ func TestSkillToolAnnotations(t *testing.T) {
 }
 
 // A connecting agent is told to look for skills, the same way it is told to
-// read the workspace memory.
+// read the workspace memory — and all of it must fit in the 2048 characters
+// Claude Code keeps of a server's instructions, or rules past the cut are lost.
 func TestInstructionsMentionSkills(t *testing.T) {
 	srv := newProtocolTestServer(t)
 	const version = "2025-06-18"
@@ -386,7 +387,10 @@ func TestInstructionsMentionSkills(t *testing.T) {
 	if err := json.Unmarshal(out, &env); err != nil {
 		t.Fatalf("decode %s: %v", out, err)
 	}
-	for _, want := range []string{"7. **SKILLS**", "`searchSkills`", "`loadSkill`", "`skill://`", "`saveSkill`"} {
+	if n := len([]rune(env.Result.Instructions)); n > 2048 {
+		t.Errorf("instructions are %d characters; Claude Code truncates past 2048", n)
+	}
+	for _, want := range []string{"**REMEMBER**", "`loadMemory`", "**SKILLS**", "`searchSkills`", "`loadSkill`", "`skill://`", "`saveSkill`"} {
 		if !strings.Contains(env.Result.Instructions, want) {
 			t.Errorf("instructions lack %q", want)
 		}
