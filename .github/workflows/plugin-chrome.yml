@@ -41,12 +41,18 @@ jobs:
         run: npm run test:ci
 
       # What "Load unpacked" or the Chrome Web Store takes: the manifest and
-      # what it names, and no tests.
-      - name: Package
-        run: zip -r agentrq-chrome-extension.zip manifest.json src icons
-
+      # what it names, and no tests. The files are uploaded rather than a zip
+      # of them, because GitHub zips every artifact on download: an uploaded
+      # zip comes back as a zip inside a zip, which the store refuses with "No
+      # manifest found". Uploaded this way the download *is* the package.
+      # upload-artifact roots the archive at the paths' common parent, which
+      # puts manifest.json at the top.
       - name: Upload the package
         uses: actions/upload-artifact@v4
         with:
           name: agentrq-chrome-extension
-          path: plugins/chrome/agentrq-chrome-extension.zip
+          path: |
+            plugins/chrome/manifest.json
+            plugins/chrome/src
+            plugins/chrome/icons
+          if-no-files-found: error

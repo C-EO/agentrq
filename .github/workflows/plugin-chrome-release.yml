@@ -1,0 +1,90 @@
+name: Chrome Plugin release
+
+# Pushing a chrome-v<version> tag uploads that version to the Chrome Web Store
+# and submits it for review. The extension has its own tag series because it
+# has its own version, in plugins/chrome/manifest.json. One-time setup is in
+# plugins/chrome/PUBLISHING.md.
+on:
+  push:
+    tags:
+      - 'chrome-v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+defaults:
+  run:
+    working-directory: plugins/chrome
+
+jobs:
+  publish:
+    name: Publish to the Chrome Web Store
+    runs-on: ubuntu-latest
+    # Tags only: a manual run carries the ref it was launched from, and a
+    # branch is not a release.
+    if: startsWith(github.ref, 'refs/tags/chrome-v')
+    permissions:
+      # Read the tree, and attach the package to the GitHub release.
+      contents: write
+      # Keyless sign-in to Google Cloud: GitHub's OIDC token is exchanged for a
+      # short-lived access token, so there is no key or refresh token to leak
+      # or to expire.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test with coverage thresholds
+        run: npm run test:ci
+
+      # The store takes its version from the manifest, and a tag that names a
+      # different one would publish something other than what it says.
+      - name: Check the tag names the manifest's version
+        id: version
+        run: |
+          VERSION="$(node -p "require('./manifest.json').version")"
+          if [ "chrome-v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::The tag is ${GITHUB_REF_NAME} but manifest.json is at ${VERSION}."
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        run: zip -r agentrq-chrome-extension.zip manifest.json src icons
+
+      - name: Sign in to Google Cloud
+        id: google
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Upload and submit for review
+        env:
+          CWS_TOKEN: ${{ steps.google.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: agentrq-chrome-extension.zip
+        run: node scripts/publish.mjs
+
+      - name: Attach the package to a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" agentrq-chrome-extension.zip \
+            --title "AgentRQ for Chrome ${{ steps.version.outputs.version }}" \
+            --notes "Submitted to the Chrome Web Store for review. To install without the store, unzip and use Load unpacked in chrome://extensions." \
+            --latest=false
+
+      - name: Summary
+        run: echo "AgentRQ for Chrome ${{ steps.version.outputs.version }} was submitted to the Chrome Web Store for review." >> "$GITHUB_STEP_SUMMARY"

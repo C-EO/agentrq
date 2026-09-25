@@ -13,6 +13,11 @@ test('the manifest and package agree on the version', () => {
   assert.equal(manifest.version, json('package.json').version)
 })
 
+// The store shows it as the listing's summary and refuses one over 132.
+test('the description fits the store summary', () => {
+  assert.ok(manifest.description.length <= 132, `${manifest.description.length} characters`)
+})
+
 test('every file the manifest names is in the package', () => {
   const paths = [
     ...Object.values(manifest.icons),
