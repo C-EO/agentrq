@@ -161,6 +161,19 @@ describe('useMachines', () => {
     expect(h.m.error.value).toBe('')
   })
 
+  it('re-reads quietly when asked, so a refresh does not blank the page', async () => {
+    let resolve
+    const h = harness()
+    h.fetchMachines.mockImplementationOnce(() => Promise.resolve({ machines: [] }))
+    await h.m.load()
+    h.fetchMachines.mockImplementation(() => new Promise((r) => { resolve = r }))
+    const pending = h.m.load({ quiet: true })
+    expect(h.m.loading.value).toBe(false)
+    resolve({ machines: [] })
+    await pending
+    expect(h.m.machines.value).toEqual([])
+  })
+
   it('says what went wrong rather than showing an empty page', async () => {
     const h = harness({ fetchMachines: vi.fn().mockRejectedValue(new Error('server is down')) })
     await h.m.load()

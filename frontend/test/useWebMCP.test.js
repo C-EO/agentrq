@@ -9,6 +9,7 @@ import { createRouter, createMemoryHistory } from 'vue-router';
 import { routes } from '../src/app';
 
 import { connectWebMCP, describePage } from '../src/composables/useWebMCP';
+import { onWebMCPChange } from '../src/composables/useWebMCPChanges';
 import { WebMCPStatus } from '../src/webmcp/modelContext';
 
 const routerAt = (route) => ({
@@ -120,6 +121,56 @@ describe('connectWebMCP', () => {
     expect(result.registered).toEqual([]);
     // Still safe to call, so the caller needs no branch of its own.
     expect(() => result.unregister()).not.toThrow();
+  });
+});
+
+// A view that loaded on mount only shows an agent's change if it is told.
+describe('telling the open page about changes', () => {
+  const toolNamed = (ctx, name) => ctx.registerTool.mock.calls.map(([t]) => t).find((t) => t.name === name);
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  async function connected(api) {
+    const ctx = { registerTool: vi.fn().mockResolvedValue(undefined) };
+    await connectWebMCP({ api, router: routerAt({ path: '/' }), context: ctx });
+    const changed = vi.fn();
+    const off = onWebMCPChange(changed);
+    return { ctx, changed, off };
+  }
+
+  it('announces a change once the tool has succeeded, and still returns its result', async () => {
+    const api = { updateWorkflow: vi.fn().mockResolvedValue({ workflow: { id: 'wf1' } }) };
+    const { ctx, changed, off } = await connected(api);
+
+    const result = await toolNamed(ctx, 'updateWorkflow').execute({ workflowId: 'wf1', startEventId: 'e1' }, {});
+    await tick();
+    off();
+
+    expect(result).toEqual({ workflow: { id: 'wf1' } });
+    expect(api.updateWorkflow).toHaveBeenCalledWith('wf1', { startEventId: 'e1' });
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces nothing when the tool fails', async () => {
+    const api = { updateWorkflow: vi.fn().mockRejectedValue(new Error('nope')) };
+    const { ctx, changed, off } = await connected(api);
+
+    await expect(toolNamed(ctx, 'updateWorkflow').execute({ workflowId: 'wf1' }, {})).rejects.toThrow('nope');
+    await tick();
+    off();
+
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('announces nothing for a read, or for navigating', async () => {
+    const api = { fetchWorkflows: vi.fn().mockResolvedValue({ workflows: [] }) };
+    const { ctx, changed, off } = await connected(api);
+
+    await toolNamed(ctx, 'listWorkflows').execute({}, {});
+    await toolNamed(ctx, 'navigate').execute({ path: '/events' }, {});
+    await tick();
+    off();
+
+    expect(changed).not.toHaveBeenCalled();
   });
 });
 

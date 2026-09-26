@@ -80,6 +80,19 @@ describe('loading', () => {
     expect(h.d.loading.value).toBe(false)
   })
 
+  it('re-reads quietly when asked, so a refresh does not blank the page', async () => {
+    let resolve
+    const h = harness()
+    h.deps.getMachine.mockImplementationOnce(() => Promise.resolve({ machine: { ...MACHINE, name: 'renamed' } }))
+    await h.d.load()
+    h.deps.getMachine.mockImplementation(() => new Promise((r) => { resolve = r }))
+    const pending = h.d.load({ quiet: true })
+    expect(h.d.loading.value).toBe(false)
+    resolve({ machine: { ...MACHINE, name: 'renamed' } })
+    await pending
+    expect(h.d.machine.value.name).toBe('renamed')
+  })
+
   it('says what went wrong', async () => {
     const h = harness({ getMachine: vi.fn().mockRejectedValue(new Error('not found')) })
     await h.d.load()

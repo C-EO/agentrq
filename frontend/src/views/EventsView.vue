@@ -9,6 +9,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchEvents, createEvent, deleteEvent } from '../api'
 import { useToasts } from '../composables/useToasts'
+import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import LoadingState from '../components/LoadingState.vue'
 
@@ -57,8 +58,8 @@ function validateName(name) {
 
 // ── data ops ──────────────────────────────────────────────────────────────────
 
-async function loadEvents() {
-  loading.value = true
+async function loadEvents({ quiet = false } = {}) {
+  if (!quiet) loading.value = true
   try {
     const data = await fetchEvents()
     events.value = data.events ?? []
@@ -115,6 +116,7 @@ async function handleDelete() {
 }
 
 onMounted(loadEvents)
+onWebMCPChange(() => loadEvents({ quiet: true }))
 </script>
 
 <template>

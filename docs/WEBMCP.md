@@ -45,6 +45,10 @@ query parameters included (a workspace's `?filter=`, its settings' `?tab=`), so
 an agent can build the path itself. It refuses anything that isn't an in-app
 path, or that matches no page, and answers with the page you actually landed on.
 
+When an agent changes something, the page you have open shows it straight
+away: workflows, events, workspaces and machines re-read in place, and tasks
+arrive live as they always have. A form with unsaved input is left as you had it.
+
 Two things in the interface are deliberately **not** tools:
 
 - **Attachments.** Their URLs are rendered by the page and fetched by the

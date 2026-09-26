@@ -31,6 +31,7 @@ import {
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
+import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
 import { useAgentLaunch } from '../composables/useAgentLaunch'
@@ -120,6 +121,8 @@ onMounted(() => {
   connect()
 })
 onUnmounted(disconnect)
+// A rename by a browser agent is not among the live events.
+onWebMCPChange(() => detail.load({ quiet: true }))
 
 async function toggleEnabled() {
   const next = !machine.value?.enabled

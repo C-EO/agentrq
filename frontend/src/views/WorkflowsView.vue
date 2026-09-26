@@ -9,6 +9,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchWorkflows, createWorkflow, deleteWorkflow, fetchEvents } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import DeleteModal from '../components/DeleteModal.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -39,8 +40,8 @@ function onNameInput(e) {
   formNameError.value = '';
 }
 
-async function loadWorkflows() {
-  loading.value = true;
+async function loadWorkflows({ quiet = false } = {}) {
+  if (!quiet) loading.value = true;
   try {
     const data = await fetchWorkflows();
     workflows.value = data.workflows ?? [];
@@ -131,6 +132,8 @@ function eventName(id) {
 onMounted(async () => {
   await Promise.all([loadWorkflows(), loadEvents()]);
 });
+
+onWebMCPChange(() => Promise.all([loadWorkflows({ quiet: true }), loadEvents()]));
 </script>
 
 <template>
