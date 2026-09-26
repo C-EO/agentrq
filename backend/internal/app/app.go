@@ -390,14 +390,7 @@ func New(cfg Config) (*App, error) {
 			workspaceOwner,
 			cfg.App.BaseURL,
 			func(ctx context.Context, task model.Task) (model.Task, error) {
-				task.AllowAllCommands = workspace.AllowAllCommands
-				// Unlike allowAllCommands above, an explicit true from the tool
-				// is kept: asking for a clean context is a per-task decision,
-				// and the workspace setting is only the default for callers
-				// that said nothing.
-				if !task.ClearContext {
-					task.ClearContext = workspace.ClearContextDefault
-				}
+				task = mcpTaskDefaults(ctx, repo, workspaceID, workspace, task)
 				res, err := repo.CreateTask(ctx, task)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
@@ -1125,6 +1118,28 @@ func instanceID(idgenNode uint16) string {
 	// than a random value, which changes on every restart and leaves pairings
 	// pointing at an id nothing will ever answer to again.
 	return fmt.Sprintf("node-%d", idgenNode)
+}
+
+// mcpTaskDefaults gives a task created over the workspace MCP server what the
+// CRUD controller gives every other task, since this path does not go through
+// it. The workspace is read again because the server outlives edits to it;
+// started is the copy read when the server was, used if that read fails.
+func mcpTaskDefaults(ctx context.Context, repo base.Repository, workspaceID int64, started model.Workspace, task model.Task) model.Task {
+	workspace, err := repo.SystemGetWorkspace(ctx, workspaceID)
+	if err != nil {
+		workspace = started
+	}
+	task.AllowAllCommands = workspace.AllowAllCommands
+	// Unlike allowAllCommands above, an explicit true from the tool is kept:
+	// asking for a clean context is a per-task decision, and the workspace
+	// setting is only the default for callers that said nothing.
+	if !task.ClearContext {
+		task.ClearContext = workspace.ClearContextDefault
+	}
+	if task.Assignee == "agent" {
+		task.Body = crud.AppendSelfLearningNote(task.Body, workspace.SelfLearningLoopNote)
+	}
+	return task
 }
 
 // taskEventPayload loads the task an SSE event is about, with the relations a

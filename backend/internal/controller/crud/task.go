@@ -23,13 +23,13 @@ import (
 	"gorm.io/datatypes"
 )
 
-// appendSelfLearningNote appends the workspace's self-learning loop note to an
+// AppendSelfLearningNote appends the workspace's self-learning loop note to an
 // agent task body. It is idempotent: if the note is empty or the body already
 // contains it, the body is returned unchanged. This prevents the note from
 // accumulating multiple times when a body that already carries it is re-submitted
 // (e.g. self-improving loop tasks, copied bodies, or repeated human→agent
 // reassignment) — which would otherwise be returned repeatedly by the getTask tool.
-func appendSelfLearningNote(body, note string) string {
+func AppendSelfLearningNote(body, note string) string {
 	if note == "" || strings.Contains(body, note) {
 		return body
 	}
@@ -122,7 +122,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	if req.Task.Assignee == "agent" {
-		req.Task.Body = appendSelfLearningNote(req.Task.Body, w.SelfLearningLoopNote)
+		req.Task.Body = AppendSelfLearningNote(req.Task.Body, w.SelfLearningLoopNote)
 	}
 
 	// Choosing a workflow means "run this pipeline on completion", which fires
@@ -427,7 +427,7 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 	}
 
 	if req.Assignee == "agent" && m.Assignee != "agent" {
-		m.Body = appendSelfLearningNote(m.Body, w.SelfLearningLoopNote)
+		m.Body = AppendSelfLearningNote(m.Body, w.SelfLearningLoopNote)
 	}
 
 	m.Assignee = req.Assignee
