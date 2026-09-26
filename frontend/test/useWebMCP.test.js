@@ -4,11 +4,20 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ref } from 'vue';
+import { createRouter, createMemoryHistory } from 'vue-router';
+
+import { routes } from '../src/app';
 
 import { connectWebMCP, describePage } from '../src/composables/useWebMCP';
 import { WebMCPStatus } from '../src/webmcp/modelContext';
 
-const routerAt = (route) => ({ push: vi.fn().mockResolvedValue(undefined), currentRoute: ref(route) });
+const routerAt = (route) => ({
+  push: vi.fn().mockResolvedValue(undefined),
+  resolve: () => ({ matched: [{}] }),
+  currentRoute: ref(route),
+});
+
+const navigateTool = (ctx) => ctx.registerTool.mock.calls.map(([t]) => t).find((t) => t.name === 'navigate');
 
 describe('describePage', () => {
   it('hands over the route params, which are what an agent needs', () => {
@@ -65,6 +74,15 @@ describe('connectWebMCP', () => {
     expect(router.push).toHaveBeenCalledWith('/events');
   });
 
+  it('refuses a path no route matches, rather than leaving the user on a blank page', async () => {
+    const ctx = context();
+    const router = { ...routerAt({ path: '/' }), resolve: () => ({ matched: [] }) };
+    await connectWebMCP({ api: {}, router, context: ctx });
+
+    await expect(navigateTool(ctx).execute({ path: '/nowhere' }, {})).rejects.toThrow('No page at /nowhere');
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
   it('answers getCurrentPage from where the user is now, not where they were', async () => {
     const ctx = context();
     const router = routerAt({ path: '/', params: {}, query: {} });
@@ -102,5 +120,58 @@ describe('connectWebMCP', () => {
     expect(result.registered).toEqual([]);
     // Still safe to call, so the caller needs no branch of its own.
     expect(() => result.unregister()).not.toThrow();
+  });
+});
+
+describe('the navigate tool\'s map of the interface', () => {
+  // Every page the description names, spelled as an agent would build it. If a
+  // route is added, the last test fails until the description (and this list)
+  // tells agents about it.
+  const DESCRIBED = [
+    '/',
+    '/tasks/pending',
+    '/tasks/active/ws1/t1',
+    '/tasks/scheduled/ws1/t1/instances',
+    '/workspaces/ws1?filter=completed',
+    '/workspaces/ws1/board',
+    '/workspaces/ws1/analytics',
+    '/workspaces/ws1/settings?tab=skills',
+    '/workspaces/ws1/tasks/t1',
+    '/workspaces/ws1/tasks/t1/instances',
+    '/workspaces/ws1/tasks/t1/edit',
+    '/workspaces/ws1/tasks/new',
+    '/events',
+    '/events/e1',
+    '/workflows',
+    '/workflows/wf1',
+    '/machines',
+    '/machines/m1',
+    '/sessions/s1',
+    '/extensions',
+    '/extensions/acme/home',
+  ];
+  const router = createRouter({ history: createMemoryHistory(), routes });
+
+  it.each(DESCRIBED)('%s is a real page', (path) => {
+    expect(router.resolve(path).matched.length).toBeGreaterThan(0);
+  });
+
+  it('covers every page except sign-in', () => {
+    const reached = new Set(DESCRIBED.map((path) => router.resolve(path).matched.at(-1).path));
+    const pages = router.getRoutes().filter((r) => !r.meta?.public && r.components).map((r) => r.path);
+
+    expect(pages.filter((p) => !reached.has(p))).toEqual([]);
+  });
+
+  it('is what the description names', async () => {
+    const ctx = { registerTool: vi.fn().mockResolvedValue(undefined) };
+    await connectWebMCP({ api: {}, router: routerAt({ path: '/' }), context: ctx });
+    const { description } = navigateTool(ctx);
+
+    for (const word of ['board', 'analytics', 'settings', 'instances', 'edit', 'new', 'events', 'workflows',
+      'machines', 'sessions', 'extensions', 'notstarted', 'pending', 'ongoing', 'completed', 'scheduled',
+      '?filter=', '?tab=', 'memories', 'danger']) {
+      expect(description).toContain(word);
+    }
   });
 });
