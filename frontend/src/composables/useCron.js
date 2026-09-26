@@ -55,7 +55,19 @@ export function useCron() {
         return `Monthly (Day ${next.getDate()}) at ${timeStr}`;
       }
       if (cDom === '*' && cMonth === '*' && cDow === '*') {
-        return `Daily at ${timeStr}`;
+        // Only a single hour is daily: the form's "Bi-hourly" is */2 and its
+        // "Twice a day" is a pair like 9,21, and neither may read as daily.
+        const plain = (f) => /^\d{1,2}$/.test(f);
+        if (!plain(cMin)) return cron;
+        const step = /^\*\/(\d+)$/.exec(cHour);
+        if (step) return `Every ${step[1]}h`;
+        const hours = cHour.split(',');
+        if (!hours.every(plain)) return cron;
+        if (hours.length === 1) return `Daily at ${timeStr}`;
+        // The next-run line already shows the time, so this stays short
+        // enough to sit beside the title on a phone.
+        if (hours.length === 2) return 'Twice daily';
+        return `${hours.length}× daily`;
       }
     } catch (e) {}
 
