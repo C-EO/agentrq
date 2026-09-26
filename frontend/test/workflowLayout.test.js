@@ -9,6 +9,7 @@ import {
   MAX_NODE_WIDTH,
   MIN_NODE_WIDTH,
   columnOffsets,
+  enforceEdgeGaps,
   nodeWidth,
 } from '../src/composables/useWorkflowLayout'
 
@@ -75,5 +76,41 @@ describe('columnOffsets', () => {
 
   it('has nothing to place for an empty graph', () => {
     expect(columnOffsets([], 32)).toEqual([])
+  })
+})
+
+describe('enforceEdgeGaps', () => {
+  const box = (x, y = 0) => ({ x, y, width: 230, height: 40 })
+
+  // The reported bug: positions saved at 200px left today's boxes ~27px apart.
+  it('pushes a crowded neighbour out to the standard gap, down the chain', () => {
+    const a = box(0)
+    const b = box(257)
+    const c = box(300)
+    enforceEdgeGaps([{ from: b, to: c }, { from: a, to: b }])
+    expect(b.x).toBe(230 + COLUMN_GAP)
+    expect(c.x).toBe(2 * (230 + COLUMN_GAP))
+  })
+
+  it('leaves a node that already has room', () => {
+    const b = box(500)
+    enforceEdgeGaps([{ from: box(0), to: b }])
+    expect(b.x).toBe(500)
+  })
+
+  it('leaves a node placed on another row or to the left', () => {
+    const below = box(10, 100)
+    const left = box(-300)
+    enforceEdgeGaps([{ from: box(0), to: below }, { from: box(0), to: left }])
+    expect(below.x).toBe(10)
+    expect(left.x).toBe(-300)
+  })
+
+  it('stops on a cycle', () => {
+    const a = box(0)
+    const b = box(10)
+    enforceEdgeGaps([{ from: a, to: b }, { from: b, to: a }])
+    expect(b.x).toBe(230 + COLUMN_GAP)
+    expect(a.x).toBe(0)
   })
 })
