@@ -439,7 +439,7 @@
     </main>
 
     <!-- App Content View -->
-    <main v-else class="grow min-w-0 p-0 md:p-4 h-full min-h-0 flex flex-col relative bg-zinc-100 dark:bg-zinc-950">
+    <main v-else class="grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex flex-col relative bg-zinc-100 dark:bg-zinc-950">
       <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth bg-white dark:bg-zinc-900 md:border border-gray-200 dark:border-zinc-800 no-scrollbar">
         <!-- Never unmounted by a route change — router-view is swapped inside
              it — so its size is also the size a page navigated to next is
