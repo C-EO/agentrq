@@ -6,6 +6,7 @@ import { initPopup } from './popup.js'
 
 initPopup({
   doc: globalThis.document,
+  win: globalThis,
   chrome: globalThis.chrome,
   fetchImpl: (...args) => globalThis.fetch(...args),
   close: () => globalThis.close(),

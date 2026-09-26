@@ -11,11 +11,19 @@ import { fakeDocument } from './fake-document.js'
 const IDS = ['app', 'message', 'text', 'action', 'options', 'full', 'strip', 'strip-text', 'strip-workspace', 'strip-action']
 const answer = (status) => async () => ({ status, ok: status < 300 })
 
+// The popup's window: it only listens for messages, which `post` delivers.
+function fakeWindow() {
+  const listeners = []
+  return { addEventListener: (type, fn) => type === 'message' && listeners.push(fn), post: (event) => Promise.all(listeners.map((fn) => fn(event))) }
+}
+
 async function open({ status = 200, chrome = fakeChrome({ windows: [{ type: 'normal', focused: true }] }), fetchImpl } = {}) {
   const doc = fakeDocument(IDS)
+  doc.elements.app.contentWindow = { frame: 'app' }
+  const win = fakeWindow()
   let closed = 0
-  await initPopup({ doc, chrome, fetchImpl: fetchImpl ?? answer(status), close: () => closed++ })
-  return { doc, chrome, el: doc.elements, closed: () => closed }
+  await initPopup({ doc, win, chrome, fetchImpl: fetchImpl ?? answer(status), close: () => closed++ })
+  return { doc, win, chrome, el: doc.elements, closed: () => closed }
 }
 
 const click = (el, event = { preventDefault() {} }) => el.events.click(event)
@@ -81,7 +89,8 @@ test('the popup sets itself up from its entry point', async () => {
   const doc = fakeDocument(IDS)
   const saved = { document: globalThis.document, chrome: globalThis.chrome, fetch: globalThis.fetch, close: globalThis.close }
   let closed = 0
-  Object.assign(globalThis, { document: doc, chrome: fakeChrome({ windows: [{ type: 'normal' }] }), fetch: answer(200), close: () => closed++ })
+  saved.addEventListener = globalThis.addEventListener
+  Object.assign(globalThis, { document: doc, chrome: fakeChrome({ windows: [{ type: 'normal' }] }), fetch: answer(200), close: () => closed++, addEventListener() {} })
   try {
     await import('../src/popup-page.js')
     await settle()
@@ -98,4 +107,41 @@ test('the site-tools strip sits above the app', async () => {
   assert.equal(el.app.hidden, false)
   assert.equal(el.strip.hidden, false)
   assert.equal(el['strip-action'].textContent, 'Turn on')
+})
+
+const APP = 'https://app.agentrq.com'
+const route = (el, path, extra = {}) => ({ source: el.app.contentWindow, origin: APP, data: { type: 'agentrq-route', path }, ...extra })
+
+test('the popup reopens on the page the app last reported, and full size opens it too', async () => {
+  const first = await open()
+  await first.win.post(route(first.el, '/workspaces/w1/board?filter=ongoing'))
+  assert.deepEqual(first.chrome.storage.local.data.popupPage, { server: APP, path: '/workspaces/w1/board?filter=ongoing' })
+  await click(first.el.full)
+  assert.ok(first.chrome.calls.some(([name, props]) => name === 'tabs.create' && props.url === `${APP}/workspaces/w1/board?filter=ongoing`))
+
+  const again = await open({ chrome: first.chrome })
+  assert.equal(again.el.app.src, `${APP}/workspaces/w1/board?filter=ongoing`)
+})
+
+test('a page kept for another server is not opened on this one', async () => {
+  const chrome = fakeChrome({ windows: [{ type: 'normal', focused: true }] })
+  chrome.storage.local.data.popupPage = { server: 'https://agentrq.example.com', path: '/events' }
+  const { el } = await open({ chrome })
+  assert.equal(el.app.src, APP)
+})
+
+test('only the frame, from the server, naming an in-app page, is listened to', async () => {
+  const { el, win, chrome } = await open()
+  for (const event of [
+    route(el, '/a', { source: { frame: 'another' } }),
+    route(el, '/a', { origin: 'https://evil.example' }),
+    route(el, '/a', { data: { type: 'something-else', path: '/a' } }),
+    route(el, '/a', { data: null }),
+    route(el, 'https://evil.example/'),
+    route(el, '//evil.example/'),
+    route(el, 42),
+  ]) {
+    await win.post(event)
+  }
+  assert.equal(chrome.storage.local.data.popupPage, undefined)
 })
