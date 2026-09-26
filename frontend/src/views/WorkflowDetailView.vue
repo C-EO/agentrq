@@ -22,7 +22,7 @@ import {
   paletteTooltip,
   workspaceLabel,
 } from '../composables/useWorkflowLabels';
-import { columnOffsets, nodeWidth } from '../composables/useWorkflowLayout';
+import { columnOffsets, enforceEdgeGaps, nodeWidth } from '../composables/useWorkflowLayout';
 import DeleteModal from '../components/DeleteModal.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -49,10 +49,12 @@ const mode = ref('graph');
 
 // Box widths follow their labels, see useWorkflowLayout.
 const ROW_HEIGHT = 104;
-const NODE_HEIGHT = 56;
+// Boxes render at exactly these heights, so an edge anchored at half of one
+// meets the box at its middle.
+const NODE_HEIGHT = 40;
 // A step that emits an event renders a second line, so it is taller than the
 // base node. Row spacing has to clear the taller one or branches collide.
-const NODE_HEIGHT_WITH_EMIT = 78;
+const NODE_HEIGHT_WITH_EMIT = 60;
 const CANVAS_PADDING = 32;
 
 const positions = ref({});
@@ -379,6 +381,7 @@ const graph = computed(() => {
     node.x = override?.x ?? columnX[node.column];
     node.y = override?.y ?? CANVAS_PADDING + node.row * ROW_HEIGHT;
   }
+  enforceEdgeGaps(edges);
 
   const width = Math.max(...nodes.map(n => n.x + n.width), 0) + CANVAS_PADDING;
   const height = Math.max(...nodes.map(n => n.y + n.height), 0) + CANVAS_PADDING;
@@ -971,8 +974,8 @@ onMounted(async () => {
               <div
                 v-for="node in graph.nodes"
                 :key="nodeKey(node)"
-                class="absolute select-none rounded-xl border transition-shadow"
-                :style="{ left: node.x + 'px', top: node.y + 'px', width: node.width + 'px' }"
+                class="absolute select-none rounded-xl border transition-shadow flex flex-col justify-center"
+                :style="{ left: node.x + 'px', top: node.y + 'px', width: node.width + 'px', height: node.height + 'px' }"
                 :class="[
                   node.kind === 'event'
                     ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-900/50'

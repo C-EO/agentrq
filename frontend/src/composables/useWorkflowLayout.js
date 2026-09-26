@@ -84,3 +84,28 @@ export function columnOffsets(nodes, padding) {
   }
   return offsets;
 }
+
+/**
+ * Pushes a node right until it clears the node its edge comes from by at least
+ * COLUMN_GAP, when the two sit side by side. Positions saved while boxes were a
+ * fixed 200px otherwise leave today's wider boxes nearly touching, with no room
+ * for the arrow. A node dragged onto another row, or to the left of its source,
+ * is left where it was put.
+ *
+ * @param {Array<{from: object, to: object}>} edges nodes carry x, y, width, height
+ */
+export function enforceEdgeGaps(edges) {
+  // Every pass settles at least one more link of the longest chain.
+  for (let pass = 0; pass <= edges.length; pass++) {
+    let moved = false;
+    for (const { from, to } of edges) {
+      const sideBySide = to.y < from.y + from.height && from.y < to.y + to.height;
+      const minX = from.x + from.width + COLUMN_GAP;
+      if (sideBySide && to.x >= from.x && to.x < minX) {
+        to.x = minX;
+        moved = true;
+      }
+    }
+    if (!moved) return;
+  }
+}
