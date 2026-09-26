@@ -20,7 +20,7 @@ npx -y @agentrq/agentrq-ws@latest workspace
 
 An agent talks to its workspace over MCP, which is the right shape for an agent
 and the wrong shape for a person: every call is a JSON envelope, and every
-answer is tokens the agent pays for. The same fifteen tools are underneath this
+answer is tokens the agent pays for. The same seventeen tools are underneath this
 CLI, but a command is a line of shell and the answer is plain text.
 
 It is also the difference between reading an attachment and *handling* one — see
@@ -58,6 +58,8 @@ Node 20.6 or newer.
 | `skill delete <uri>` | Delete a skill (`skill://<name>`) or one of its files |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
+| `site-tools` | List the websites shared with this workspace from the Chrome extension, and their tools |
+| `call-site-tool <site> <tool> --task <taskId>` | Run a shared website's tool in the human's Chrome, with `--args '{…}'` |
 | `tools` | List the tools this workspace server offers |
 | `call <tool> --args '{…}'` | Call any tool directly |
 

@@ -516,6 +516,48 @@ test('every command is documented and reachable', () => {
   }
 })
 
+test('site-tools lists the shared websites', async () => {
+  const client = stubClient()
+  await invoke('site-tools', { client })
+  assert.deepEqual(client.calls, [{ name: 'listSiteTools', args: {} }])
+})
+
+test('call-site-tool sends the site, tool, task and parsed arguments', async () => {
+  const client = stubClient()
+  await invoke('call-site-tool', {
+    positionals: ['https://github.com', 'search'],
+    values: { task: '0isnjTCkpW5', args: '{"q":"agentrq"}' },
+    client,
+  })
+  assert.deepEqual(client.calls, [{
+    name: 'callSiteTool',
+    args: { taskId: '0isnjTCkpW5', site: 'https://github.com', tool: 'search', arguments: { q: 'agentrq' } },
+  }])
+})
+
+test('call-site-tool reads arguments from stdin, and defaults them to {}', async () => {
+  const client = stubClient()
+  await invoke('call-site-tool', {
+    positionals: ['https://github.com', 'star'],
+    values: { task: '0isnjTCkpW5', args: '-' },
+    stdin: stdinOf('{"repo":"agentrq"}'),
+    client,
+  })
+  await invoke('call-site-tool', { positionals: ['https://github.com', 'star'], values: { task: '0isnjTCkpW5' }, client })
+  assert.deepEqual(client.calls.map((c) => c.args.arguments), [{ repo: 'agentrq' }, {}])
+})
+
+test('call-site-tool refuses invalid JSON, a missing task, site or tool', async () => {
+  const task = { task: '0isnjTCkpW5' }
+  await assert.rejects(
+    () => invoke('call-site-tool', { positionals: ['https://github.com', 'star'], values: { ...task, args: '{oops' } }),
+    (err) => err instanceof UserError && /--args is not valid JSON/.test(err.message),
+  )
+  await assert.rejects(() => invoke('call-site-tool', { positionals: ['https://github.com', 'star'] }), /--task <taskId> is required/)
+  await assert.rejects(() => invoke('call-site-tool', { values: task }), /<site>/)
+  await assert.rejects(() => invoke('call-site-tool', { positionals: ['https://github.com'], values: task }), /<tool>/)
+})
+
 test('the CLI covers every tool the workspace server offers', () => {
   // The point of the package: anything an agent can do here, a person can do
   // from a shell. `call` is the catch-all, so a tool may be reached that way.
@@ -535,6 +577,8 @@ test('the CLI covers every tool the workspace server offers', () => {
     'saveSkill',
     'deleteSkill',
     'elicit',
+    'listSiteTools',
+    'callSiteTool',
   ])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')
   for (const tool of covered) {

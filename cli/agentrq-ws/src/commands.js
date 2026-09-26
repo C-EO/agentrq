@@ -376,6 +376,34 @@ export const COMMANDS = [
     },
   },
   {
+    path: ['site-tools'],
+    summary: 'List the websites shared with this workspace and their tools',
+    usage: 'agentrq-ws site-tools',
+    async run(ctx) {
+      return ctx.client.callTool('listSiteTools', {})
+    },
+  },
+  {
+    path: ['call-site-tool'],
+    summary: "Run a shared website's tool in the human's Chrome",
+    usage: "agentrq-ws call-site-tool <site> <tool> --task <taskId> [--args '{\"k\":\"v\"}'|@file|-]",
+    options: {
+      task: { type: 'string', short: 't', description: 'The task you are working on; approvals are asked there' },
+      args: { type: 'string', short: 'a', description: 'Tool arguments as JSON (@file or - for stdin)' },
+    },
+    async run(ctx) {
+      const site = requirePositional(ctx.positionals, 0, 'site')
+      const tool = requirePositional(ctx.positionals, 1, 'tool')
+      if (!ctx.values.task) throw new UserError('--task <taskId> is required')
+      return ctx.client.callTool('callSiteTool', {
+        taskId: ctx.values.task,
+        site,
+        tool,
+        arguments: await readArgs(ctx),
+      })
+    },
+  },
+  {
     path: ['tools'],
     summary: 'List the tools this workspace server offers',
     usage: 'agentrq-ws tools',
@@ -398,19 +426,21 @@ export const COMMANDS = [
       // An escape hatch, so a tool added to the server tomorrow is reachable
       // today without waiting for this CLI to grow a verb for it.
       const name = requirePositional(ctx.positionals, 0, 'tool')
-      const raw = await resolveText(ctx.values.args, { stdin: ctx.stdin, what: 'the arguments' })
-      let args = {}
-      if (raw !== undefined && String(raw).trim() !== '') {
-        try {
-          args = JSON.parse(raw)
-        } catch (err) {
-          throw new UserError(`--args is not valid JSON: ${err.message}`)
-        }
-      }
-      return ctx.client.callTool(name, args)
+      return ctx.client.callTool(name, await readArgs(ctx))
     },
   },
 ]
+
+/** --args as JSON, from inline, @file or stdin; nothing given is {}. */
+async function readArgs(ctx) {
+  const raw = await resolveText(ctx.values.args, { stdin: ctx.stdin, what: 'the arguments' })
+  if (raw === undefined || String(raw).trim() === '') return {}
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    throw new UserError(`--args is not valid JSON: ${err.message}`)
+  }
+}
 
 /**
  * Match a leading path that names a family rather than a command — `task`,
