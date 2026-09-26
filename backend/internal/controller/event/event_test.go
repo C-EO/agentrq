@@ -453,3 +453,91 @@ func TestProcessEvent_TasksInheritWorkspaceClearContextDefault(t *testing.T) {
 		})
 	}
 }
+
+// ── archived and deleted target workspaces ────────────────────────────────────
+
+// SystemGetWorkspace returns archived workspaces too, and a task created in one
+// is seen by nobody, so an archived target must be skipped on both paths.
+func TestProcessEvent_ArchivedTargetsAreSkipped(t *testing.T) {
+	c, mockRepo, mockPubSub, mockIDGen := newTestController(t)
+	archived := time.Now()
+
+	mockRepo.EXPECT().
+		SystemListWorkflowStepsByEvent(gomock.Any(), int64(7), int64(42)).
+		Return([]model.WorkflowStep{
+			{ID: 1, WorkflowID: 7, EventID: 42, WorkspaceID: 10, Title: "archived step", Assignee: "agent"},
+			{ID: 2, WorkflowID: 7, EventID: 42, WorkspaceID: 30, Title: "live step", Assignee: "agent"},
+		}, nil)
+	mockRepo.EXPECT().
+		SystemListEventTriggersByEventID(gomock.Any(), int64(42)).
+		Return([]model.EventTrigger{
+			{ID: 3, EventID: 42, WorkspaceID: 20, Title: "archived trigger", Assignee: "agent"},
+		}, nil)
+
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(10)).Return(model.Workspace{ID: 10, UserID: 100, ArchivedAt: &archived}, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(20)).Return(model.Workspace{ID: 20, UserID: 100, ArchivedAt: &archived}, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(30)).Return(model.Workspace{ID: 30, UserID: 100}, nil)
+
+	// Only the live step gets an ID, a task and a publish.
+	mockIDGen.EXPECT().NextID().Return(int64(111))
+	var created []model.Task
+	mockRepo.EXPECT().
+		CreateTask(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, task model.Task) (model.Task, error) {
+			created = append(created, task)
+			return task, nil
+		})
+	mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil)
+
+	c.processEvent(context.Background(), entity.EventPublishedPayload{
+		EventID: 42, Name: "code_changed", WorkflowID: 7,
+	})
+
+	if len(created) != 1 || created[0].WorkspaceID != 30 {
+		t.Fatalf("expected one task, in the live workspace 30; got %+v", created)
+	}
+}
+
+func TestProcessEvent_WorkflowStepWorkspaceNotFound(t *testing.T) {
+	c, mockRepo, _, _ := newTestController(t)
+
+	mockRepo.EXPECT().
+		SystemListWorkflowStepsByEvent(gomock.Any(), int64(7), int64(42)).
+		Return([]model.WorkflowStep{{ID: 1, WorkflowID: 7, EventID: 42, WorkspaceID: 99, Title: "step"}}, nil)
+	mockRepo.EXPECT().SystemListEventTriggersByEventID(gomock.Any(), int64(42)).Return(nil, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(99)).Return(model.Workspace{}, base.ErrNotFound)
+
+	// No CreateTask call expected
+	c.processEvent(context.Background(), entity.EventPublishedPayload{EventID: 42, WorkflowID: 7})
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+// Start sweeps triggers and steps orphaned by workspaces deleted before
+// DeleteWorkspace removed them, and a failed sweep does not stop the consumer.
+func TestStart_DeletesOrphanedEventRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		n    int64
+		err  error
+	}{
+		{"some deleted", 3, nil},
+		{"nothing to delete", 0, nil},
+		{"sweep fails", 0, fmt.Errorf("db down")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, mockRepo, mockPubSub, _ := newTestController(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			mockPubSub.EXPECT().
+				Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicEvents}).
+				Return(&pubsub.SubscribeResponse{Events: make(chan any)}, nil)
+			mockRepo.EXPECT().SystemDeleteOrphanedEventRouting(gomock.Any()).Return(tc.n, tc.err)
+
+			if err := c.Start(ctx); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+		})
+	}
+}

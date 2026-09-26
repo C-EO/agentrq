@@ -155,6 +155,9 @@ describe('the catalogue as a whole', () => {
         'killSession',
         'setMachineEnabled',
         'replaceWorkflowFromText',
+        // Archiving keeps the tasks but deletes the triggers and workflow
+        // steps aimed at the workspace, and unarchiving does not restore them.
+        'archiveWorkspace',
       ].sort()
     );
   });

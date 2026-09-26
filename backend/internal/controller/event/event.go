@@ -57,6 +57,14 @@ func (c *controller) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to subscribe to events topic: %w", err)
 	}
 
+	// Deleting or archiving a workspace removes its triggers and steps, but
+	// rows left behind before either did would be drawn and skipped forever.
+	if n, err := c.repo.SystemDeleteOrphanedEventRouting(ctx); err != nil {
+		zlog.Warn().Err(err).Msg("[event-consumer] failed to delete triggers and steps of deleted or archived workspaces")
+	} else if n > 0 {
+		zlog.Info().Int64("rows", n).Msg("[event-consumer] deleted triggers and steps of deleted or archived workspaces")
+	}
+
 	zlog.Info().Msg("[event-consumer] started controller")
 
 	go func() {
@@ -143,9 +151,8 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 	}
 	body := renderTemplate(trigger.Body, payload, faqText)
 
-	ws, err := c.repo.SystemGetWorkspace(ctx, trigger.WorkspaceID)
-	if err != nil {
-		zlog.Warn().Err(err).Int64("workspaceID", trigger.WorkspaceID).Msg("[event-consumer] workspace not found")
+	ws, ok := c.targetWorkspace(ctx, trigger.WorkspaceID, "triggerID", trigger.ID)
+	if !ok {
 		return
 	}
 
@@ -213,6 +220,24 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 	})
 }
 
+// targetWorkspace resolves the workspace a trigger or step creates its task in.
+// SystemGetWorkspace does not filter archived workspaces, and a task created in
+// one is seen by nobody, so an archived target is skipped like a missing one.
+// Archiving deletes a workspace's triggers and steps; this covers a publish
+// that read them just before.
+func (c *controller) targetWorkspace(ctx context.Context, id int64, kind string, sourceID int64) (model.Workspace, bool) {
+	ws, err := c.repo.SystemGetWorkspace(ctx, id)
+	if err != nil {
+		zlog.Warn().Err(err).Int64("workspaceID", id).Int64(kind, sourceID).Msg("[event-consumer] workspace not found")
+		return model.Workspace{}, false
+	}
+	if ws.ArchivedAt != nil {
+		zlog.Info().Int64("workspaceID", id).Int64(kind, sourceID).Msg("[event-consumer] workspace is archived, skipping")
+		return model.Workspace{}, false
+	}
+	return ws, true
+}
+
 // createWorkflowTask creates one task for a workflow step and, when the step
 // chains onward, arms that task to publish the next event.
 //
@@ -226,9 +251,8 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 	}
 	body := renderTemplate(step.Body, ev.Payload, faqText)
 
-	ws, err := c.repo.SystemGetWorkspace(ctx, step.WorkspaceID)
-	if err != nil {
-		zlog.Warn().Err(err).Int64("workspaceID", step.WorkspaceID).Msg("[event-consumer] workspace not found")
+	ws, ok := c.targetWorkspace(ctx, step.WorkspaceID, "stepID", step.ID)
+	if !ok {
 		return
 	}
 
