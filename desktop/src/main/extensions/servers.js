@@ -64,6 +64,8 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'saveSkill',
   'deleteSkill',
   'elicit',
+  'listSiteTools',
+  'callSiteTool',
 ])
 
 /** `backend/internal/handler/coremcp/`, across every file that registers a tool. */
