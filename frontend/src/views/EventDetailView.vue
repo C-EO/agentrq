@@ -9,6 +9,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEvent, updateEvent, deleteEvent, fetchEvents, fetchEventTriggers, createEventTrigger, updateEventTrigger, deleteEventTrigger, fetchEventTasks } from '../api'
 import { useToasts } from '../composables/useToasts'
+import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import { useCron } from '../composables/useCron'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useTooltipStore } from '../stores/tooltipStore'
@@ -30,8 +31,8 @@ const eventId = route.params.id
 const event = ref(null)
 const loadingEvent = ref(false)
 
-async function loadEvent() {
-  loadingEvent.value = true
+async function loadEvent({ quiet = false } = {}) {
+  if (!quiet) loadingEvent.value = true
   try {
     const data = await getEvent(eventId)
     event.value = data.event
@@ -71,8 +72,8 @@ async function saveGuidelines() {
 const triggers = ref([])
 const loadingTriggers = ref(false)
 
-async function loadTriggers() {
-  loadingTriggers.value = true
+async function loadTriggers({ quiet = false } = {}) {
+  if (!quiet) loadingTriggers.value = true
   try {
     const data = await fetchEventTriggers(eventId)
     triggers.value = data.eventTriggers ?? []
@@ -304,12 +305,12 @@ function loadMoreTasks() {
   visibleTaskCount.value += TASKS_PAGE_SIZE
 }
 
-async function loadTasks() {
-  loadingTasks.value = true
+async function loadTasks({ quiet = false } = {}) {
+  if (!quiet) loadingTasks.value = true
   try {
     const data = await fetchEventTasks(eventId)
     tasks.value = data.tasks ?? []
-    visibleTaskCount.value = TASKS_PAGE_SIZE
+    if (!quiet) visibleTaskCount.value = TASKS_PAGE_SIZE
   } catch (e) {
     notifyError(e.message)
   } finally {
@@ -340,6 +341,15 @@ onMounted(async () => {
   if (!workspaceStore.workspaces.length) await workspaceStore.fetchWorkspaces()
   await Promise.all([loadEvent(), loadTriggers(), loadTasks(), loadAllEvents()])
 })
+
+// Quietly, so a browser agent's change does not blank the page; an open form
+// keeps its own copy of what is being edited.
+onWebMCPChange(() => Promise.all([
+  loadEvent({ quiet: true }),
+  loadTriggers({ quiet: true }),
+  loadTasks({ quiet: true }),
+  loadAllEvents(),
+]))
 </script>
 
 <template>

@@ -71,8 +71,9 @@ export function useMachineDetail(deps = {}) {
 
   const liveSessions = computed(() => sessions.value.filter((s) => isSessionLive(s.status)))
 
-  async function load() {
-    loading.value = true
+  // `quiet` re-reads without the loading line, for a refresh the person did not ask for.
+  async function load({ quiet = false } = {}) {
+    if (!quiet) loading.value = true
     error.value = ''
     try {
       const [m, s] = await Promise.all([getMachine(machineId), fetchMachineSessions(machineId)])

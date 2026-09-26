@@ -20,6 +20,10 @@ tool is added; don't trust it, count `createToolCatalogue(...)`'s length.
 - Tools act as the signed-in user with their cookie, so they inherit exactly the
   user's permissions. The registration is withdrawn on logout because the page
   is not reloaded in between.
+- **A view that loads on mount must also `onWebMCPChange(reload)`**
+  (`composables/useWebMCPChanges.js`), unless SSE already keeps it current:
+  otherwise an agent's change stays invisible until the person leaves the page.
+  Reload quietly, without the loading state, and never over unsaved input.
 - User-facing documentation is `docs/WEBMCP.md`; `cd desktop && npm run
   verify:webmcp` drives the whole path in a real browser with no backend.
 

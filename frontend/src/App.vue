@@ -499,6 +499,7 @@ import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { duplicateNotice, profileDisplay } from './composables/useProfileDisplay'
 import { connectWebMCP } from './composables/useWebMCP'
+import { onWebMCPChange } from './composables/useWebMCPChanges'
 import { recordUiAction } from './composables/useUiTelemetry'
 import { usePlatformStore } from './stores/platformStore'
 import {
@@ -1036,6 +1037,9 @@ async function logout() {
 }
 
 const loadWorkspaces = () => workspaceStore.fetchWorkspaces()
+// The sidebar and every view read this one list, so a browser agent creating,
+// renaming or archiving a workspace shows up everywhere once it is re-read.
+onWebMCPChange(loadWorkspaces)
 
 const { unsubscribe: unsubscribePush } = usePushNotifications()
 

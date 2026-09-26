@@ -87,6 +87,7 @@ export default defineConfig({
         'src/composables/useSkills.js',
         'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
+        'src/composables/useWebMCPChanges.js',
         'src/composables/useAgentSummary.js',
         'src/composables/useAgentTurn.js',
         'src/composables/useSlashCommands.js',

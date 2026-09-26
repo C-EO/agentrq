@@ -15,6 +15,7 @@ import {
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
+import { onWebMCPChange } from '../composables/useWebMCPChanges';
 import {
   emittedEventTooltip,
   eventLabel,
@@ -769,12 +770,12 @@ function loadMoreTasks() {
   visibleTaskCount.value += TASKS_PAGE_SIZE;
 }
 
-async function loadTasks() {
-  loadingTasks.value = true;
+async function loadTasks({ quiet = false } = {}) {
+  if (!quiet) loadingTasks.value = true;
   try {
     const data = await fetchWorkflowTasks(workflowId);
     tasks.value = data.tasks ?? [];
-    visibleTaskCount.value = TASKS_PAGE_SIZE;
+    if (!quiet) visibleTaskCount.value = TASKS_PAGE_SIZE;
   } catch (e) {
     notifyError(e.message);
   } finally {
@@ -846,6 +847,18 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+});
+
+// A browser agent's change: re-read everything in place. The text editor is
+// left alone while it holds unsaved edits, since reloading would discard them.
+onWebMCPChange(async () => {
+  const [, , eventsRes] = await Promise.all([loadWorkflow(), loadSteps(), fetchEvents()]);
+  events.value = eventsRes.events ?? [];
+  await Promise.all([
+    loadTasks({ quiet: true }),
+    loadGlobalTriggers(),
+    mode.value === 'text' && !textDirty.value ? loadText() : null,
+  ]);
 });
 </script>
 

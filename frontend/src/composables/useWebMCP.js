@@ -18,6 +18,7 @@
  */
 import { createToolCatalogue } from '../webmcp/tools'
 import { registerTools } from '../webmcp/modelContext'
+import { notifyWebMCPChange } from './useWebMCPChanges'
 
 /**
  * A description of where the person is, in the terms the tools speak.
@@ -36,6 +37,28 @@ export function describePage(route) {
 }
 
 /**
+ * Make a tool tell the open page when it has changed something, so the page
+ * shows it without being left and reopened.
+ *
+ * Only after success, and never for a read. `navigate` is not annotated as a
+ * read, since it changes what the person sees, but it changes no data, and the
+ * page it lands on loads fresh anyway.
+ *
+ * @param {object} tool a descriptor from `createToolCatalogue`
+ */
+export function announceChanges(tool) {
+  if (tool.annotations.readOnlyHint || tool.name === 'navigate') return tool
+  return {
+    ...tool,
+    execute: async (...args) => {
+      const result = await tool.execute(...args)
+      notifyWebMCPChange()
+      return result
+    },
+  }
+}
+
+/**
  * Register the catalogue, and return the means to withdraw it.
  *
  * @param {object} deps
@@ -46,7 +69,7 @@ export function describePage(route) {
 export async function connectWebMCP({ api, router, context }) {
   const controller = new AbortController()
 
-  const tools = createToolCatalogue({
+  const catalogue = createToolCatalogue({
     api,
     // The route table has no catch-all, so an unknown path would push the
     // person onto a blank page; refusing it tells the agent its guess was wrong.
@@ -61,6 +84,7 @@ export async function connectWebMCP({ api, router, context }) {
     // they happened to be on when they signed in.
     currentPage: () => describePage(router.currentRoute.value),
   })
+  const tools = catalogue.map(announceChanges)
 
   const result = await registerTools(tools, { context, signal: controller.signal })
   return { ...result, unregister: () => controller.abort() }

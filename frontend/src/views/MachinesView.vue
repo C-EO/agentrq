@@ -22,6 +22,7 @@ import {
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
+import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import {
   detectPlatform,
   platformLabel,
@@ -64,6 +65,8 @@ onMounted(async () => {
   connect()
 })
 onUnmounted(disconnect)
+// A rename or removal by a browser agent is not among the live events.
+onWebMCPChange(() => load({ quiet: true }))
 
 async function copy(text, what) {
   if (!text) return
