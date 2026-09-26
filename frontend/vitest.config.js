@@ -91,6 +91,7 @@ export default defineConfig({
         'src/composables/useWorkspaceSettings.js',
         'src/composables/useStatsRange.js',
         'src/composables/useWorkspaceSwitcher.js',
+        'src/composables/useMachineSwitcher.js',
         'src/composables/useTerminalSession.js',
         'src/composables/useTerminalFit.js',
         'src/composables/useTerminalRenderer.js',

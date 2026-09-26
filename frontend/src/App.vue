@@ -467,6 +467,7 @@
          workspaces, and the help sheet describes shortcuts a view may own. -->
     <CommandPalette :show="overlay === 'palette'" :shortcut-label="findTaskLabel" @close="closeOverlay()" />
     <WorkspaceSwitcher :show="overlay === 'switcher'" :current-workspace-id="currentWorkspaceId ?? ''" @close="closeOverlay()" />
+    <MachineSwitcher :show="overlay === 'machines'" :current-machine-id="currentMachineId(route)" @close="closeOverlay()" />
     <ShortcutsHelp :show="overlay === 'help'" :mac="isMacKeyboard" @close="closeOverlay()" />
 
     <!-- What a shortcut drew. It is here rather than in a view because `x` then
@@ -522,6 +523,8 @@ import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheR
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
 import WorkspaceSwitcher from './components/WorkspaceSwitcher.vue'
+import MachineSwitcher from './components/MachineSwitcher.vue'
+import { currentMachineId } from './composables/useMachineSwitcher'
 import {
   SHORTCUTS,
   formatShortcut,
@@ -733,7 +736,8 @@ function startRetentionSweep(db) {
 // of these; see TaskDetailView for the chat/trajectory pair.
 
 /**
- * Which full-screen overlay is up, if any: 'palette', 'switcher' or 'help'.
+ * Which full-screen overlay is up, if any: 'palette', 'switcher', 'machines'
+ * or 'help'.
  *
  * One value rather than a flag each, because they are mutually exclusive and
  * every opener would otherwise have to remember to close the other two — a
@@ -754,6 +758,7 @@ useShortcuts(
     'find-task': () => openOverlay('palette'),
     'new-task': () => router.push(newTaskRoute(currentWorkspaceId.value, workspaces.value)),
     'switch-workspace': () => openOverlay('switcher'),
+    'switch-machine': () => openOverlay('machines'),
     'show-help': () => openOverlay('help'),
   },
   { mac: () => isMacKeyboard.value, onUse: recordShortcutUse }

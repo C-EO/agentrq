@@ -160,7 +160,10 @@ describe('matchShortcut', () => {
   it('reads the bare letters', () => {
     expect(matchShortcut(press('n')).id).toBe('new-task')
     expect(matchShortcut(press('N')).id).toBe('new-task')
-    expect(matchShortcut(press('m')).id).toBe('chat-view')
+    expect(matchShortcut(press('m')).id).toBe('switch-machine')
+    expect(matchShortcut(press('M')).id).toBe('switch-machine')
+    expect(matchShortcut(press('w')).id).toBe('switch-workspace')
+    expect(matchShortcut(press('c')).id).toBe('chat-view')
     expect(matchShortcut(press('t')).id).toBe('trajectory-view')
     expect(matchShortcut(press('?')).id).toBe('show-help')
   })
@@ -355,7 +358,7 @@ describe('dispatchShortcut', () => {
     useShortcuts({ 'chat-view': view }, b.options)
     b.mount()
 
-    const event = press('m')
+    const event = press('c')
     expect(dispatchShortcut(event, { onUse })).toBe('chat-view')
     expect(dispatchShortcut(event, { onUse })).toBeNull()
 
@@ -398,7 +401,7 @@ describe('dispatchShortcut', () => {
     useShortcuts({ 'chat-view': view }, b.options)
     b.mount()
 
-    dispatchShortcut(press('m'))
+    dispatchShortcut(press('c'))
 
     expect(view).toHaveBeenCalledOnce()
     expect(shell).not.toHaveBeenCalled()
