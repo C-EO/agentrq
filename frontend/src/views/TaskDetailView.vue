@@ -813,6 +813,13 @@
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             Download
           </a>
+          <!-- Only a public link is worth sharing: the signed-in route opens for nobody else. -->
+          <button v-if="selectedAtt.url" type="button" @click="copyAttachmentLink(selectedAtt)"
+                  class="flex items-center justify-center gap-2 min-w-[7.5rem] px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
+            <svg v-if="!copiedMessages.has('att-' + selectedAtt.id)" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            <svg v-else class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+            {{ copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link' }}
+          </button>
         </div>
       </div>
     </div>
@@ -837,7 +844,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1019,14 +1026,14 @@ const copiedMessages = ref(new Set());
  *
  * @returns {Promise<boolean>} whether the text actually got there
  */
-async function copyToClipboard(text) {
+async function copyToClipboard(text, action = TELEMETRY_UI_COPY_MARKDOWN) {
   try {
     await writeClipboard(text || '', {
       bridge: window.agentrq?.clipboard,
       clipboard: navigator.clipboard,
     });
     // Only a copy that happened is a copy that gets counted.
-    recordUiAction(TELEMETRY_UI_COPY_MARKDOWN, route);
+    recordUiAction(action, route);
     return true;
   } catch {
     notifyError('Could not copy to the clipboard.');
@@ -1034,8 +1041,8 @@ async function copyToClipboard(text) {
   }
 }
 
-async function copyMessageText(id, text) {
-  if (!(await copyToClipboard(text))) return;
+async function copyMessageText(id, text, action) {
+  if (!(await copyToClipboard(text, action))) return;
   const s = new Set(copiedMessages.value);
   s.add(id);
   copiedMessages.value = s;
@@ -1660,6 +1667,10 @@ const selectedAtt = ref(null);
 
 function previewAttachment(att) {
   selectedAtt.value = att;
+}
+
+function copyAttachmentLink(att) {
+  return copyMessageText('att-' + att.id, att.url, TELEMETRY_UI_COPY_LINK);
 }
 
 watch(() => task.value?.title, (title) => {
