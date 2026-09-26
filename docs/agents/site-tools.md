@@ -5,7 +5,8 @@
 Workspace agents list and call the WebMCP tools of websites the human shares from the Chrome extension.
 
 - **Native WebMCP only.** The observer wraps the page's own `document.modelContext`/`navigator.modelContext` and does nothing without one. Never define a polyfill: it would put tools on pages that never offered any.
-- **Top frame only** (`allFrames: false`). Otherwise ads and embeds could contribute tools to the site.
+- **Top frame only** (`allFrames: false`). Otherwise ads and embeds could contribute tools to the site. It is also what keeps the popup's framed app unobserved.
+- **The server's own app is shareable like any site** (a tab of it, not the popup), so an agent can drive the human's AgentRQ UI, `navigate` included. Nothing reaches an agent until the human shares it; don't add an `excludeMatches` for it back.
 - **The observer deletes the bridge's nonce before any page script runs.** A page that reads it can forge calls and results. Chrome runs `document_start` scripts in *id* order, so `agentrq-bridge` must sort before `agentrq-observer`.
 - **Calls are not relayed across backend instances**, as with terminals. A call that lands on an instance other than the browser's fails with "try again".
 - **The socket `/api/v1/browser/connect` lives on the stdlib mux**, with a ticket in the query rather than the cookie. Never add it to Fiber as well: the mux shadows the route and the request hangs.

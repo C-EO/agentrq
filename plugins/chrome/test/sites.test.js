@@ -70,7 +70,8 @@ test('content scripts are registered, bridge first, only while every site may be
   )
   for (const s of chrome.scripting.registered) {
     assert.deepEqual([s.runAt, s.allFrames, s.matches], ['document_start', false, ['https://*/*', 'http://localhost/*']])
-    assert.deepEqual(s.excludeMatches, ['https://app.agentrq.com/*'])
+    // The server's own app is a site like any other.
+    assert.equal(s.excludeMatches, undefined)
   }
 
   for (const o of ALL_SITES) chrome.permissions.granted.delete(o)
@@ -80,10 +81,8 @@ test('content scripts are registered, bridge first, only while every site may be
 
   for (const o of ALL_SITES) chrome.permissions.granted.add(o)
   chrome.permissions.onAdded.fire({ origins: ALL_SITES })
-  await chrome.storage.sync.set({ serverUrl: 'http://localhost:3000' })
   await settle()
   assert.equal(chrome.scripting.registered.length, 2)
-  assert.deepEqual(chrome.scripting.registered[0].excludeMatches, ['http://localhost:3000/*'])
 })
 
 test('a failed registration is logged and does not stop the next', async () => {

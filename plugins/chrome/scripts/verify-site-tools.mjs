@@ -178,7 +178,7 @@ async function main() {
   try {
     const chromium = await loadChromium()
     const [serverPort, pagePort] = [await freePort(), await freePort()]
-    // Two origins: the server's own app is never offered as a site.
+    // Two origins, so the site's tools are told apart from the server's own app.
     const server = `http://127.0.0.1:${serverPort}`
     const site = `http://localhost:${pagePort}`
 
@@ -228,10 +228,10 @@ async function main() {
     await sw.evaluate((url) => chrome.storage.sync.set({ serverUrl: url }), server)
     const scripts = await until('the content scripts', () =>
       sw.evaluate(() =>
-        chrome.scripting.getRegisteredContentScripts().then((s) => (s.length && s[0].excludeMatches[0].includes('127.0.0.1') ? s : null)),
+        chrome.scripting.getRegisteredContentScripts().then((s) => (s.length ? s : null)),
       ),
     )
-    record('detection is on for every site but the server', scripts.length === 2, scripts.map((s) => `${s.id}:${s.world}`).join(', '))
+    record('detection is on for every site', scripts.length === 2, scripts.map((s) => `${s.id}:${s.world}`).join(', '))
 
     const page = await context.newPage()
     await page.goto(`${site}/things`)
