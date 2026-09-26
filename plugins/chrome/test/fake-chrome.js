@@ -12,12 +12,20 @@ export function makeEvent() {
   }
 }
 
-function makeArea() {
+// Like Chrome, a write reaches onChanged as copies of the old and new values.
+function makeArea(name, onChanged) {
   const data = {}
   return {
     data,
-    get: async (key) => (key in data ? { [key]: data[key] } : {}),
-    set: async (values) => void Object.assign(data, values),
+    get: async (key) => (key in data ? { [key]: structuredClone(data[key]) } : {}),
+    set: async (values) => {
+      const changes = {}
+      for (const [key, value] of Object.entries(values)) {
+        changes[key] = { oldValue: structuredClone(data[key]), newValue: structuredClone(value) }
+        data[key] = structuredClone(value)
+      }
+      onChanged.fire(changes, name)
+    },
     remove: async (key) => void delete data[key],
   }
 }
@@ -40,10 +48,11 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
   for (const w of windows) add(w)
 
   const clone = (w) => structuredClone(w)
+  const onChanged = makeEvent()
   const chrome = {
     calls,
     all,
-    storage: { sync: makeArea(), local: makeArea(), session: makeArea(), onChanged: makeEvent() },
+    storage: { onChanged },
     permissions: {
       granted: new Set(granted),
       contains: async ({ origins }) => origins.every((o) => chrome.permissions.granted.has(o)),
@@ -57,6 +66,29 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
         for (const o of origins) chrome.permissions.granted.delete(o)
         return true
       },
+      onAdded: makeEvent(),
+      onRemoved: makeEvent(),
+    },
+    scripting: {
+      registered: [],
+      getRegisteredContentScripts: async ({ ids }) => chrome.scripting.registered.filter((s) => ids.includes(s.id)),
+      registerContentScripts: async (scripts) => {
+        calls.push(['scripting.register', scripts.map((s) => s.id)])
+        for (const s of scripts) {
+          if (chrome.scripting.registered.some((r) => r.id === s.id)) throw new Error(`Duplicate script ID '${s.id}'`)
+        }
+        chrome.scripting.registered.push(...scripts)
+      },
+      unregisterContentScripts: async ({ ids }) => {
+        calls.push(['scripting.unregister', ids])
+        chrome.scripting.registered = chrome.scripting.registered.filter((s) => !ids.includes(s.id))
+      },
+    },
+    action: {
+      badges: new Map(),
+      setBadgeText: ({ tabId, text }) => void chrome.action.badges.set(tabId, { ...chrome.action.badges.get(tabId), text }),
+      setBadgeBackgroundColor: ({ tabId, color }) =>
+        void chrome.action.badges.set(tabId, { ...chrome.action.badges.get(tabId), color }),
     },
     windows: {
       create: async (props) => {
@@ -76,6 +108,11 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
         calls.push(['tabs.create', props])
         return { id: nextId++, ...props }
       },
+      sent: [],
+      sendMessage: async (tabId, message) => void chrome.tabs.sent.push([tabId, structuredClone(message)]),
+      onActivated: makeEvent(),
+      onRemoved: makeEvent(),
+      onUpdated: makeEvent(),
     },
     contextMenus: {
       items: [],
@@ -92,7 +129,79 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
       sendMessage: async (message) => void calls.push(['runtime.sendMessage', JSON.parse(JSON.stringify(message))]),
     },
   }
+  for (const area of ['sync', 'local', 'session']) chrome.storage[area] = makeArea(area, onChanged)
   return chrome
+}
+
+/**
+ * Timers that run only when told to: `advance(ms)` fires what is due, in order.
+ */
+export function fakeTimers() {
+  let now = 0
+  let nextId = 1
+  const pending = new Map()
+  const add = (fn, ms, every) => {
+    const id = nextId++
+    pending.set(id, { fn, at: now + ms, every })
+    return id
+  }
+  const clear = (id) => void pending.delete(id)
+  return {
+    pending,
+    setTimeout: (fn, ms) => add(fn, ms, 0),
+    clearTimeout: clear,
+    setInterval: (fn, ms) => add(fn, ms, ms),
+    clearInterval: clear,
+    /** Delays of the timeouts waiting now, soonest first. */
+    delays: () => [...pending.values()].filter((t) => !t.every).map((t) => t.at - now).sort((a, b) => a - b),
+    advance(ms) {
+      const until = now + ms
+      for (;;) {
+        const due = [...pending.entries()].filter(([, t]) => t.at <= until).sort((a, b) => a[1].at - b[1].at)[0]
+        if (!due) break
+        const [id, t] = due
+        now = t.at
+        if (t.every) t.at += t.every
+        else pending.delete(id)
+        t.fn()
+      }
+      now = until
+    },
+  }
+}
+
+/** A WebSocket that opens, receives and closes when a test says so. */
+export function fakeWebSocketClass() {
+  const sockets = []
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url
+      this.readyState = 0
+      this.sent = []
+      sockets.push(this)
+    }
+    send(data) {
+      this.sent.push(JSON.parse(data))
+    }
+    close() {
+      this.readyState = 3
+      this.closed = true
+      this.onclose?.()
+    }
+    open() {
+      this.readyState = 1
+      this.onopen?.()
+    }
+    receive(frame) {
+      this.onmessage?.({ data: typeof frame === 'string' ? frame : JSON.stringify(frame) })
+    }
+    drop() {
+      this.readyState = 3
+      this.onclose?.()
+    }
+  }
+  FakeWebSocket.sockets = sockets
+  return FakeWebSocket
 }
 
 /** Let the listeners' un-awaited work finish. */

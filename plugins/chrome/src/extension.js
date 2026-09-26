@@ -3,14 +3,15 @@
 
 /**
  * The service worker's half. The toolbar button opens the popup by itself;
- * what is left here is the way out to full size: the button's right-click menu
- * and a keyboard shortcut.
+ * what is left here is the way out to full size (the button's right-click menu
+ * and a keyboard shortcut) and the site tools.
  */
 import { openFullSize } from './fullsize.js'
+import { installSites } from './sites.js'
 
 export const FULL_SIZE = 'open-full-size'
 
-export function install(chrome, log = console) {
+export function install(chrome, log = console, { fetchImpl = globalThis.fetch, WebSocketImpl = globalThis.WebSocket, timers = globalThis } = {}) {
   // A listener's rejection is otherwise an unhandled one in a worker nobody is
   // looking at; logging it at least puts it on the extension's error page.
   const run = (action) => {
@@ -31,4 +32,5 @@ export function install(chrome, log = console) {
   chrome.commands.onCommand.addListener((command) => {
     if (command === FULL_SIZE) run(() => openFullSize(chrome))
   })
+  return installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timers })
 }
