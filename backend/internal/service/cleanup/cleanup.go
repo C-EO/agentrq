@@ -6,6 +6,7 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,9 +69,14 @@ func (s *service) Start(ctx context.Context) {
 	}()
 }
 
-// RunOnce scans the storage directory and removes files older than the retention period.
-// Database files are always skipped, and so are directories: skill blobs live
-// under skills/ and are kept until deleted, not for the retention period.
+// ArtifactsDir is the subdirectory of the storage directory local
+// attachments are filed in, as w-<workspace>/<task>/<attachment>.
+const ArtifactsDir = "artifacts"
+
+// RunOnce removes attachments older than the retention period: those under
+// artifacts/, and those kept flat in the storage directory before that.
+// Database files are always skipped, and so are other directories: skill
+// blobs live under skills/ and are kept until deleted.
 func (s *service) RunOnce(ctx context.Context) error {
 	cutoff := time.Now().Add(-s.retentionPeriod)
 
@@ -105,12 +111,48 @@ func (s *service) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	deleted += s.sweepAttachments(cutoff)
+
 	zlog.Info().
 		Int("deleted", deleted).
 		Time("cutoff", cutoff).
 		Msg("cleanup: attachment cleanup complete")
 
 	return nil
+}
+
+// sweepAttachments removes the files under artifacts/ older than cutoff,
+// then the directories that leaves empty, and returns how many files went.
+func (s *service) sweepAttachments(cutoff time.Time) int {
+	root := filepath.Join(s.storageDir, ArtifactsDir)
+	deleted := 0
+	var dirs []string
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // a missing artifacts/ is nothing to clean
+		}
+		if d.IsDir() {
+			if path != root {
+				dirs = append(dirs, path)
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
+			zlog.Warn().Err(err).Str("file", path).Msg("cleanup: failed to delete file")
+			return nil
+		}
+		deleted++
+		return nil
+	})
+	// Deepest first, so a task's directory empties before its workspace's.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // refuses a directory that still has files
+	}
+	return deleted
 }
 
 // parseDuration extends time.ParseDuration with a "d" (days) suffix.

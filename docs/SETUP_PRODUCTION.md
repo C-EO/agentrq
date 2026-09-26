@@ -178,21 +178,50 @@ AGENTRQ_APP_ATTACHMENT_RETENTION=30d
 
 Skill files are not attachments: cleanup never deletes them.
 
-### Skill Storage
+### Skill and Attachment Storage
 
-Skill file content is kept in the `skills/` directory under `AGENTRQ_STORAGE_DIR` (the same directory attachments use; `/storage` in docker-compose, `./_storage` otherwise) by default. Set `AGENTRQ_SKILLS_STORAGE=s3` to keep it in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), where objects are written privately; the server refuses to start on any other value. Either way each file is kept at `skills/w-<workspace id>/skill-<skill id>/<file id>`.
+Skill files and attachments are kept under `AGENTRQ_STORAGE_DIR` by default (`/storage` in docker-compose, `./_storage` otherwise), in `skills/` and `artifacts/` (where attachments live). Set `AGENTRQ_SKILLS_STORAGE=s3` or `AGENTRQ_ARTIFACTS_STORAGE=s3` to keep either in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), under the same two prefixes; the server refuses to start on any value other than `local` or `s3`.
+
+Every file is kept at a key that names its workspace and its task or skill, and ends in a fresh id:
+
+- attachments: `artifacts/w-<workspace id>/<task id>/<id>`
+- skill files: `skills/w-<workspace id>/skill-<skill id>/<id>`
+
+**Each file has a public link, and the link is the only credential needed to read it.** Without knowing both the workspace id and the task (or skill) id, a link is nearly impossible to guess. Ids are time-ordered, though, so someone who holds one link has both, and can work out the links of the other files on that task or skill: share a link only with someone who may see everything there. The web app's Download button, the agents' `getAttachment` tool (by default) and `agentrq-ws attachment get` all use it. Local files are served by the server itself at `<AGENTRQ_BASE_URL>/storage/artifacts/...` and `/storage/skills/...`, with no sign-in; files in S3 are read from the bucket, at `<AGENTRQ_S3_PUBLIC_URL>/artifacts/...` and `/skills/...`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_STORAGE_DIR` | `./_storage` | Writable directory for attachments, and for skills when they are local. |
+| `AGENTRQ_STORAGE_DIR` | `./_storage` | Writable directory for local files. Its root also holds the SQLite database and older attachments. |
 | `AGENTRQ_SKILLS_STORAGE` | `local` | `local` or `s3`. |
+| `AGENTRQ_ARTIFACTS_STORAGE` | `local` | `local` or `s3`, for attachments. |
 | `AGENTRQ_S3_ENDPOINT` | | The S3 endpoint URL, e.g. `https://s3.us-east-1.amazonaws.com`. Addressed path-style. |
 | `AGENTRQ_S3_ACCESS_KEY` | | Access key id. |
 | `AGENTRQ_S3_SECRET_ACCESS_KEY` | | Secret access key. |
 | `AGENTRQ_S3_REGION` | `us-east-1` | Bucket region. |
 | `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
+| `AGENTRQ_S3_PUBLIC_URL` | `<endpoint>/<bucket>` | Base of public links to the bucket, e.g. a CDN in front of it. |
 
-Switching an existing deployment does not move skills already saved, so copy the `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket first, or re-import them.
+**Serving local files.** The server answers `/storage/...` only for a path of exactly the shape above — 11-character base62 ids, nothing else — and reads only from `skills/` and `artifacts/`, never following a link out of them. Do not serve the storage directory any other way (a static file handler, a proxy `alias`): its root holds the database. A file that could run in a browser, such as HTML or SVG, is sent as a download.
+
+**Serving from S3.** No object ACL is set, since new AWS buckets and several S3-compatible stores refuse them, so allow anonymous reads of the two prefixes, and nothing else, with a bucket policy (AWS example):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*"]
+  }]
+}
+```
+
+An attachment's upload type is kept only when a browser cannot run it; anything else is stored as `application/octet-stream`.
+
+**Retention.** The daily cleanup deletes local attachments, in `artifacts/` and flat in the storage directory where they were kept before, once they pass `AGENTRQ_APP_ATTACHMENT_RETENTION`. With S3, add a lifecycle rule that expires `artifacts/` after the same period.
+
+**Switching** does not move files already saved. Attachments kept flat in the storage directory before this layout are still found there, whichever store is in use, but have no public link. Copy skills' `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket, or re-import them.
 
 ## Reverse Proxy Setup (Nginx Example)
 

@@ -52,7 +52,7 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'createTask',
   'updateTaskStatus',
   'reply',
-  'downloadAttachment',
+  'getAttachment',
   'getWorkspace',
   'getTask',
   'publishEvent',

@@ -57,7 +57,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/telemetryaggregator"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
@@ -264,12 +263,14 @@ func New(cfg Config) (*App, error) {
 	bus := eventbus.New()
 
 	cfg.Storage.StorageDir = storageDir(cfg.Storage)
-	storageSvc, err := storage.New(cfg.Storage.StorageDir)
+	// Local files are read publicly through the public file routes; see handlerapi.
+	filesURL := cfg.App.BaseURL + handlerapi.PublicFilesPrefix
+	storageSvc, err := newAttachmentStorage(cfg.ConfigSvc, cfg.Storage.StorageDir, filesURL+"/"+handlerapi.PublicFilesArtifacts)
 	if err != nil {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
 
-	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, "skills"))
+	skillStorageSvc, err := newSkillStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, handlerapi.PublicFilesSkills), filesURL+"/"+handlerapi.PublicFilesSkills)
 	if err != nil {
 		return nil, fmt.Errorf("skill storage: %w", err)
 	}
@@ -508,13 +509,7 @@ func New(cfg Config) (*App, error) {
 				}
 				taskID := id.Int64()
 
-				for i := range attachments {
-					if attachments[i].Data != "" {
-						attachments[i].ID = monoflake.ID(ids.NextID()).String()
-						_ = storageSvc.Save(attachments[i].ID, attachments[i].Data)
-						attachments[i].Data = ""
-					}
-				}
+				crud.SaveAttachments(storageSvc, ids, workspaceID, taskID, attachments)
 
 				var attsData []byte
 				if len(attachments) > 0 {
@@ -964,6 +959,7 @@ func New(cfg Config) (*App, error) {
 		RootToken:        cfg.Auth.RootAccessToken,
 		GithubClientID:   cfg.Auth.GitHub.ClientID,
 		Router:           apiGroup,
+		Root:             fiberApp,
 		SlackCtrl:        slackCtrl,
 		PushCtrl:         pushCtrl,
 	}); err != nil {
@@ -1068,9 +1064,10 @@ func New(cfg Config) (*App, error) {
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/api/v1/events/stream", eventsHandler(crudCtrl, bus, tokenSvc))
-	mux.Handle("/", adaptor.FiberApp(fiberApp))
+	fiberHandler := adaptor.FiberApp(fiberApp)
+	mux.Handle("/", fiberHandler)
 
-	var finalRouter http.Handler = mux
+	var finalRouter = publicFilesFirst(mux, fiberHandler)
 	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
 	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
 
@@ -1417,4 +1414,18 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.telemetry.Close()
 	}
 	return a.server.Shutdown(ctx)
+}
+
+// publicFilesFirst hands a public file request to Fiber before the mux sees
+// it. The mux answers a path holding '..' or '//' with a redirect to its
+// cleaned form, and the public file route refuses such a path outright.
+func publicFilesFirst(mux, fiber http.Handler) http.Handler {
+	prefix := handlerapi.PublicFilesPrefix + "/"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.EscapedPath(), prefix) {
+			fiber.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }

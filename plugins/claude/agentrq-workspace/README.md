@@ -37,7 +37,7 @@ offers, including any added later:
 | `createTask` | Create a task for the human or another agent, optionally on a cron schedule. Returns the task ID. |
 | `updateTaskStatus` | Update the status of a task: `ongoing` when you start, `completed` when you finish, or `blocked` when you need something from the human. |
 | `reply` | Send a message to the current ongoing task. You can optionally include attachments. |
-| `downloadAttachment` | Download the content of an attachment by its ID |
+| `getAttachment` | Get an attachment of a task by its ID: its name, type and public link (`format=url`, the default), or its content as base64 (`format=base64`) |
 | `getWorkspace` | Returns the workspace title, mission description and task statistics. |
 | `getTask` | Fetch a task. With no taskId, returns the next available "not started" task assigned to the agent (dequeues the work queue). With a taskId, returns that specific task. Set `includeConversation=true` to also include the task's chat history. |
 | `publishEvent` | Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When a task carries a `publishEvent` instruction, copy its name and `taskId` exactly. |

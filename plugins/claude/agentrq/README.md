@@ -53,7 +53,7 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `updateTaskAllowAll` | Toggle allow_all_commands for a task |
 | `updateScheduledTask` | Update a scheduled/cron task |
 | `deleteTask` | Delete a task, with its messages and attachments |
-| `getAttachment` | Get attachment data as base64 and metadata |
+| `getAttachment` | Get an attachment of a task: its name, type and public link (`format=url`, the default), or its content as base64 (`format=base64`) |
 | `listMemories` | List a workspace's memories: name, size and when each was last changed |
 | `getMemory` | Get one of a workspace's memories in full, by name |
 | `searchSkills` | Find the skills a workspace can use, its own and those shared into it, by name or description, with paging; content is not included |

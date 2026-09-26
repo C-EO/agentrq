@@ -12,6 +12,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -100,7 +101,7 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {
 	// 1. Get all task and message attachment IDs directly from DB
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	attachmentIDs, _ := c.repository.GetWorkspaceAttachmentIDs(ctx, req.ID)
+	attachments, _ := c.repository.GetWorkspaceAttachments(ctx, req.ID)
 	skillFileIDs, _ := c.repository.GetWorkspaceSkillStorageIDs(ctx, req.ID)
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
@@ -117,8 +118,8 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	})
 
 	// 3. Purge storage files
-	for _, id := range attachmentIDs {
-		_ = c.storage.Delete(id)
+	for _, a := range attachments {
+		storage.DeleteAttachment(c.storage, req.ID, a.TaskID, a.ID)
 	}
 	c.purge(skillFileIDs)
 

@@ -15,6 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang/mock/gomock"
 	"gorm.io/datatypes"
@@ -1025,8 +1026,8 @@ func TestDeleteTask_Success(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().DeleteTask(gomock.Any(), int64(1), int64(10), testUserID).Return(nil)
-	e.storage.EXPECT().Delete("a1").Return(nil)
-	e.storage.EXPECT().Delete("a2").Return(nil)
+	e.storage.EXPECT().Delete(storage.AttachmentKey(1, 10, "a1")).Return(nil)
+	e.storage.EXPECT().Delete(storage.AttachmentKey(1, 10, "a2")).Return(nil)
 
 	_, err := e.controller.DeleteTask(context.Background(), entity.DeleteTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {
@@ -1041,7 +1042,7 @@ func TestGetAttachment_Success(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Attachments: datatypes.JSON(attsJSON)}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.storage.EXPECT().LoadRaw("att-1").Return([]byte("content"), nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-1")).Return([]byte("content"), nil)
 
 	resp, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{
 		WorkspaceID:  1,
@@ -1071,7 +1072,7 @@ func TestGetAttachment_SuccessMessageAttachment(t *testing.T) {
 	}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.storage.EXPECT().LoadRaw("att-msg").Return([]byte("imgdata"), nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-msg")).Return([]byte("imgdata"), nil)
 
 	resp, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{
 		WorkspaceID:  1,
@@ -1126,6 +1127,7 @@ func TestGetAttachment_FileNotFound(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Attachments: datatypes.JSON(attsJSON)}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-1")).Return(nil, fmt.Errorf("no such file"))
 	e.storage.EXPECT().LoadRaw("att-1").Return(nil, fmt.Errorf("no such file"))
 
 	_, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{

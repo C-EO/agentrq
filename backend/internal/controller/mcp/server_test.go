@@ -5,7 +5,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +22,7 @@ import (
 	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -118,7 +122,7 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 	}
 }
 
-func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
+func TestWorkspaceServer_HandleGetAttachment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -141,10 +145,11 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 	}
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
-	mockStor.EXPECT().Load("att-1").Return("content in base64", nil)
+	// Filed under the workspace and the task.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return([]byte("content"), nil)
 
-	params := DownloadAttachmentParams{AttachmentID: "att-1", TaskID: monoflake.ID(42).String()}
-	res, _, err := ps.handleDownloadAttachment(context.Background(), nil, params)
+	params := GetAttachmentParams{AttachmentID: "att-1", TaskID: monoflake.ID(42).String()}
+	res, _, err := ps.handleGetAttachment(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,9 +157,18 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 		t.Fatal("expected no error")
 	}
 
+	// An attachment with no link comes back as content, with its name.
 	text := res.Content[0].(*mcp.TextContent).Text
-	if text != "content in base64" {
-		t.Errorf("expected content in base64, got %s", text)
+	if text != `{"filename":"test.txt","mimeType":"","data":"`+base64.StdEncoding.EncodeToString([]byte("content"))+`"}` {
+		t.Errorf("got %s", text)
+	}
+
+	// A file gone from both places it could be is an error.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return(nil, errors.New("gone"))
+	mockStor.EXPECT().LoadRaw("att-1").Return(nil, errors.New("gone"))
+	res, _, _ = ps.handleGetAttachment(context.Background(), nil, params)
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "retention") {
+		t.Errorf("missing file: %+v", res)
 	}
 }
 
@@ -237,12 +251,14 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	var got []entity.Attachment
 	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
 		userID:      monoflake.ID(15264777).String(),
 		pubsub:      mockPS,
 		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			got = attachments
 			return 1, nil
 		},
 	}
@@ -250,8 +266,9 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := ReplyParams{
-		ChatID: monoflake.ID(42).String(),
-		Text:   "hello",
+		ChatID:      monoflake.ID(42).String(),
+		Text:        "hello",
+		Attachments: []AttachmentParam{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}},
 	}
 	res, _, err := ps.handleReply(context.Background(), nil, params)
 	if err != nil {
@@ -259,6 +276,10 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	}
 	if res.IsError {
 		t.Fatal("expected no error")
+	}
+	want := []entity.Attachment{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("reply got attachments %#v", got)
 	}
 }
 
@@ -412,7 +433,7 @@ func TestWorkspaceServer_HandleUpdateTaskStatus_Errors(t *testing.T) {
 	}
 }
 
-func TestWorkspaceServer_HandleDownloadAttachment_Errors(t *testing.T) {
+func TestWorkspaceServer_HandleGetAttachment_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -425,12 +446,12 @@ func TestWorkspaceServer_HandleDownloadAttachment_Errors(t *testing.T) {
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
-	res, _, _ := ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{})
+	res, _, _ := ps.handleGetAttachment(context.Background(), nil, GetAttachmentParams{})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "attachmentId is required") {
 		t.Errorf("expected missing attachmentId error, got: %v", res)
 	}
 
-	res, _, _ = ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{AttachmentID: "att-1"})
+	res, _, _ = ps.handleGetAttachment(context.Background(), nil, GetAttachmentParams{AttachmentID: "att-1"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "taskId is required") {
 		t.Errorf("expected missing taskId error, got: %v", res)
 	}
@@ -677,13 +698,13 @@ func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 			ID:          43,
 			Title:       "Task with Attachments",
 			Body:        "Body",
-			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"}]`),
+			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"},{"id":"att-2","filename":"s3.png","url":"https://cdn/attachments/att-2"}]`),
 		}, nil
 	}
 	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	text = res.Content[0].(*mcp.TextContent).Text
-	if !contains(text, "file.txt") {
-		t.Errorf("expected attachments to be formatted, got: %s", text)
+	if !contains(text, "id=att-1 name=file.txt type=\n") || !contains(text, "id=att-2 name=s3.png type= url=https://cdn/attachments/att-2") {
+		t.Errorf("expected attachments, with a link only where there is one, got: %s", text)
 	}
 
 	// Case 2: Not Found
@@ -728,7 +749,8 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 				Body:   "Specific Body",
 				Status: "ongoing",
 				Messages: []model.Message{
-					{ID: 1001, Sender: "human", Text: "hi"},
+					{ID: 1001, Sender: "human", Text: "hi",
+						Attachments: []byte(`[{"id":"att-1","filename":"a.png","mimeType":"image/png","url":"https://cdn/attachments/att-1"}]`)},
 				},
 			}, nil
 		},
@@ -755,6 +777,9 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 	// Case 2: fetch by id, with conversation
 	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{TaskID: monoflake.ID(42).String(), IncludeConversation: true})
 	text = res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, `"url":"https://cdn/attachments/att-1"`) {
+		t.Errorf("expected the attachment's link in the conversation: %s", text)
+	}
 	if !contains(text, "Conversation:") || !contains(text, `"text":"hi"`) || !contains(text, `"total":1`) {
 		t.Errorf("expected conversation in content: %s", text)
 	}
@@ -1410,5 +1435,62 @@ func TestWorkspaceServer_HandleElicit_TimeoutClampedToMax(t *testing.T) {
 	}
 	if res.IsError {
 		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+}
+
+func TestWorkspaceServer_HandleGetAttachment_Formats(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockStor := mock_storage.NewMockService(ctrl)
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		pubsub:      mockPS,
+		storage:     mockStor,
+		getTask: func(context.Context, int64) (model.Task, error) {
+			return model.Task{
+				ID:          42,
+				Attachments: []byte(`[{"id":"att-1","filename":"a.png","url":"https://cdn/attachments/att-1"}]`),
+				Messages: []model.Message{
+					{ID: 1},
+					{ID: 2, Attachments: []byte(`not json`)},
+					{ID: 3, Attachments: []byte(`[{"id":"att-2","filename":"local.txt"}]`)},
+				},
+			}, nil
+		},
+	}
+	call := func(id, format string) *mcp.CallToolResult {
+		res, _, err := ps.handleGetAttachment(context.Background(), nil, GetAttachmentParams{AttachmentID: id, TaskID: monoflake.ID(42).String(), Format: format})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	text := func(res *mcp.CallToolResult) string { return res.Content[0].(*mcp.TextContent).Text }
+
+	// The link, by default, without reading the file.
+	for _, format := range []string{"", "url"} {
+		if res := call("att-1", format); res.IsError || text(res) != `{"filename":"a.png","mimeType":"","url":"https://cdn/attachments/att-1"}` {
+			t.Errorf("format %q: %+v", format, res)
+		}
+	}
+
+	// The content when asked for, even though there is a link.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return([]byte("png"), nil)
+	if res := call("att-1", "base64"); text(res) != `{"filename":"a.png","mimeType":"","data":"cG5n"}` {
+		t.Errorf("base64: %+v", res)
+	}
+
+	// A message's attachment saved before links has none, so it comes back as content.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-2")).Return([]byte("txt"), nil)
+	if res := call("att-2", ""); text(res) != `{"filename":"local.txt","mimeType":"","data":"dHh0"}` {
+		t.Errorf("no link: %+v", res)
+	}
+
+	if res := call("att-1", "zip"); !res.IsError || !contains(text(res), `"url" or "base64"`) {
+		t.Errorf("bad format: %+v", res)
+	}
+	if res := call("att-3", ""); !res.IsError || text(res) != "attachment not found in task" {
+		t.Errorf("missing: %+v", res)
 	}
 }

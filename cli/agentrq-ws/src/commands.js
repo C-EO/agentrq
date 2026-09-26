@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 
-import { indexAttachments, readAttachment, resolveOutputPath, writeAttachment } from './attachments.js'
+import { readAttachment, resolveOutputPath, writeAttachment } from './attachments.js'
 import { UserError } from './errors.js'
 
 /** Statuses the workspace accepts, mirrored from isValidTaskStatus on the backend. */
@@ -93,26 +93,36 @@ function requirePositional(positionals, index, name) {
 }
 
 /**
- * `downloadAttachment` returns base64 and nothing else, so the filename has to
- * come from the task. A task whose text does not mention the id still
- * downloads — under the id as a name — because refusing would be worse than a
- * plainly-named file.
+ * `getAttachment` answers with the attachment's name and type, and its public
+ * link — the default — or, for one saved before attachments had links, its
+ * content as base64. A link is fetched, so the file arrives either way.
  */
 async function downloadAttachment(ctx, attachmentId, taskId, out) {
-  const { text: taskText } = await ctx.client.callTool('getTask', {
-    taskId,
-    includeConversation: true,
-    limit: 200,
-  })
-  const known = indexAttachments(taskText).get(attachmentId)
-  const filename = (known && known.filename) || attachmentId
-
-  const { text: base64 } = await ctx.client.callTool('downloadAttachment', { attachmentId, taskId })
-  if (!base64.trim()) {
+  const { text } = await ctx.client.callTool('getAttachment', { attachmentId, taskId })
+  let attachment
+  try {
+    attachment = JSON.parse(text)
+  } catch {
+    throw new UserError(`unexpected answer for attachment ${attachmentId}: ${text}`)
+  }
+  const content = attachment.url ? await fetchAttachment(ctx, attachment.url) : attachment.data
+  if (!content || !content.length) {
     throw new UserError(`attachment ${attachmentId} is empty or was not found on task ${taskId}`)
   }
-  const path = resolveOutputPath(filename, out, { cwd: ctx.cwd })
-  return writeAttachment(path, base64)
+  const path = resolveOutputPath(attachment.filename || attachmentId, out, { cwd: ctx.cwd })
+  return writeAttachment(path, content)
+}
+
+async function fetchAttachment(ctx, url) {
+  const fetchImpl = ctx.fetch || globalThis.fetch
+  let response
+  try {
+    response = await fetchImpl(url)
+  } catch (err) {
+    throw new UserError(`cannot download ${url}: ${err.message}`)
+  }
+  if (!response.ok) throw new UserError(`cannot download ${url}: HTTP ${response.status}`)
+  return Buffer.from(await response.arrayBuffer())
 }
 
 export const COMMANDS = [

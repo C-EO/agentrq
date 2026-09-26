@@ -47,8 +47,8 @@ const commandNamed = (path) => {
 }
 
 /** Run a command the way the CLI would. */
-function invoke(path, { positionals = [], values = {}, client = stubClient(), stdin, cwd } = {}) {
-  return commandNamed(path).run({ client, positionals, values, stdin, cwd, env: {} })
+function invoke(path, { positionals = [], values = {}, client = stubClient(), stdin, cwd, fetch } = {}) {
+  return commandNamed(path).run({ client, positionals, values, stdin, cwd, fetch, env: {} })
 }
 
 test('readStdin reads the whole stream', async () => {
@@ -268,40 +268,75 @@ test('reply requires a task and text', async () => {
   await assert.rejects(() => invoke('reply', { positionals: ['0isnjTCkpW5'] }), /<text>/)
 })
 
-test('attachment get names the file from the task and prints where it landed', async () => {
-  // downloadAttachment answers with base64 and no filename, so the task has to
-  // be read first or the file would be named after an opaque id.
+test('attachment get fetches the link it is given and names the file', async () => {
+  // getAttachment answers with the link by default, and the file's own name.
   const dir = scratch()
   const client = stubClient({
-    getTask: '  - id=att-1 name=report.pdf type=application/pdf',
-    downloadAttachment: Buffer.from('%PDF-1.4').toString('base64'),
+    getAttachment: JSON.stringify({ filename: 'report.pdf', mimeType: 'application/pdf', url: 'https://agentrq.example/storage/artifacts/x' }),
   })
+  const fetched = []
+  const fetch = async (url) => {
+    fetched.push(url)
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.4').buffer }
+  }
 
   const result = await invoke('attachment get', {
     positionals: ['att-1'],
     values: { task: '0isnjTCkpW5', out: dir },
     client,
+    fetch,
   })
 
   assert.equal(result.text, join(dir, 'report.pdf'))
   assert.equal(result.data.bytes, 8)
-  assert.equal(client.calls[0].name, 'getTask')
-  assert.equal(client.calls[0].args.includeConversation, true)
-  assert.deepEqual(client.calls[1].args, { attachmentId: 'att-1', taskId: '0isnjTCkpW5' })
+  assert.equal(readFileSync(result.text, 'utf8'), '%PDF-1.4')
+  // One call, with the default format: nothing else is needed for the name.
+  assert.deepEqual(client.calls, [{ name: 'getAttachment', args: { attachmentId: 'att-1', taskId: '0isnjTCkpW5' } }])
+  assert.deepEqual(fetched, ['https://agentrq.example/storage/artifacts/x'])
 })
 
-test('attachment get falls back to the id when the task does not name it', async () => {
+test('attachment get decodes the content of one with no link', async () => {
   const dir = scratch()
   const client = stubClient({
-    getTask: 'Task details:',
-    downloadAttachment: Buffer.from('bytes').toString('base64'),
+    getAttachment: JSON.stringify({ filename: '', mimeType: '', data: Buffer.from('bytes').toString('base64') }),
   })
   const result = await invoke('attachment get', {
     positionals: ['att-unknown'],
     values: { task: '0isnjTCkpW5', out: dir },
     client,
   })
+  // With no name, the file is named after its id.
   assert.equal(result.text, join(dir, 'att-unknown'))
+  assert.equal(readFileSync(result.text, 'utf8'), 'bytes')
+})
+
+test('attachment get explains a link it cannot fetch', async () => {
+  const client = stubClient({ getAttachment: JSON.stringify({ filename: 'a', url: 'https://x/a' }) })
+  const values = { task: '0isnjTCkpW5', out: scratch() }
+  await assert.rejects(
+    () => invoke('attachment get', { positionals: ['a'], values, client, fetch: async () => ({ ok: false, status: 404 }) }),
+    /cannot download https:\/\/x\/a: HTTP 404/,
+  )
+  await assert.rejects(
+    () =>
+      invoke('attachment get', {
+        positionals: ['a'],
+        values,
+        client,
+        fetch: async () => {
+          throw new Error('offline')
+        },
+      }),
+    /cannot download https:\/\/x\/a: offline/,
+  )
+})
+
+test('attachment get refuses an answer that is not an attachment', async () => {
+  const client = stubClient({ getAttachment: 'not json' })
+  await assert.rejects(
+    () => invoke('attachment get', { positionals: ['a'], values: { task: '0isnjTCkpW5' }, client }),
+    /unexpected answer for attachment a: not json/,
+  )
 })
 
 test('attachment get needs the task holding the attachment', async () => {
@@ -313,7 +348,7 @@ test('attachment get needs the task holding the attachment', async () => {
 })
 
 test('attachment get reports an attachment that is not there', async () => {
-  const client = stubClient({ getTask: 'Task details:', downloadAttachment: '   ' })
+  const client = stubClient({ getAttachment: JSON.stringify({ filename: 'gone', data: '' }) })
   await assert.rejects(
     () => invoke('attachment get', { positionals: ['gone'], values: { task: '0isnjTCkpW5' }, client }),
     /is empty or was not found/,
@@ -565,7 +600,7 @@ test('the CLI covers every tool the workspace server offers', () => {
     'createTask',
     'updateTaskStatus',
     'reply',
-    'downloadAttachment',
+    'getAttachment',
     'getWorkspace',
     'getTask',
     'publishEvent',

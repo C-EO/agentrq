@@ -52,8 +52,10 @@ type (
 		RootLoginEnabled bool
 		RootToken        string
 		Router           fiber.Router
-		SlackCtrl        slackctrl.Controller // optional; nil = Slack disabled
-		PushCtrl         pushctrl.Controller  // optional; nil = push disabled
+		// Root is the router outside Router's prefix, for the public file routes.
+		Root      fiber.Router
+		SlackCtrl slackctrl.Controller // optional; nil = Slack disabled
+		PushCtrl  pushctrl.Controller  // optional; nil = push disabled
 	}
 
 	Handler interface{}
@@ -125,6 +127,10 @@ func New(p Params) (Handler, error) {
 	// has only its code. Registered here, before the middleware below, because
 	// registration order is what makes a route public.
 	h.registerPublicMachineRoutes()
+	// A public link carries its own credential; see registerPublicFileRoutes.
+	if p.Root != nil {
+		h.registerPublicFileRoutes(p.Root)
+	}
 
 	// Protected routes
 	h.router.Use(h.authMiddleware())

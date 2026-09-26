@@ -213,6 +213,14 @@ type (
 		Filename string `json:"filename"`
 		MimeType string `json:"mimeType"`
 		Data     string `json:"data"` // base64
+		// URL is where anyone can read the file, set when it is kept in S3.
+		URL string `json:"url,omitempty"`
+	}
+
+	// TaskAttachment names an attachment and the task it belongs to.
+	TaskAttachment struct {
+		TaskID int64
+		ID     string
 	}
 
 	Message struct {
@@ -417,17 +425,33 @@ type (
 		UserID      string
 	}
 
+	// GetPublicFileRequest names a file by its public link: Kind is
+	// PublicFileArtifacts (attachments) or PublicFileSkills, and Key the rest of the path.
+	GetPublicFileRequest struct {
+		Kind string
+		Key  string
+	}
+
+	GetPublicFileResponse struct {
+		Data        []byte
+		ContentType string
+	}
+
 	GetAttachmentRequest struct {
 		WorkspaceID  int64
 		TaskID       int64
 		AttachmentID string
 		UserID       string
+		// LinkOnly skips reading the file when the attachment has a public link.
+		LinkOnly bool
 	}
 
 	GetAttachmentResponse struct {
 		Data     []byte
 		Filename string
 		MimeType string
+		// URL is the public link, when attachments are kept in S3.
+		URL string
 	}
 
 	UpdateScheduledTaskRequest struct {
@@ -707,6 +731,8 @@ type (
 		SizeBytes int
 		UpdatedAt time.Time
 		Content   string
+		// URL is where anyone can read the file, when skills are public.
+		URL string
 	}
 
 	SkillShare struct {
@@ -1814,4 +1840,10 @@ type (
 	ListSessionsResponse struct {
 		Sessions []SessionView `json:"sessions"`
 	}
+)
+
+// The kinds of file a public link names, as they appear in its path.
+const (
+	PublicFileArtifacts = "artifacts"
+	PublicFileSkills    = "skills"
 )

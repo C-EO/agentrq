@@ -80,7 +80,7 @@ Every tool the workspace server offers — seventeen today — bridged by `@deep
 | `mcp__agentrq__updateTaskStatus` | Move a task to `ongoing`, `completed`, `blocked`, … |
 | `mcp__agentrq__reply` | Send a message into a task thread — the only thing the remote human sees |
 | `mcp__agentrq__getWorkspace` | Read the workspace title and mission |
-| `mcp__agentrq__downloadAttachment` | Fetch an attachment's content |
+| `mcp__agentrq__getAttachment` | Get an attachment's public link, or its content |
 | `mcp__agentrq__publishEvent` | Fire a named event so subscriber workspaces spawn their trigger tasks |
 | `mcp__agentrq__loadMemory` | Read what the workspace remembers; with no name, `memory.md`, the index |
 | `mcp__agentrq__saveMemory` | Write a memory that outlives the task, replacing it entirely |
@@ -229,7 +229,7 @@ Two things that break it, both non-obvious:
 - **Terminal-status check costs a round trip per idle transition** — the manager cannot tell "done" from "idle mid-task, waiting on a reply" without asking the workspace, so every `agent/status: idle` for a task's session calls `getTask` once. Cheap in practice (one call per turn boundary, not per second), but not free.
 - **Session-lifetime repeat memory** — the delivered-set is process-local and bounded, so a restarted harness may be handed a task it saw before if that task is still unclaimed. Claiming a task with `updateTaskStatus` is what stops the workspace re-pushing it.
 - **Auth is the URL's credential** — the plugin does not run the AgentRQ OAuth authorization-code flow; it uses the long-lived token from Workspace Settings, as a bearer header or a `?token=` query parameter.
-- **Attachments travel through the model** — the plugin's own session only receives pushes and dequeues on request; `downloadAttachment` remains a model-facing tool call on the bridged server.
+- **Attachments travel through the model** — the plugin's own session only receives pushes and dequeues on request; `getAttachment` remains a model-facing tool call on the bridged server.
 - **Permission verdicts are not bridged** — `acp-gateway` also consumes `notifications/claude/channel/permission` to answer AgentRQ's allow/deny prompts. The harness has its own `tools/pre-execute` approval axis, and wiring the two together is deferred.
 
 ## License

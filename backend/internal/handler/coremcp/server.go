@@ -282,7 +282,9 @@ type DeleteTaskParams struct {
 
 type GetAttachmentParams struct {
 	WorkspaceID  string `json:"workspaceId"`
+	TaskID       string `json:"taskId"`
 	AttachmentID string `json:"attachmentId"`
+	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content as data when it does not. 'base64' always returns the content."`
 }
 
 type ListMemoriesParams struct {
@@ -326,7 +328,7 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task", Annotations: mcphint.Update("Set allow-all-commands")}, s.handleUpdateTaskAllowAll)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task", Annotations: mcphint.Update("Update a scheduled task")}, s.handleUpdateScheduledTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "deleteTask", Description: "Delete a task, with its messages and attachments. This cannot be undone; to stop a scheduled task without losing its history, set its status to rejected instead", Annotations: mcphint.Overwrite("Delete a task")}, s.handleDeleteTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata", Annotations: mcphint.Read("Get an attachment")}, s.handleGetAttachment)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get an attachment of a task: its public link, or its content as base64, and metadata", Annotations: mcphint.Read("Get an attachment")}, s.handleGetAttachment)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that.", Annotations: mcphint.Read("List a workspace's memories")}, s.handleListMemories)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off.", Annotations: mcphint.Read("Get a memory")}, s.handleGetMemory)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "searchSkills", Description: "Find the skills a workspace can use, its own and those shared into it: name, description, source and size, plus the total number of matches. With q (at least 3 characters) only skills whose name or description contains it are returned; limit and offset page through the matches. A shared-in skill carries sharedFromWorkspaceId and is read-only there. Content is not included — get a file with getSkill.", Annotations: mcphint.Read("Search a workspace's skills")}, s.handleSearchSkills)
@@ -723,17 +725,29 @@ func (s *WorkspaceServer) handleDeleteTask(ctx context.Context, req *mcp.CallToo
 
 func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, args GetAttachmentParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "getAttachment", parseID(args.WorkspaceID))
+	format, err := mcpevent.AttachmentFormat(args.Format)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
 	userID := getUserID(ctx)
 	res, err := s.crud.GetAttachment(ctx, entity.GetAttachmentRequest{
 		UserID:       userID,
 		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
 		AttachmentID: args.AttachmentID,
+		LinkOnly:     format == mcpevent.AttachmentFormatURL,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil
 	}
 
-	return jsonResponse(res), nil, nil
+	out := mcpevent.AttachmentView{Filename: res.Filename, MimeType: res.MimeType}
+	if format == mcpevent.AttachmentFormatURL && res.URL != "" {
+		out.URL = res.URL
+	} else {
+		out.Data = res.Data
+	}
+	return jsonResponse(out), nil, nil
 }
 
 func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallToolRequest, args ListMemoriesParams) (*mcp.CallToolResult, any, error) {

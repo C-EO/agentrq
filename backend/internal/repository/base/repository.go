@@ -43,7 +43,7 @@ type Repository interface {
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
-	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
+	GetWorkspaceAttachments(ctx context.Context, workspaceID int64) ([]entity.TaskAttachment, error)
 
 	// Memory — the workspace's own notes, written by agents through the MCP
 	// memory tools. Keyed per (owner, workspace, name); see model.Memory.
@@ -597,49 +597,40 @@ func (r *repository) UpdateToolCallsWorkspaceID(ctx context.Context, taskID int6
 	return r.conn(ctx).Model(&model.ToolCall{}).Where("task_id = ?", taskID).Update("workspace_id", workspaceID).Error
 }
 
-func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {
-	var attachmentIDs []string
-
-	// 1. Get attachments from tasks
-	var taskAttachments []string
-	err := r.conn(ctx).Model(&model.Task{}).Where("workspace_id = ?", workspaceID).Pluck("attachments", &taskAttachments).Error
-	if err == nil {
-		for _, ta := range taskAttachments {
-			if len(ta) > 0 {
-				var atts []entity.Attachment
-				if err := json.Unmarshal([]byte(ta), &atts); err == nil {
-					for _, a := range atts {
-						if a.ID != "" {
-							attachmentIDs = append(attachmentIDs, a.ID)
-						}
-					}
-				}
-			}
-		}
+// GetWorkspaceAttachments lists the attachments of every task in a workspace
+// and of its messages, each with the task it belongs to.
+func (r *repository) GetWorkspaceAttachments(ctx context.Context, workspaceID int64) ([]entity.TaskAttachment, error) {
+	type row struct {
+		TaskID      int64
+		Attachments string
 	}
-
-	// 2. Get attachments from messages
-	var msgAttachments []string
-	err = r.conn(ctx).Model(&model.Message{}).
+	var rows []row
+	if err := r.conn(ctx).Model(&model.Task{}).Select("id AS task_id, attachments").
+		Where("workspace_id = ?", workspaceID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	var msgRows []row
+	if err := r.conn(ctx).Model(&model.Message{}).Select("messages.task_id, messages.attachments").
 		Joins("JOIN tasks ON tasks.id = messages.task_id").
-		Where("tasks.workspace_id = ?", workspaceID).
-		Pluck("messages.attachments", &msgAttachments).Error
-	if err == nil {
-		for _, ma := range msgAttachments {
-			if len(ma) > 0 {
-				var atts []entity.Attachment
-				if err := json.Unmarshal([]byte(ma), &atts); err == nil {
-					for _, a := range atts {
-						if a.ID != "" {
-							attachmentIDs = append(attachmentIDs, a.ID)
-						}
-					}
-				}
+		Where("tasks.workspace_id = ?", workspaceID).Scan(&msgRows).Error; err != nil {
+		return nil, err
+	}
+	var out []entity.TaskAttachment
+	for _, rw := range append(rows, msgRows...) {
+		if rw.Attachments == "" {
+			continue
+		}
+		var atts []entity.Attachment
+		if json.Unmarshal([]byte(rw.Attachments), &atts) != nil {
+			continue
+		}
+		for _, a := range atts {
+			if a.ID != "" {
+				out = append(out, entity.TaskAttachment{TaskID: rw.TaskID, ID: a.ID})
 			}
 		}
 	}
-
-	return attachmentIDs, nil
+	return out, nil
 }
 
 func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {

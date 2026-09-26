@@ -101,9 +101,10 @@ agentrq-ws attachment get 0isp9dJxr85 --task 0isnjTCkpW5 --out ~/Downloads
 agentrq-ws attachment get 0isp9dJxr85 --task 0isnjTCkpW5 --out ./report.pdf
 ```
 
-The `--task` is needed because the download tool returns bytes and no filename —
-the task is where the name lives, so the CLI reads it first and your file
-arrives called what a human called it.
+The `--task` is needed because an attachment belongs to a task. The CLI asks
+for the attachment's public link, downloads it, and saves the file under the
+name a human gave it; an older attachment with no link arrives the same way,
+from its content.
 
 ## Long text
 

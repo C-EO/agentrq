@@ -5,53 +5,15 @@ package app
 
 import (
 	"errors"
+	"github.com/mustafaturan/monoflake"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
-	"gopkg.in/yaml.v3"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 )
-
-// yamlConfig answers Populate from a yaml document, the way the real config
-// service does, so the test exercises the keys base.yaml actually uses.
-type yamlConfig struct {
-	sections map[string]any
-}
-
-func newYAMLConfig(t *testing.T, doc string) *yamlConfig {
-	t.Helper()
-	c := &yamlConfig{}
-	if err := yaml.Unmarshal([]byte(doc), &c.sections); err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
-
-func (c *yamlConfig) Populate(key string, out any) error {
-	v, ok := c.sections[key]
-	if !ok {
-		return nil
-	}
-	b, _ := yaml.Marshal(v)
-	return yaml.Unmarshal(b, out)
-}
-func (c *yamlConfig) Env() string          { return "test" }
-func (c *yamlConfig) App() string          { return "AgentRQ" }
-func (c *yamlConfig) AppShortName() string { return "agentrq" }
-func (c *yamlConfig) Version() string      { return "v0" }
-
-type fakeS3 struct{ s3.Service }
-
-func TestStorageDir(t *testing.T) {
-	for in, want := range map[string]string{"": "./_storage", "  ": "./_storage", "/storage": "/storage"} {
-		if got := storageDir(cleanup.Config{StorageDir: in}); got != want {
-			t.Errorf("storageDir(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
 
 func TestNewSkillStorage(t *testing.T) {
 	local := t.TempDir()
@@ -59,7 +21,7 @@ func TestNewSkillStorage(t *testing.T) {
 
 	t.Run("DefaultsToLocal", func(t *testing.T) {
 		for _, doc := range []string{"{}", "skills: {storage: local}", "skills: {storage: ' LOCAL '}"} {
-			got, err := newSkillStorage(newYAMLConfig(t, doc), local)
+			got, err := newSkillStorage(newYAMLConfig(t, doc), local, "https://agentrq.example/storage/skills")
 			if err != nil {
 				t.Fatalf("%s: %v", doc, err)
 			}
@@ -70,6 +32,11 @@ func TestNewSkillStorage(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(local, "w-1", "skill-2", "3")); err != nil {
 				t.Errorf("%s: %v", doc, err)
 			}
+			// And read publicly through the file routes.
+			key := "w-1/skill-2/" + monoflake.ID(3).String()
+			if got := storage.PublicURL(got, key); got != "https://agentrq.example/storage/skills/"+key {
+				t.Errorf("%s: link %q", doc, got)
+			}
 		}
 	})
 
@@ -78,29 +45,34 @@ func TestNewSkillStorage(t *testing.T) {
 		if err := os.WriteFile(file, nil, 0644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := newSkillStorage(newYAMLConfig(t, "{}"), file); err == nil {
+		if _, err := newSkillStorage(newYAMLConfig(t, "{}"), file, "https://agentrq.example/storage/skills"); err == nil {
 			t.Error("want error")
 		}
 	})
 
 	t.Run("UnknownRefusesToStart", func(t *testing.T) {
-		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: gcs}"), local)
+		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: gcs}"), local, "https://agentrq.example/storage/skills")
 		if err == nil || !strings.Contains(err.Error(), `"gcs"`) {
 			t.Errorf("got %v", err)
 		}
 	})
 
 	t.Run("BadConfig", func(t *testing.T) {
-		if _, err := newSkillStorage(newYAMLConfig(t, "skills: [1]"), local); err == nil {
+		if _, err := newSkillStorage(newYAMLConfig(t, "skills: [1]"), local, "https://agentrq.example/storage/skills"); err == nil {
 			t.Error("want error")
 		}
 	})
 
 	t.Run("S3", func(t *testing.T) {
 		c := newYAMLConfig(t, "skills: {storage: s3}\ns3: {endpoint: 'http://127.0.0.1:9', region: us-east-1, bucket: b}")
-		got, err := newSkillStorage(c, local)
+		got, err := newSkillStorage(c, local, "https://agentrq.example/storage/skills")
 		if err != nil || got == nil {
 			t.Fatalf("got %v, %v", got, err)
+		}
+		// Public in the bucket, not through the file routes.
+		key := "w-1/skill-2/" + monoflake.ID(3).String()
+		if got := storage.PublicURL(got, key); got != "http://127.0.0.1:9/b/skills/"+key {
+			t.Errorf("link %q", got)
 		}
 	})
 
@@ -108,7 +80,7 @@ func TestNewSkillStorage(t *testing.T) {
 		old := newS3
 		defer func() { newS3 = old }()
 		newS3 = func(s3.Params) (s3.Service, error) { return nil, errors.New("no creds") }
-		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local)
+		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local, "https://agentrq.example/storage/skills")
 		if err == nil || err.Error() != "s3: no creds" {
 			t.Errorf("s3 failure: %v", err)
 		}

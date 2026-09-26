@@ -629,7 +629,7 @@ const (
 	SubActionIDMCPDeleteTask
 	SubActionIDMCPDeleteWorkflow
 	SubActionIDMCPDeleteWorkflowStep
-	SubActionIDMCPDownloadAttachment
+	SubActionIDMCPDownloadAttachment // retired: the workspace tool became getAttachment
 	SubActionIDMCPElicit
 	SubActionIDMCPGetAttachment
 	SubActionIDMCPGetEvent

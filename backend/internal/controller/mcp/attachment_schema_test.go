@@ -15,6 +15,7 @@ import (
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -69,26 +70,56 @@ func TestCreateTaskAttachmentSchema(t *testing.T) {
 			t.Errorf("attachment field %s must have a string schema", field)
 		}
 	}
+	// Only the server makes an attachment's link.
+	if _, ok := items.Properties["url"]; ok {
+		t.Error("createTask offers an attachment url")
+	}
 }
 
-func TestCreateTaskPreservesAttachments(t *testing.T) {
-	for _, input := range []string{
-		`{"title":"test","body":"test"}`,
-		`{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+// TestCreateTaskStoresAttachments checks createTask files an attachment's
+// content in storage, as reply does, rather than in the task row, and keeps
+// the link a public store gives it.
+func TestCreateTaskStoresAttachments(t *testing.T) {
+	for name, tc := range map[string]struct {
+		input string
+		link  string
+		want  []entity.Attachment
+	}{
+		"none": {input: `{"title":"test","body":"test"}`},
+		"local": {
+			input: `{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+			want:  []entity.Attachment{{Filename: "hello.txt", MimeType: "text/plain"}},
+		},
+		"public": {
+			input: `{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+			link:  "https://agentrq.example/storage/artifacts",
+			want:  []entity.Attachment{{Filename: "hello.txt", MimeType: "text/plain", URL: "https://agentrq.example/storage/artifacts/w-00000000007/0000000001z/"}},
+		},
 	} {
-		t.Run(input, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			var params CreateTaskParams
-			if err := json.Unmarshal([]byte(input), &params); err != nil {
+			if err := json.Unmarshal([]byte(tc.input), &params); err != nil {
 				t.Fatal(err)
 			}
 			ctrl := gomock.NewController(t)
 			ids := mock_idgen.NewMockService(ctrl)
-			ids.EXPECT().NextID().Return(int64(123))
+			ids.EXPECT().NextID().Return(int64(123)).AnyTimes()
 			psub := mock_pubsub.NewMockService(ctrl)
 			psub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil)
+			local, err := storage.NewNested(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := local
+			if tc.link != "" {
+				if store, err = storage.NewNestedPublic(t.TempDir(), tc.link); err != nil {
+					t.Fatal(err)
+				}
+				local = store
+			}
 			var stored model.Task
 			ps := &WorkspaceServer{
-				idgen: ids, bus: eventbus.New(), pubsub: psub,
+				workspaceID: 7, idgen: ids, bus: eventbus.New(), pubsub: psub, storage: store,
 				createTask: func(_ context.Context, task model.Task) (model.Task, error) {
 					stored = task
 					return task, nil
@@ -104,8 +135,24 @@ func TestCreateTaskPreservesAttachments(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if !reflect.DeepEqual(got, params.Attachments) {
-				t.Fatalf("stored attachments = %#v, want %#v", got, params.Attachments)
+			// A fresh server-made id, which the link names.
+			for i := range got {
+				if got[i].ID != "0000000001z" {
+					t.Fatalf("id %q", got[i].ID)
+				}
+				tc.want[i].ID = got[i].ID
+				if tc.want[i].URL != "" {
+					tc.want[i].URL += got[i].ID
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("stored attachments = %#v, want %#v", got, tc.want)
+			}
+			// Filed under the task being created, whose id is the one it is stored with.
+			for _, a := range got {
+				if raw, err := storage.LoadAttachment(local, 7, stored.ID, a.ID); err != nil || stored.ID != 123 || string(raw) != "hello\n" {
+					t.Errorf("stored file %s = %q, %v", a.ID, raw, err)
+				}
 			}
 		})
 	}

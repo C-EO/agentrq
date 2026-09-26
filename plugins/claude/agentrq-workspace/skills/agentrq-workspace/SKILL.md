@@ -21,7 +21,7 @@ You are a **workspace agent** executing tasks within a specific AgentRQ workspac
 | `createTask` | Create a task for the human or another agent. Supports optional cron schedules and attachments. |
 | `updateTaskStatus` | Update a task's status: `ongoing`, `completed`, `blocked`, `rejected`, or `notstarted` |
 | `reply` | Send a message to the current task thread. Supports optional attachments. The human can ONLY see what you send via this tool. |
-| `downloadAttachment` | Download attachment content (base64) by attachment ID and task ID |
+| `getAttachment` | Get an attachment by attachment ID and task ID: its public link by default, or its base64 content with `format=base64` |
 | `getWorkspace` | Get workspace title, mission description, and task statistics |
 | `getTask` | Fetch a task. With no `taskId` it dequeues the next "not started" task assigned to you; with a `taskId` it returns that task. Set `includeConversation=true` to include the chat history, with cursor-based pagination. |
 | `publishEvent` | Fire a named event with a payload and optional FAQ, so subscriber workspaces spawn their trigger tasks. |
