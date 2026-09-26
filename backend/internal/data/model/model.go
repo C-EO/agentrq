@@ -592,6 +592,10 @@ const (
 	ActionIDSkillImport
 	ActionIDSkillView
 	ActionIDSkillSearch
+	// A code block's own copy button; browser-reported like the other copies.
+	ActionIDUICopyCode
+	// A conversation forked into a new task, emitted by the backend.
+	ActionIDTaskFork
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

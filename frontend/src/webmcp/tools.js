@@ -437,6 +437,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.respondToTask(workspaceId, taskId, action, text),
     }),
     tool({
+      name: 'forkTask',
+      description:
+        'Fork a task: copy its conversation, up to and including one message, into a new task for the agent.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        taskId: TASK_ID,
+        messageId: str('The last message to copy into the new task.'),
+      },
+      required: ['workspaceId', 'taskId', 'messageId'],
+      run: ({ workspaceId, taskId, messageId }) => api.forkTask(workspaceId, taskId, messageId),
+    }),
+    tool({
       name: 'updateTaskStatus',
       description:
         'Set a task\'s status: notstarted, ongoing, completed, rejected, cron or blocked.',

@@ -151,6 +151,25 @@ func FromHTTPRequestToRespondToTaskRequestEntity(c *fiber.Ctx) *entity.RespondTo
 	}
 }
 
+func FromHTTPRequestToForkTaskRequestEntity(c *fiber.Ctx) *entity.ForkTaskRequest {
+	var payload view.ForkTaskRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	messageID := monoflake.IDFromBase62(payload.MessageID).Int64()
+	if workspaceID == 0 || taskID == 0 || messageID == 0 {
+		return nil
+	}
+	return &entity.ForkTaskRequest{WorkspaceID: workspaceID, TaskID: taskID, MessageID: messageID}
+}
+
+func FromForkTaskResponseEntityToHTTPResponse(rs *entity.ForkTaskResponse) []byte {
+	payload, _ := json.Marshal(view.ForkTaskResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
 func FromRespondToTaskResponseEntityToHTTPResponse(rs *entity.RespondToTaskResponse) []byte {
 	payload, _ := json.Marshal(view.RespondToTaskResponse{Task: FromEntityTaskToView(rs.Task)})
 	return payload

@@ -182,6 +182,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUICopyMarkdown
 	case entity.ActionUITrajectoryView:
 		action = model.ActionIDUITrajectoryView
+	case entity.ActionUICopyCode:
+		action = model.ActionIDUICopyCode
 	case entity.ActionAgentModelSelect:
 		action = model.ActionIDAgentModelSelect
 	case entity.ActionMachineAdd:
@@ -218,6 +220,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDSkillView
 	case entity.ActionSkillSearch:
 		action = model.ActionIDSkillSearch
+	case entity.ActionTaskFork:
+		action = model.ActionIDTaskFork
 	default:
 		return
 	}

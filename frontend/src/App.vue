@@ -489,7 +489,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
-import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
+import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
 import * as api from './api'
@@ -502,6 +502,7 @@ import { usePlatformStore } from './stores/platformStore'
 import {
   copyLinkTarget,
   copyTargetFromEvent,
+  isCodeCopyEvent,
   fileLinkFromEvent,
   followFileLink,
   writeClipboard,
@@ -580,12 +581,13 @@ async function onMarkdownLinkActivate(event) {
   const copyTarget = copyTargetFromEvent(event)
   if (copyTarget) {
     event.preventDefault()
-    const copied = await copyLinkTarget(copyTarget, { copyText })
+    const code = isCodeCopyEvent(event)
+    const copied = await copyLinkTarget(copyTarget, { copyText, code })
     const notify = copied.tone === 'error' ? notifyError : notifySuccess
     notify(copied.message, copied.title)
     // Only a copy that worked: a refused clipboard is a failure to count, not
     // a use of the feature.
-    if (copied.tone !== 'error') recordUiAction(TELEMETRY_UI_COPY_LINK, route)
+    if (copied.tone !== 'error') recordUiAction(code ? TELEMETRY_UI_COPY_CODE : TELEMETRY_UI_COPY_LINK, route)
     return
   }
 
