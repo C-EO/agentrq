@@ -13,6 +13,10 @@ tool is added; don't trust it, count `createToolCatalogue(...)`'s length.
   what makes "anything the UI can do" checkable, and
   `frontend/test/webmcpTools.test.js` enforces it: add an API function without a
   tool and it fails. Exemptions live in that test with a reason.
+- **Every tool must fit the limits a shared site is held to** (description
+  ≤1 KiB, schema ≤32 KiB, ≤128 tools; `sitetools/limits.go`). Over any one, the
+  server refuses the whole announcement and the app cannot be shared, while the
+  popup still says "Shared". The catalogue test checks them.
 - Tools act as the signed-in user with their cookie, so they inherit exactly the
   user's permissions. The registration is withdrawn on logout because the page
   is not reloaded in between.

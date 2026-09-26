@@ -90,6 +90,17 @@ describe('the catalogue as a whole', () => {
     }
   });
 
+  // The server refuses a site's whole announcement over any of these limits
+  // (backend/internal/controller/sitetools/limits.go), so one long description
+  // silently unshares the app from every workspace.
+  it('stays within the limits the server accepts from a shared site', () => {
+    expect(catalogue.length).toBeLessThanOrEqual(128);
+    for (const t of catalogue) {
+      expect(new TextEncoder().encode(t.description).length, `${t.name} description bytes`).toBeLessThanOrEqual(1024);
+      expect(JSON.stringify(t.inputSchema).length, `${t.name} schema bytes`).toBeLessThanOrEqual(32 * 1024);
+    }
+  });
+
   it('gives every tool an object schema listing its required fields', () => {
     for (const t of catalogue) {
       expect(t.inputSchema.type, t.name).toBe('object');

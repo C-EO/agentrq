@@ -88,21 +88,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Open a page in the AgentRQ interface, moving the user there. Give the in-app path as it ' +
-        'appears in the address bar (no origin), optionally with a ?query. IDs are base62, taken ' +
-        'from getCurrentPage or the list tools. Pages:\n' +
-        '- "/" home: every workspace.\n' +
-        '- "/tasks/<filter>" tasks across all workspaces; <filter> is active, notstarted, pending ' +
-        '(waiting on the user), ongoing, completed or scheduled. Append "/<workspaceId>/<taskId>" ' +
-        'to open a task beside that list, and "/instances" after it for a scheduled task\'s runs.\n' +
-        '- "/workspaces/<workspaceId>" a workspace\'s task list; "?filter=<filter>" takes the same ' +
-        'values. Below it: "/board" (kanban), "/analytics", "/settings", "/tasks/<taskId>", ' +
-        '"/tasks/<taskId>/instances", "/tasks/<taskId>/edit" and "/tasks/new". "/settings" takes ' +
-        '"?tab=" general, setup, automations, notifications, memories, skills, slack or danger.\n' +
-        '- "/events", "/events/<eventId>"; "/workflows", "/workflows/<workflowId>".\n' +
-        '- "/machines", "/machines/<machineId>"; "/sessions/<sessionId>" a running agent\'s terminal.\n' +
+        'Move the user to a page of the AgentRQ interface. Pass the in-app path (no origin), ' +
+        'optionally with a ?query; IDs are base62, from getCurrentPage or the list tools. Pages:\n' +
+        '- "/" every workspace.\n' +
+        '- "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
+        '(waiting on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
+        'open a task beside it, then "/instances" for a scheduled task\'s runs.\n' +
+        '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
+        '"/analytics", "/settings", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
+        '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
+        'skills, slack or danger.\n' +
+        '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>".\n' +
+        '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (an agent\'s terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop app only).\n' +
-        'A path that matches none of these is refused. Returns the page the user ended up on.',
+        'Any other path is refused. Returns the page the user ended up on.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
