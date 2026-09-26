@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 // Package slack implements the Slack integration controller.
 // It handles workspace channel provisioning, task thread creation,

@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { useCron } from '../src/composables/useCron.js'

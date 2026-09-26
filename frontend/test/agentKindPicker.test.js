@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 /**
  * The what-to-run control, and the one thing about it that is not obvious.

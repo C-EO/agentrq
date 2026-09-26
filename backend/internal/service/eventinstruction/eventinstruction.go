@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 // Package eventinstruction builds the "publish this event when you finish"
 // text appended to a task body.

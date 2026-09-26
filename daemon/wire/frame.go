@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 // Package wire is the frame format spoken between agentrqd and the AgentRQ
 // backend, and it is deliberately the only definition of it.
