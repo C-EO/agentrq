@@ -47,6 +47,7 @@ export default defineConfig({
         'src/composables/useDrawerFrame.js',
         'src/composables/useTaskGroups.js',
         'src/composables/useTaskStatusStyle.js',
+        'src/composables/useAttachmentDownload.js',
         'src/composables/useAgentTelemetry.js',
         'src/composables/useAgentModelPicker.js',
         'src/composables/useAgentConcurrency.js',

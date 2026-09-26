@@ -806,9 +806,10 @@
           </div>
           <div class="w-px h-8 bg-zinc-700"></div>
           <!-- The public link when there is one; previews above stay on the signed-in
-               route, which the desktop app's CSP allows and the attachment cache serves. -->
+               route, which the desktop app's CSP allows and the attachment cache serves.
+               A click saves from that route instead, so the file keeps its name and type. -->
           <a :href="selectedAtt.url || getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
-             :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined"
+             :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
              class="flex items-center gap-2 px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             Download
@@ -843,6 +844,7 @@
 
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
+import { downloadAttachment } from '../composables/useAttachmentDownload';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
@@ -1667,6 +1669,12 @@ const selectedAtt = ref(null);
 
 function previewAttachment(att) {
   selectedAtt.value = att;
+}
+
+function downloadSelected() {
+  const att = selectedAtt.value;
+  const source = getAttachmentUrl(workspaceId.value, taskId.value, att.id);
+  return downloadAttachment(att, { source, fallback: att.url || source });
 }
 
 function copyAttachmentLink(att) {
