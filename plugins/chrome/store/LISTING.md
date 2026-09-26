@@ -25,7 +25,7 @@ AGENT ORCHESTRATION
 • Run many agents at once, each in its own workspace, and see at a glance which are working and which are waiting on you.
 • Chain work between agents: one workspace's finished task can start the next task in another.
 
-LET YOUR AGENTS USE WEBSITES' TOOLS
+LET YOUR AGENTS USE WEBMCP TOOLS
 • Websites can offer tools to AI agents with WebMCP. Turn on detection and the AgentRQ icon lights up on a site that does.
 • Share that site with a workspace in one click, and its agents can call the site's tools in your own signed-in browser. Anything the site does not mark read-only waits for your approval.
 • Stop sharing from the popup or Options at any time.
@@ -34,7 +34,7 @@ CLAUDE CODE TERMINALS IN THE EXTENSION
 • Open the live Claude Code terminal an agent is working in, right in the popup, to watch it or take over. Works for agents on any machine you have connected with agentrqd, AgentRQ's agent runner.
 
 CONTROL AGENTS WITH AGENT CLIENT PROTOCOL (ACP)
-• Claude Code, Codex, Antigravity, Hermes, OpenClaw and more, all in a single control plane.
+• Claude Code, Codex and Antigravity all in a single control plane.
 
 ONE CLICK FROM YOUR TOOLBAR
 • A mobile-sized popup that is always there; "Full size" or Alt+Shift+F opens AgentRQ in a tab when you want the room.
@@ -57,8 +57,9 @@ Open source: https://github.com/agentrq/agentrq
 | Field | File |
 |---|---|
 | Store icon (128×128) | `../icons/128.png` |
-| Screenshots (1280×800) | `screenshot-1-popup.png`, `screenshot-2-dark.png`, `screenshot-3-full-size.png` |
+| Screenshots (1280×800) | `screenshot-1-claude-code-webmcp.png`, `screenshot-2-popup.png`, `screenshot-3-dark.png`, `screenshot-4-full-size.png` |
 | Small promo tile (440×280) | `promo-small-440x280.png` |
+| Marquee promo tile (1400×560) | `promo-marquee-1400x560.png` |
 
 **Official URL** — `https://agentrq.com` (only offered once the domain is verified in Google Search Console for the publisher account; skip it otherwise)
 
