@@ -5,7 +5,7 @@
  * Site tools in the worker: which pages offer tools, telling the server about
  * the shared ones, and running the calls it sends.
  */
-import { ALL_SITES, getServerUrl, originPattern } from './settings.js'
+import { ALL_SITES, getServerUrl } from './settings.js'
 import { listShares, reconcile, refused, remember } from './shares.js'
 import { createSocket } from './socket.js'
 import { createTabs } from './tabs.js'
@@ -109,7 +109,6 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
 
   // A share added, moved or removed, from the popup or by reconcile.
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.serverUrl) run(syncScripts)
     if (area !== 'local' || !changes.shares) return
     const before = changes.shares.oldValue ?? {}
     const after = changes.shares.newValue ?? {}
@@ -130,9 +129,9 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
       const registered = await chrome.scripting.getRegisteredContentScripts({ ids: SCRIPT_IDS })
       if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: SCRIPT_IDS })
       if (!(await chrome.permissions.contains({ origins: ALL_SITES }))) return
-      // The server's own app is AgentRQ's WebMCP, not a site to share.
-      const excludeMatches = [originPattern(await getServerUrl(chrome))]
-      const script = (id, file, world) => ({ id, js: [file], matches: MATCHES, excludeMatches, runAt: 'document_start', allFrames: false, world })
+      // The server's own app included: its WebMCP is shared like any site's.
+      // The popup's frame of it stays unobserved, being no top frame.
+      const script = (id, file, world) => ({ id, js: [file], matches: MATCHES, runAt: 'document_start', allFrames: false, world })
       await chrome.scripting.registerContentScripts([
         script(SCRIPT_IDS[0], 'src/bridge.js', 'ISOLATED'),
         script(SCRIPT_IDS[1], 'src/observer.js', 'MAIN'),
