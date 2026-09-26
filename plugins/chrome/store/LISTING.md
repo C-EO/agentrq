@@ -25,7 +25,7 @@ AGENT ORCHESTRATION
 • Run many agents at once, each in its own workspace, and see at a glance which are working and which are waiting on you.
 • Chain work between agents: one workspace's finished task can start the next task in another.
 
-LET YOUR AGENTS USE WEBSITES' TOOLS
+LET YOUR AGENTS USE WEBMCP TOOLS
 • Websites can offer tools to AI agents with WebMCP. Turn on detection and the AgentRQ icon lights up on a site that does.
 • Share that site with a workspace in one click, and its agents can call the site's tools in your own signed-in browser. Anything the site does not mark read-only waits for your approval.
 • Stop sharing from the popup or Options at any time.
@@ -34,7 +34,7 @@ CLAUDE CODE TERMINALS IN THE EXTENSION
 • Open the live Claude Code terminal an agent is working in, right in the popup, to watch it or take over. Works for agents on any machine you have connected with agentrqd, AgentRQ's agent runner.
 
 CONTROL AGENTS WITH AGENT CLIENT PROTOCOL (ACP)
-• Claude Code, Codex, Antigravity, Hermes, OpenClaw and more, all in a single control plane.
+• Claude Code, Codex and Antigravity all in a single control plane.
 
 ONE CLICK FROM YOUR TOOLBAR
 • A mobile-sized popup that is always there; "Full size" or Alt+Shift+F opens AgentRQ in a tab when you want the room.
