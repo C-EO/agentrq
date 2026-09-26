@@ -6,7 +6,7 @@
  * the shared ones, and running the calls it sends.
  */
 import { ALL_SITES, getServerUrl } from './settings.js'
-import { listShares, reconcile, refused, remember } from './shares.js'
+import { clearRefusal, lastRefusal, listShares, reconcile, refused, remember } from './shares.js'
 import { createSocket } from './socket.js'
 import { createTabs } from './tabs.js'
 
@@ -21,7 +21,11 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
   const announce = (origin, share) => {
     const live = tabs.entry(tabs.bestTab(origin))
     const { url: lastUrl, tools } = live ?? { url: share.lastUrl, tools: share.tools ?? [] }
-    socket.send({ type: 'announce', origin, workspaceId: share.workspaceId, lastUrl, tools })
+    // Cleared before it is sent, so a refusal of this announce cannot be wiped.
+    run(async () => {
+      await clearRefusal(chrome, origin)
+      socket.send({ type: 'announce', origin, workspaceId: share.workspaceId, lastUrl, tools })
+    })
   }
 
   const runCall = async ({ callId, origin, tool, arguments: args }) => {
@@ -49,7 +53,7 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     else if (frame.type === 'call') run(() => runCall(frame))
     else if (frame.type === 'refused') {
       log.error(`AgentRQ: the server refused ${frame.origin}: ${frame.error}`)
-      run(() => refused(chrome, frame.origin))
+      run(() => refused(chrome, frame.origin, frame.error))
     }
   }
 
@@ -78,13 +82,14 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     const share = origin && (await listShares(chrome))[origin]
     const sharedWith = share?.workspaceId ?? null
     const entry = front && tabs.entry(front.id)
+    const refusal = origin && (await lastRefusal(chrome, origin))
     // A tab that has moved to another site keeps the old one's entry until
     // that page says something; it offers nothing yet.
     if (!entry?.tools.length || origin !== entry.origin) {
-      if (sharedWith) return { origin, url: front.url, tools: [], toolCount: 0, sharedWith }
-      return { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null }
+      if (sharedWith) return { origin, url: front.url, tools: [], toolCount: 0, sharedWith, refusal }
+      return { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null, refusal: null }
     }
-    return { origin, url: entry.url, tools: entry.tools, toolCount: entry.tools.length, sharedWith }
+    return { origin, url: entry.url, tools: entry.tools, toolCount: entry.tools.length, sharedWith, refusal }
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

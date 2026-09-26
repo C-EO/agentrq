@@ -6,7 +6,7 @@
  * site with a workspace, or stop sharing it. With nothing to say it is hidden.
  */
 import { ALL_SITES } from './settings.js'
-import { share, unshare } from './shares.js'
+import { isRefusalChange, share, unshare } from './shares.js'
 import { listWorkspaces } from './workspaces.js'
 
 export async function initStrip({ doc, chrome, fetchImpl, server }) {
@@ -19,8 +19,9 @@ export async function initStrip({ doc, chrome, fetchImpl, server }) {
   let onAction
   action.addEventListener('click', () => onAction())
 
-  const show = (message, label, handler, workspaces) => {
+  const show = (message, label, handler, workspaces, warn = false) => {
     strip.hidden = false
+    strip.className = warn ? 'warn' : ''
     text.textContent = message
     action.hidden = !label
     action.textContent = label ?? ''
@@ -51,19 +52,28 @@ export async function initStrip({ doc, chrome, fetchImpl, server }) {
     if (!state?.toolCount && !state?.sharedWith) return
     // Signed out there is nothing to share with, but a share can still stop.
     const workspaces = await listWorkspaces(fetchImpl, server).catch(() => null)
+    // The server's reason is shown as it gave it: it names the limit broken.
+    const { refusal } = state
     if (state.sharedWith) {
       const name = workspaces?.find((w) => w.id === state.sharedWith)?.name ?? 'a workspace'
-      return show(`Shared with ${name}`, 'Stop sharing', () => unshare(chrome, state.origin).then(render))
+      const shared = refusal ? `Shared with ${name} · Its latest tools were refused: ${refusal}` : `Shared with ${name}`
+      return show(shared, 'Stop sharing', () => unshare(chrome, state.origin).then(render), null, !!refusal)
     }
-    const offers = `${new URL(state.origin).host} offers ${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
-    if (!workspaces) return show(`${offers} · Sign in to AgentRQ to share it`)
-    if (!workspaces.length) return show(`${offers} · Create a workspace to share it`)
+    const host = new URL(state.origin).host
+    const offers = `${refusal ? `Not shared: ${refusal} · ` : ''}${host} offers ${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
+    if (!workspaces) return show(`${offers} · Sign in to AgentRQ to share it`, null, null, null, !!refusal)
+    if (!workspaces.length) return show(`${offers} · Create a workspace to share it`, null, null, null, !!refusal)
     show(
       `${offers} · Share with`,
       'Share',
       () => share(chrome, state.origin, picker.value, state.url, state.tools).then(render),
       workspaces,
+      !!refusal,
     )
   }
+  // A refusal comes back moments after Share is clicked, while the popup is open.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && isRefusalChange(changes)) render()
+  })
   return render()
 }
