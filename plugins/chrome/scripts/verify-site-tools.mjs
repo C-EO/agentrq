@@ -84,7 +84,11 @@ const NATIVE_STUB = `(() => {
   })
 })()`
 
-/** A site with one read-only and one destructive tool. */
+/**
+ * A site with one read-only and one destructive tool, one that navigates the
+ * page and one that never answers. The last two are marked read-only so no
+ * approval stands between the call and the navigation.
+ */
 const PAGE = `<!doctype html><title>Thing shop</title><h1>Thing shop</h1><script>
   window.deleted = []
   document.modelContext.registerTool({
@@ -100,6 +104,20 @@ const PAGE = `<!doctype html><title>Thing shop</title><h1>Thing shop</h1><script
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     annotations: { destructiveHint: true },
     execute: async ({ id }) => { window.deleted.push(id); return { content: [{ type: 'text', text: 'deleted ' + id }] } },
+  })
+  document.modelContext.registerTool({
+    name: 'navigate',
+    description: 'Go to a page of the shop',
+    inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    annotations: { readOnlyHint: true },
+    execute: async ({ url }) => { location.href = url; return { navigatedTo: url } },
+  })
+  document.modelContext.registerTool({
+    name: 'waitForever',
+    description: 'Never answers',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    execute: () => new Promise(() => {}),
   })
 </script>`
 
@@ -223,7 +241,7 @@ async function main() {
         return chrome.action.getBadgeText({ tabId: tab.id })
       }, site),
     )
-    record('the observer sees the page register its tools', badge === '2', `badge "${badge}"`)
+    record('the observer sees the page register its tools', badge === '4', `badge "${badge}"`)
     record('and the page cannot read the nonce', (await page.evaluate(() => document.documentElement.dataset.agentrqNonce)) === undefined, 'data-agentrq-nonce is gone')
 
     // What the popup's Share button stores.
@@ -235,7 +253,7 @@ async function main() {
     const listed = await until('the share to reach the server', async () => {
       const { out } = await agentrqWs(mcp, ['site-tools'])
       const shares = JSON.parse(out)
-      return shares[0]?.online && shares[0].tools.length === 2 ? shares : null
+      return shares[0]?.online && shares[0].tools.length === 4 ? shares : null
     })
     record('listSiteTools shows the site online', listed[0].site === site, `${listed[0].site}: ${listed[0].tools.map((t) => t.name).join(', ')}`)
 
@@ -264,6 +282,34 @@ async function main() {
     const deleted = await deleting
     const onPage = await page.evaluate(() => window.deleted)
     record('and runs once allowed', deleted.code === 0 && deleted.out === 'deleted 42' && onPage.join() === '42', `${JSON.stringify(deleted.out)}; the page deleted [${onPage}]`)
+
+    started = Date.now()
+    const navigating = await call('navigate', { url: '/elsewhere' })
+    await page.waitForURL(`${site}/elsewhere`)
+    record(
+      'a tool that navigates its own page still returns its result',
+      navigating.code === 0 && navigating.out === '{"navigatedTo":"/elsewhere"}',
+      `${JSON.stringify(navigating.out)} in ${Date.now() - started} ms`,
+    )
+
+    // The new page announces again before the next call can find the tool.
+    await until('the new page to announce', () =>
+      sw.evaluate(async (origin) => {
+        const [tab] = await chrome.tabs.query({ url: `${origin}/*` })
+        return (await chrome.action.getBadgeText({ tabId: tab.id })) === '4'
+      }, site),
+    )
+    started = Date.now()
+    const hanging = call('waitForever')
+    await sleep(1000)
+    await page.goto(`${site}/away`)
+    const abandoned = await hanging
+    const waited = Date.now() - started
+    record(
+      'a call whose page navigates away fails at once',
+      abandoned.code !== 0 && abandoned.out.includes(`the ${site} page navigated away during the call`) && waited < 5000,
+      `${JSON.stringify(abandoned.out)} after ${waited} ms`,
+    )
 
     await page.close()
     await until('the tab to close', () => sw.evaluate((origin) => chrome.tabs.query({ url: `${origin}/*` }).then((t) => t.length === 0), site))

@@ -22,13 +22,13 @@ export function fakeModelContext({ refuse } = {}) {
 
 export function fakePage({ document: props = {}, navigator = {} } = {}) {
   const document = Object.assign(new EventTarget(), { documentElement: { dataset: {} } }, props)
-  return { document, navigator }
+  return { document, navigator, window: new EventTarget() }
 }
 
 /** Run `src/<name>` in a fresh world of `page`, with `globals` as its own. */
 export function runScript(name, page, globals = {}) {
   const filename = fileURLToPath(new URL(`../src/${name}`, import.meta.url))
-  const world = vm.createContext({ document: page.document, navigator: page.navigator, CustomEvent, EventTarget, ...globals })
+  const world = vm.createContext({ window: page.window, document: page.document, navigator: page.navigator, CustomEvent, EventTarget, ...globals })
   vm.runInContext(readFileSync(filename, 'utf8'), world, { filename })
   return world
 }

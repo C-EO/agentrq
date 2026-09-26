@@ -62,9 +62,9 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
 
   const socket = createSocket({ chrome, fetchImpl, WebSocketImpl, timers, log, onFrame, onOpen, getServer: () => getServerUrl(chrome) })
 
-  const onSiteTools = async (tabId, url, tools) => {
+  const onSiteTools = async (tabId, url, tools, documentId) => {
     const origin = new URL(url).origin
-    tabs.set(tabId, origin, url, tools)
+    tabs.set(tabId, origin, url, tools, documentId)
     if (!(await remember(chrome, origin, url, tools))) return
     announce(origin, (await listShares(chrome))[origin])
   }
@@ -93,8 +93,11 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
       return true
     }
     const tabId = sender.tab?.id
-    if (tabId === undefined || sender.frameId !== 0) return
-    if (message?.type === 'site-tools') run(() => onSiteTools(tabId, sender.url, message.tools ?? []))
+    if (tabId === undefined) return
+    // A page left behind by a cross-site navigation is no longer frame 0.
+    if (message?.type === 'site-gone') return void tabs.gone(tabId, sender.documentId)
+    if (sender.frameId !== 0) return
+    if (message?.type === 'site-tools') run(() => onSiteTools(tabId, sender.url, message.tools ?? [], sender.documentId))
     else if (message?.type === 'site-result') tabs.deliver(message.callId, tabId, { text: message.text, error: message.error })
   })
   chrome.tabs.onActivated.addListener(({ tabId }) => tabs.touch(tabId))

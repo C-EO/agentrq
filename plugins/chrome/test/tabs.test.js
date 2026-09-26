@@ -97,6 +97,49 @@ test('closing a tab fails the calls pending on it, and only those', async () => 
   assert.deepEqual(await onOther, { text: 'ok' })
 })
 
+test('a page navigating away fails the calls sent to it, and its tab offers nothing until the next page announces', async () => {
+  const { chrome, tabs } = setup()
+  tabs.set(1, GH, `${GH}/a`, [t('a')], 'doc1')
+  tabs.set(2, GH, `${GH}/b`, [t('a')], 'doc2')
+  const onGone = tabs.expect('c1', 1)
+  const onOther = tabs.expect('c2', 2)
+  tabs.gone(1, 'doc1')
+  tabs.gone(9, 'doc9')
+  assert.deepEqual(await onGone, { error: 'the https://github.com page navigated away during the call' })
+  assert.deepEqual(tabs.toolsFor(1), [])
+  assert.equal(chrome.action.badges.get(1).text, '')
+  assert.equal(tabs.bestTab(GH, 'a'), 2)
+  tabs.set(1, GH, `${GH}/c`, [t('a')], 'doc3')
+  tabs.touch(1)
+  assert.equal(tabs.bestTab(GH, 'a'), 1)
+  tabs.deliver('c2', 2, { text: 'ok' })
+  assert.deepEqual(await onOther, { text: 'ok' })
+})
+
+// A navigate tool's own result arrives before its page's pagehide.
+test('a result that arrives before the page unloads still wins', async () => {
+  const { tabs } = setup()
+  tabs.set(1, GH, `${GH}/a`, [t('navigate')], 'doc1')
+  const answer = tabs.expect('c1', 1)
+  tabs.deliver('c1', 1, { text: '{"navigatedTo":"/b"}' })
+  tabs.gone(1, 'doc1')
+  assert.deepEqual(await answer, { text: '{"navigatedTo":"/b"}' })
+})
+
+// After a cross-site navigation, the new page can announce before the old one's pagehide arrives.
+test('an old page unloading after the new one announced fails only its own calls', async () => {
+  const { tabs } = setup()
+  tabs.set(1, GH, `${GH}/a`, [t('a')], 'old')
+  const onOld = tabs.expect('c1', 1)
+  tabs.set(1, GH, `${GH}/b`, [t('a')], 'new')
+  const onNew = tabs.expect('c2', 1)
+  tabs.gone(1, 'old')
+  assert.deepEqual(await onOld, { error: 'the https://github.com page navigated away during the call' })
+  assert.deepEqual(tabs.toolsFor(1), [t('a')])
+  tabs.deliver('c2', 1, { text: 'ok' })
+  assert.deepEqual(await onNew, { text: 'ok' })
+})
+
 test('a call nobody answers gives up rather than waiting forever', async () => {
   const { tabs, timers } = setup()
   const answer = tabs.expect('c1', 1)
