@@ -10,7 +10,10 @@ import { isSignedIn } from './session.js'
 import { getServerUrl, originPattern } from './settings.js'
 import { initStrip } from './strip.js'
 
-export async function initPopup({ doc, chrome, fetchImpl, close }) {
+// The page the framed app last reported, per server; see frontend/src/utils/extensionPopup.js.
+const ROUTE_MESSAGE = 'agentrq-route'
+
+export async function initPopup({ doc, win, chrome, fetchImpl, close }) {
   const $ = (id) => doc.getElementById(id)
   const frame = $('app')
   const message = $('message')
@@ -30,8 +33,20 @@ export async function initPopup({ doc, chrome, fetchImpl, close }) {
 
   const server = await getServerUrl(chrome)
   const fullSize = (url) => openFullSize(chrome, url).then(close)
+  // Kept for a server only: a page of another one means nothing here.
+  const { popupPage } = await chrome.storage.local.get('popupPage')
+  let page = popupPage?.server === server ? server + popupPage.path : server
 
-  $('full').addEventListener('click', () => fullSize(server))
+  // Only the frame's own messages, from the server, naming a page of it.
+  win.addEventListener('message', ({ source, origin, data }) => {
+    if (source !== frame.contentWindow || origin !== new URL(server).origin || data?.type !== ROUTE_MESSAGE) return
+    const { path } = data
+    if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return
+    page = server + path
+    return chrome.storage.local.set({ popupPage: { server, path } })
+  })
+
+  $('full').addEventListener('click', () => fullSize(page))
   $('action').addEventListener('click', () => onAction())
   $('options').addEventListener('click', (event) => {
     event.preventDefault()
@@ -55,7 +70,7 @@ export async function initPopup({ doc, chrome, fetchImpl, close }) {
     }
     message.hidden = true
     frame.hidden = false
-    frame.src = server
+    frame.src = page
   }
   await Promise.all([show(), initStrip({ doc, chrome, fetchImpl, server })])
 }
