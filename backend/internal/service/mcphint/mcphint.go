@@ -72,3 +72,10 @@ func Overwrite(title string) *mcp.ToolAnnotations {
 		OpenWorldHint:   closedWorld(),
 	}
 }
+
+// OpenWorld marks a tool that reaches a third-party site, whose answer this
+// server cannot predict.
+func OpenWorld(a *mcp.ToolAnnotations) *mcp.ToolAnnotations {
+	a.OpenWorldHint = hint(true)
+	return a
+}

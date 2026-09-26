@@ -114,3 +114,14 @@ func TestHintsAreNotShared(t *testing.T) {
 		t.Error("writing through one tool's hint changed another's")
 	}
 }
+
+func TestOpenWorld(t *testing.T) {
+	a := OpenWorld(Write("Run a site's tool"))
+
+	if !deref(t, "openWorldHint", a.OpenWorldHint) {
+		t.Error("an open-world tool claims a closed world")
+	}
+	if a.Title != "Run a site's tool" || deref(t, "destructiveHint", a.DestructiveHint) {
+		t.Errorf("OpenWorld changed the other hints: %+v", a)
+	}
+}

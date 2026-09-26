@@ -74,7 +74,7 @@ func TestSubActionIDCoversEveryRegisteredToolResourceAndPrompt(t *testing.T) {
 	// single handler, so nothing here is ever invoked.
 	workspaceSrv := mcpctrl.NewWorkspaceServer(
 		1, "1", "https://agentrq.example",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, "", "", "", nil, nil, nil, nil,
 	)
 	coreSrv := coremcp.NewServer(nil, "https://agentrq.example", nil)
