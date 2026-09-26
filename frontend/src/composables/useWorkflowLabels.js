@@ -4,8 +4,8 @@
 /**
  * What a workflow's boxes say when you hover them.
  *
- * The canvas draws fixed-width nodes and the palette is a narrow column, so
- * both truncate: a workspace called "agentrq-release-engineering" reads as
+ * Canvas boxes grow with their names only up to a cap, and the palette is a
+ * narrow column, so both can truncate: a workspace called "agentrq-release-engineering" reads as
  * "agentrq-release-engi…" and there was no way to see the rest. Worse, the
  * truncated thing is the one fact a reader most needs — which workspace a
  * running event is about to create work in.

@@ -62,6 +62,7 @@ export default defineConfig({
         'src/composables/useTaskEvents.js',
         'src/composables/useTrajectory.js',
         'src/composables/useWorkflowLabels.js',
+        'src/composables/useWorkflowLayout.js',
         'src/composables/usePendingSend.js',
         'src/composables/useQueuedMessages.js',
         'src/composables/useDirectoryPicker.js',

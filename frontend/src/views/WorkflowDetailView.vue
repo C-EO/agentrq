@@ -21,6 +21,7 @@ import {
   paletteTooltip,
   workspaceLabel,
 } from '../composables/useWorkflowLabels';
+import { columnOffsets, nodeWidth } from '../composables/useWorkflowLayout';
 import DeleteModal from '../components/DeleteModal.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -45,9 +46,8 @@ const mode = ref('graph');
 // dragged gets an entry in `positions` and stops being auto-placed; clearing
 // that entry returns it to the automatic spot.
 
-const COLUMN_WIDTH = 260;
+// Box widths follow their labels, see useWorkflowLayout.
 const ROW_HEIGHT = 104;
-const NODE_WIDTH = 200;
 const NODE_HEIGHT = 56;
 // A step that emits an event renders a second line, so it is taller than the
 // base node. Row spacing has to clear the taller one or branches collide.
@@ -367,15 +367,19 @@ const graph = computed(() => {
   for (const node of nodes) if (!hasParent.has(node)) assignRow(node);
   for (const node of nodes) assignRow(node);
 
-  for (const node of nodes) node.row = rowOf.get(node) ?? 0;
+  for (const node of nodes) {
+    node.row = rowOf.get(node) ?? 0;
+    node.width = nodeWidth(node, node.kind === 'step' && node.step.emitEventId ? eventName(node.step.emitEventId) : '');
+  }
 
+  const columnX = columnOffsets(nodes, CANVAS_PADDING);
   for (const node of nodes) {
     const override = positions.value[nodeKey(node)];
-    node.x = override?.x ?? CANVAS_PADDING + node.column * COLUMN_WIDTH;
+    node.x = override?.x ?? columnX[node.column];
     node.y = override?.y ?? CANVAS_PADDING + node.row * ROW_HEIGHT;
   }
 
-  const width = Math.max(...nodes.map(n => n.x + NODE_WIDTH), 0) + CANVAS_PADDING;
+  const width = Math.max(...nodes.map(n => n.x + n.width), 0) + CANVAS_PADDING;
   const height = Math.max(...nodes.map(n => n.y + n.height), 0) + CANVAS_PADDING;
 
   return { nodes, edges, width, height };
@@ -383,7 +387,7 @@ const graph = computed(() => {
 
 /** A curve from the right edge of one node to the left edge of the next. */
 function edgePath(edge) {
-  const x1 = edge.from.x + NODE_WIDTH;
+  const x1 = edge.from.x + edge.from.width;
   const y1 = edge.from.y + edge.from.height / 2;
   const x2 = edge.to.x;
   const y2 = edge.to.y + edge.to.height / 2;
@@ -967,7 +971,7 @@ onMounted(async () => {
                 v-for="node in graph.nodes"
                 :key="nodeKey(node)"
                 class="absolute select-none rounded-xl border transition-shadow"
-                :style="{ left: node.x + 'px', top: node.y + 'px', width: '200px' }"
+                :style="{ left: node.x + 'px', top: node.y + 'px', width: node.width + 'px' }"
                 :class="[
                   node.kind === 'event'
                     ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-900/50'
