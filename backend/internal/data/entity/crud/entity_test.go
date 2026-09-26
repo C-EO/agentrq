@@ -63,6 +63,8 @@ func TestActionString(t *testing.T) {
 		{ActionSkillView, "skill_view"},
 		{ActionSkillSearch, "skill_search"},
 		{ActionTaskFork, "task_fork"},
+		{ActionSiteShare, "site_share"},
+		{ActionSiteUnshare, "site_unshare"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

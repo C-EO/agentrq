@@ -52,6 +52,14 @@ func (m *mockTokenSvc) ValidateTerminalTicket(tokenStr, sessionID string) (*auth
 	return nil, jwt.ErrSignatureInvalid
 }
 
+func (m *mockTokenSvc) CreateBrowserTicket(userID string) (string, error) {
+	return "", nil
+}
+
+func (m *mockTokenSvc) ValidateBrowserTicket(tokenStr string) (*auth.Claims, error) {
+	return nil, jwt.ErrSignatureInvalid
+}
+
 func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	m.validToken = "mocked-mcp-" + userID + "-" + workspaceID + "-" + tokenType
 	return m.validToken, nil

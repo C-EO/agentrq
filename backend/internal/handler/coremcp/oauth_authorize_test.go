@@ -42,6 +42,10 @@ func (authorizeTokenSvc) CreateTerminalTicket(userID, sessionID string) (string,
 func (authorizeTokenSvc) ValidateTerminalTicket(tokenStr, sessionID string) (*auth.Claims, error) {
 	return nil, nil
 }
+func (authorizeTokenSvc) CreateBrowserTicket(userID string) (string, error) { return "", nil }
+func (authorizeTokenSvc) ValidateBrowserTicket(tokenStr string) (*auth.Claims, error) {
+	return nil, nil
+}
 func (authorizeTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
 	return "", nil
 }

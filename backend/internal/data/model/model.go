@@ -596,6 +596,9 @@ const (
 	ActionIDUICopyCode
 	// A conversation forked into a new task, emitted by the backend.
 	ActionIDTaskFork
+	// A site shared into a workspace from the Chrome extension, and withdrawn.
+	ActionIDSiteShare
+	ActionIDSiteUnshare
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

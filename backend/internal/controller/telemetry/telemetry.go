@@ -222,6 +222,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDSkillSearch
 	case entity.ActionTaskFork:
 		action = model.ActionIDTaskFork
+	case entity.ActionSiteShare:
+		action = model.ActionIDSiteShare
+	case entity.ActionSiteUnshare:
+		action = model.ActionIDSiteUnshare
 	default:
 		return
 	}

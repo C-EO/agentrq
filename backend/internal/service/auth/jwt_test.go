@@ -378,3 +378,46 @@ func TestTerminalTicket(t *testing.T) {
 		}
 	})
 }
+
+func TestBrowserTicket(t *testing.T) {
+	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+
+	ticket, err := svc.CreateBrowserTicket("user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := svc.ValidateBrowserTicket(ticket)
+	if err != nil {
+		t.Fatalf("a freshly minted ticket was refused: %v", err)
+	}
+	if claims.Subject != "user-1" {
+		t.Errorf("subject = %q, want user-1", claims.Subject)
+	}
+	if left := time.Until(claims.ExpiresAt.Time); left > BrowserTicketTTL || left < BrowserTicketTTL-5*time.Second {
+		t.Errorf("expires in %v, want about %v", left, BrowserTicketTTL)
+	}
+
+	refused := map[string]func() (string, error){
+		"terminal ticket": func() (string, error) { return svc.CreateTerminalTicket("user-1", "500") },
+		"access token":    func() (string, error) { return svc.CreateToken("user-1", "a@b.c", "A", "") },
+		"other secret":    func() (string, error) { return other.CreateBrowserTicket("user-1") },
+	}
+	for name, mint := range refused {
+		t.Run(name, func(t *testing.T) {
+			tok, err := mint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.ValidateBrowserTicket(tok); err == nil {
+				t.Fatalf("a %s opened the browser socket", name)
+			}
+		})
+	}
+
+	t.Run("not a terminal ticket", func(t *testing.T) {
+		if _, err := svc.ValidateTerminalTicket(ticket, "500"); err == nil {
+			t.Fatal("a browser ticket opened a terminal")
+		}
+	})
+}
