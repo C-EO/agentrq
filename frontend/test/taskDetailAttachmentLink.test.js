@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The attachment preview's Download button, mounted for real: the coverage
- * gate does not see `.vue` files. It follows an attachment's public link when
- * there is one, and the signed-in route otherwise.
+ * The attachment preview's Download and Copy link buttons, mounted for real:
+ * the coverage gate does not see `.vue` files. Download follows an attachment's
+ * public link when there is one, and the signed-in route otherwise; Copy link
+ * shares only a public link.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -58,6 +59,7 @@ const task = () => ({
 })
 
 const forkTask = vi.fn()
+const recordTelemetry = vi.fn(() => Promise.resolve())
 
 vi.mock('../src/api', () => ({
   getWorkspace: () => Promise.resolve({ workspace: { id: 'ws1', name: 'Ops', agentConnected: true } }),
@@ -65,6 +67,7 @@ vi.mock('../src/api', () => ({
   fetchUser: () => Promise.resolve({ id: 'u1', name: 'Dev' }),
   fetchTasks: () => Promise.resolve({ tasks: [] }),
   forkTask: (...args) => forkTask(...args),
+  recordTelemetry: (...args) => recordTelemetry(...args),
   respondToTask: vi.fn(),
   getAttachmentUrl: (ws, task, id) => `/api/v1/workspaces/${ws}/tasks/${task}/attachments/${id}`,
   getWorkspaceToken: vi.fn(),
@@ -77,6 +80,7 @@ vi.mock('../src/api', () => ({
   respondToElicitation: vi.fn(),
   stopTask: vi.fn(),
   updateTaskAllowAllCommands: vi.fn(),
+  TELEMETRY_UI_COPY_LINK: 'ui.copy_link',
   TELEMETRY_UI_COPY_MARKDOWN: 'ui.copy_markdown',
   TELEMETRY_UI_SHORTCUT_USE: 'ui.shortcut_use',
   TELEMETRY_UI_TRAJECTORY_VIEW: 'ui.trajectory_view',
@@ -127,5 +131,37 @@ describe('the Download button', () => {
     expect(link.getAttribute('href')).toBe('/api/v1/workspaces/ws1/tasks/t1/attachments/a2')
     expect(link.hasAttribute('target')).toBe(false)
     expect(link.getAttribute('download')).toBe('old.txt')
+  })
+})
+
+describe('the Copy link button', () => {
+  const button = (el) => [...el.querySelectorAll('button')].find((b) => /Copy link|Copied/.test(b.textContent))
+
+  it('puts the public link on the clipboard and says so', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const el = await mount()
+    await open(el, 'shot.png')
+    button(el).click()
+    await settle()
+    expect(writeText).toHaveBeenCalledWith('https://agentrq.example/storage/artifacts/w-1/t1/a1')
+    expect(button(el).textContent.trim()).toBe('Copied')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui.copy_link', 'ws1')
+  })
+
+  it('stays as it was when the copy fails', async () => {
+    const writeText = vi.fn(() => Promise.reject(new Error('not focused')))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const el = await mount()
+    await open(el, 'shot.png')
+    button(el).click()
+    await settle()
+    expect(button(el).textContent.trim()).toBe('Copy link')
+  })
+
+  it('is not offered for an attachment with no public link', async () => {
+    const el = await mount()
+    await open(el, 'old.txt')
+    expect(button(el)).toBeUndefined()
   })
 })
