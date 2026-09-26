@@ -70,6 +70,15 @@ type Repository interface {
 	ListSkillShares(ctx context.Context, skillID int64) ([]model.SkillShare, error)
 	GetWorkspaceSkillStorageIDs(ctx context.Context, workspaceID int64) ([]string, error)
 
+	// SiteShare — a website shared from the Chrome extension into a
+	// workspace. Unique on (user, origin): one site, one workspace.
+	UpsertSiteShare(ctx context.Context, s model.SiteShare) (model.SiteShare, error)
+	DeleteSiteShare(ctx context.Context, userID int64, origin string) (bool, error)
+	ListSiteSharesForWorkspace(ctx context.Context, workspaceID, userID int64) ([]model.SiteShare, error)
+	ListSiteSharesForUser(ctx context.Context, userID int64) ([]model.SiteShare, error)
+	GetSiteShare(ctx context.Context, workspaceID, userID int64, origin string) (model.SiteShare, error)
+	SetSiteShareAlwaysAllow(ctx context.Context, id int64, names []string) error
+
 	// Machine — an enrolled computer running agentrqd, and the short-lived
 	// codes used to enrol one. See internal/controller/machine for the rules.
 	CreateEnrolmentCode(ctx context.Context, c model.EnrolmentCode) (model.EnrolmentCode, error)
@@ -259,6 +268,9 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 			return err
 		}
 		if err := tx.Where("workspace_id = ?", id).Delete(&model.Skill{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
 			return err
 		}
 

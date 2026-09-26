@@ -73,13 +73,14 @@ Stop button.
 - `GET /api/v1/browser/connect` — a WebSocket on the stdlib `mux` in `app.go`
   (never Fiber; see AGENTS.md), authenticated with a ticket like the daemon and
   terminal sockets.
-- An in-memory registry per backend instance of connected browsers, with the
-  same `(browserId, instanceId)` pairing-and-relay approach as
-  `backend/internal/controller/machine/registry.go`, so a call arriving at
-  another instance still reaches the socket.
-- One table, `site_shares`: account, workspace, origin, browser id, last URL,
-  last-seen tools (JSON), always-allowed tool names, timestamps. Unique on
-  (workspace, origin). Deleted with its workspace.
+- An in-memory registry per backend instance of connected browsers. Calls are
+  **not** relayed between instances, as for terminals: the share records the
+  instance holding the browser's socket, and a call landing on another one
+  fails with "your browser is connected to another server instance; try again".
+- One table, `site_shares`: account, workspace, origin, browser id, instance
+  id, last URL, last-seen tools (JSON), always-allowed tool names, timestamps.
+  Unique on (account, origin): one site, one workspace. Deleted with its
+  workspace.
 - View / entity / model separation, controller methods only from handlers,
   camelCase JSON everywhere.
 
