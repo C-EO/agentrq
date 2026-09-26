@@ -163,12 +163,32 @@ test('the server’s list reconciles the shares, and a refusal of a new share dr
   assert.equal(await lastRefusal(chrome, 'https://new.com'), null)
 })
 
+test('a refusal is kept with the refused tools, and the page offering others clears it', async () => {
+  const { chrome, ws, page } = await start()
+  page(3, `${GH}/me`, [hi])
+  await settle()
+  await share(chrome, GH, 'ws1', `${GH}/me`)
+  await settle()
+  ws().open()
+  await settle()
+  ws().receive({ type: 'refused', origin: GH, error: 'too long' })
+  await settle()
+  assert.deepEqual(chrome.storage.local.data[`refused:${GH}`], { error: 'too long', tools: [hi] })
+
+  page(3, `${GH}/me`, [hi])
+  await settle()
+  assert.equal(await lastRefusal(chrome, GH), 'too long', 'the same tools would be refused again')
+  page(3, `${GH}/me`, [hi, del])
+  await settle()
+  assert.equal(await lastRefusal(chrome, GH), null)
+})
+
 test('the popup is told why the server refused the front tab’s site', async () => {
   const { chrome, page } = await start({ shares: stored })
   chrome.tabs.active = { id: 3, url: `${GH}/me` }
   page(3, `${GH}/me`, [hi])
   await settle()
-  await chrome.storage.local.set({ [`refused:${GH}`]: 'too many tools' })
+  await chrome.storage.local.set({ [`refused:${GH}`]: { error: 'too many tools', tools: [hi] } })
   assert.equal((await chrome.runtime.sendMessage({ type: 'popup-state' })).refusal, 'too many tools')
 })
 

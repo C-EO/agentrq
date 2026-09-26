@@ -41,11 +41,12 @@ export async function remember(chrome, origin, lastUrl, tools) {
 
 /**
  * The server refused an announce: a share it never had is not a share. Its
- * reason is kept for the popup, under a key of its own per site so two sites'
- * refusals cannot overwrite each other.
+ * reason is kept for the popup with the tools that were refused (null when not
+ * known), under a key of its own per site so two sites' refusals cannot
+ * overwrite each other.
  */
-export async function refused(chrome, origin, error) {
-  await chrome.storage.local.set({ [refusalKey(origin)]: error })
+export async function refused(chrome, origin, error, tools = null) {
+  await chrome.storage.local.set({ [refusalKey(origin)]: { error, tools } })
   const shares = await read(chrome)
   if (!shares[origin]?.pending) return
   delete shares[origin]
@@ -53,12 +54,19 @@ export async function refused(chrome, origin, error) {
 }
 
 const refusalKey = (origin) => `refused:${origin}`
+const readRefusal = async (chrome, origin) => (await chrome.storage.local.get(refusalKey(origin)))[refusalKey(origin)]
 
 /** Why the server refused the site's latest announce, or null. */
-export const lastRefusal = async (chrome, origin) => (await chrome.storage.local.get(refusalKey(origin)))[refusalKey(origin)] ?? null
+export const lastRefusal = async (chrome, origin) => (await readRefusal(chrome, origin))?.error ?? null
 
 /** A new announce supersedes the last refusal; a new one comes back as its answer. */
 export const clearRefusal = (chrome, origin) => chrome.storage.local.remove(refusalKey(origin))
+
+/** A site now offering other tools than were refused may be shared again. */
+export async function clearRefusalIfChanged(chrome, origin, tools) {
+  const refusal = await readRefusal(chrome, origin)
+  if (refusal && JSON.stringify(refusal.tools) !== JSON.stringify(tools)) await clearRefusal(chrome, origin)
+}
 
 export const isRefusalChange = (changes) => Object.keys(changes).some((key) => key.startsWith('refused:'))
 

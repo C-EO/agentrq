@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { browserId, clearRefusal, isRefusalChange, lastRefusal, listShares, reconcile, refused, remember, share, unshare } from '../src/shares.js'
+import { browserId, clearRefusal, clearRefusalIfChanged, isRefusalChange, lastRefusal, listShares, reconcile, refused, remember, share, unshare } from '../src/shares.js'
 import { fakeChrome } from './fake-chrome.js'
 
 const GH = 'https://github.com'
@@ -107,4 +107,21 @@ test('a refusal keeps its reason per site until it is cleared', async () => {
 test('only a refusal key is a refusal change', () => {
   assert.equal(isRefusalChange({ [`refused:${GH}`]: {} }), true)
   assert.equal(isRefusalChange({ shares: {}, browserId: {} }), false)
+})
+
+test('a refusal stands while the site offers the refused tools, and clears when they change', async () => {
+  const chrome = fakeChrome()
+  await clearRefusalIfChanged(chrome, GH, [tool])
+  assert.equal(await lastRefusal(chrome, GH), null, 'nothing to clear')
+
+  await refused(chrome, GH, 'too long', [tool])
+  await clearRefusalIfChanged(chrome, GH, [tool])
+  assert.equal(await lastRefusal(chrome, GH), 'too long')
+  await clearRefusalIfChanged(chrome, GH, [{ ...tool, description: 'shorter' }])
+  assert.equal(await lastRefusal(chrome, GH), null)
+
+  // Refused tools not known (the worker restarted): any report clears it.
+  await refused(chrome, GH, 'too long')
+  await clearRefusalIfChanged(chrome, GH, [tool])
+  assert.equal(await lastRefusal(chrome, GH), null)
 })

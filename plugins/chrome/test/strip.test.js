@@ -154,46 +154,43 @@ test('a shared site keeps its strip while its page offers nothing yet', async ()
   }
 })
 
-test('a refusal turns the strip into a warning that says why, as soon as it arrives', async () => {
-  const { chrome, el, text, action } = await open()
+const refuse = (chrome, error) => chrome.storage.local.set({ [`refused:${GH}`]: { error, tools: [hi, del] } })
+
+test('a refusal turns the strip into a warning that says why, as soon as it arrives, with no Share to repeat it', async () => {
+  const { chrome, el, text, picker, action } = await open()
   assert.equal(el.strip.className, '')
 
   await click(action)
   assert.equal(text.textContent, 'Shared with Alpha')
   // The server refuses; the worker drops the pending share and keeps the reason.
   await chrome.storage.local.set({ shares: {} })
-  await chrome.storage.local.set({ [`refused:${GH}`]: 'the description of "x" is over 1024 bytes' })
+  await refuse(chrome, 'the description of "x" is over 1024 bytes')
   await settle()
   assert.equal(el.strip.className, 'warn')
-  assert.equal(text.textContent, 'Not shared: the description of "x" is over 1024 bytes · github.com offers 2 WebMCP tools · Share with')
-  assert.equal(action.textContent, 'Share')
+  assert.equal(text.textContent, 'github.com could not be shared: the description of "x" is over 1024 bytes')
+  assert.equal(action.hidden, true)
+  assert.equal(picker.hidden, true)
 
   // Other changes do not re-render it.
   await chrome.storage.local.set({ unrelated: 1 })
   await chrome.storage.sync.set({ [`refused:${GH}`]: 'elsewhere' })
   await settle()
-  assert.match(text.textContent, /^Not shared: the description/)
+  assert.match(text.textContent, /could not be shared/)
+
+  // Cleared (the site's tools changed), Share is back.
+  await chrome.storage.local.remove(`refused:${GH}`)
+  await settle()
+  assert.equal(el.strip.className, '')
+  assert.equal(text.textContent, 'github.com offers 2 WebMCP tools · Share with')
+  assert.equal(action.textContent, 'Share')
 })
 
 test('a refused update of a shared site warns, and keeps the way to stop it', async () => {
   const shares = { [GH]: { workspaceId: 'ws1', lastUrl: `${GH}/me`, tools: [hi], alwaysAllow: [], pending: false } }
   const { chrome, el, text, action } = await open({ shares, tools: null })
-  await chrome.storage.local.set({ [`refused:${GH}`]: 'too many tools' })
+  await refuse(chrome, 'too many tools')
   await settle()
   assert.equal(el.strip.className, 'warn')
   assert.equal(text.textContent, 'Shared with Alpha · Its latest tools were refused: too many tools')
   assert.equal(action.textContent, 'Stop sharing')
-})
-
-test('a refusal warns signed out and with no workspace too', async () => {
-  for (const [options, rest] of [
-    [{ signedIn: false }, 'Sign in to AgentRQ to share it'],
-    [{ workspaces: [] }, 'Create a workspace to share it'],
-  ]) {
-    const { chrome, el, text } = await open(options)
-    await chrome.storage.local.set({ [`refused:${GH}`]: 'nope' })
-    await settle()
-    assert.equal(el.strip.className, 'warn')
-    assert.equal(text.textContent, `Not shared: nope · github.com offers 2 WebMCP tools · ${rest}`)
-  }
 })

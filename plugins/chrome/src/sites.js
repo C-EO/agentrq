@@ -6,7 +6,7 @@
  * the shared ones, and running the calls it sends.
  */
 import { ALL_SITES, getServerUrl } from './settings.js'
-import { clearRefusal, lastRefusal, listShares, reconcile, refused, remember } from './shares.js'
+import { clearRefusal, clearRefusalIfChanged, lastRefusal, listShares, reconcile, refused, remember } from './shares.js'
 import { createSocket } from './socket.js'
 import { createTabs } from './tabs.js'
 
@@ -17,6 +17,8 @@ const SCRIPT_IDS = ['agentrq-bridge', 'agentrq-observer']
 
 export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timers }) {
   const tabs = createTabs(chrome, timers)
+  // The tools last announced per site, kept with a refusal of them.
+  const announced = new Map()
 
   const announce = (origin, share) => {
     const live = tabs.entry(tabs.bestTab(origin))
@@ -24,6 +26,7 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     // Cleared before it is sent, so a refusal of this announce cannot be wiped.
     run(async () => {
       await clearRefusal(chrome, origin)
+      announced.set(origin, tools)
       socket.send({ type: 'announce', origin, workspaceId: share.workspaceId, lastUrl, tools })
     })
   }
@@ -53,7 +56,7 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     else if (frame.type === 'call') run(() => runCall(frame))
     else if (frame.type === 'refused') {
       log.error(`AgentRQ: the server refused ${frame.origin}: ${frame.error}`)
-      run(() => refused(chrome, frame.origin, frame.error))
+      run(() => refused(chrome, frame.origin, frame.error, announced.get(frame.origin)))
     }
   }
 
@@ -69,6 +72,7 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
   const onSiteTools = async (tabId, url, tools, documentId) => {
     const origin = new URL(url).origin
     tabs.set(tabId, origin, url, tools, documentId)
+    await clearRefusalIfChanged(chrome, origin, tools)
     if (!(await remember(chrome, origin, url, tools))) return
     announce(origin, (await listShares(chrome))[origin])
   }
