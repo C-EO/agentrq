@@ -188,5 +188,5 @@ func fromEntitySkillToView(s entity.Skill) view.Skill {
 }
 
 func fromEntitySkillFileToView(f entity.SkillFile) view.SkillFile {
-	return view.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: f.Content}
+	return view.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: f.Content, URL: f.URL}
 }

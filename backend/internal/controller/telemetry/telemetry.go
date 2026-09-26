@@ -264,7 +264,6 @@ var subActionIDByToolName = map[string]uint8{
 	"deleteTask":              model.SubActionIDMCPDeleteTask,
 	"deleteWorkflow":          model.SubActionIDMCPDeleteWorkflow,
 	"deleteWorkflowStep":      model.SubActionIDMCPDeleteWorkflowStep,
-	"downloadAttachment":      model.SubActionIDMCPDownloadAttachment,
 	"elicit":                  model.SubActionIDMCPElicit,
 	"getAttachment":           model.SubActionIDMCPGetAttachment,
 	"getEvent":                model.SubActionIDMCPGetEvent,

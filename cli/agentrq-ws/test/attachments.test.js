@@ -8,7 +8,6 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import {
-  indexAttachments,
   mimeTypeFor,
   readAttachment,
   resolveOutputPath,
@@ -62,36 +61,6 @@ test('readAttachment reports an unreadable file', () => {
     throw new Error('EACCES')
   }
   assert.throws(() => readAttachment(path, { readFile }), /cannot read .*EACCES/)
-})
-
-test('indexAttachments reads the task listing form', () => {
-  const text = ['Task details:', 'Attachments:', '  - id=0isp9 name=report.pdf type=application/pdf'].join('\n')
-  assert.deepEqual(indexAttachments(text).get('0isp9'), {
-    filename: 'report.pdf',
-    mimeType: 'application/pdf',
-  })
-})
-
-test('indexAttachments reads the conversation JSON form', () => {
-  // Message attachments arrive as JSON inside the conversation, not as lines.
-  const text = '{"attachments":[{"id":"0isp9dJxr85","filename":"run.log","mimeType":"text/plain"}]}'
-  assert.deepEqual(indexAttachments(text).get('0isp9dJxr85'), {
-    filename: 'run.log',
-    mimeType: 'text/plain',
-  })
-})
-
-test('indexAttachments lets the task listing win over a later JSON mention', () => {
-  const text = [
-    '  - id=dup name=canonical.txt type=text/plain',
-    '{"id":"dup","filename":"other.txt","mimeType":"text/plain"}',
-  ].join('\n')
-  assert.equal(indexAttachments(text).get('dup').filename, 'canonical.txt')
-})
-
-test('indexAttachments is empty for a task with no attachments', () => {
-  assert.equal(indexAttachments('Task details:\nID: x').size, 0)
-  assert.equal(indexAttachments(null).size, 0)
 })
 
 test('resolveOutputPath defaults to the OS temp directory', () => {
@@ -157,6 +126,13 @@ test('writeAttachment tolerates surrounding whitespace in the payload', () => {
   const path = join(dir, 'ws.txt')
   writeAttachment(path, `\n${Buffer.from('trimmed').toString('base64')}\n`)
   assert.equal(readFileSync(path, 'utf8'), 'trimmed')
+})
+
+test('writeAttachment writes bytes as they are', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agentrq-ws-'))
+  const path = join(dir, 'raw.bin')
+  assert.equal(writeAttachment(path, Buffer.from('not base64!')).bytes, 11)
+  assert.equal(readFileSync(path, 'utf8'), 'not base64!')
 })
 
 test('writeAttachment handles empty content', () => {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"github.com/mustafaturan/monoflake"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,12 +86,50 @@ func TestS3Storage(t *testing.T) {
 	})
 }
 
+func TestS3PublicStorage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := s3mocks.NewMockService(ctrl)
+	s := NewS3Public(client, "attachments")
+	b64 := base64.StdEncoding.EncodeToString([]byte("png"))
+	id := monoflake.ID(3).String()
+	key := AttachmentKey(1, 2, id)
+
+	client.EXPECT().PutPrivate(gomock.Any(), "attachments", key, []byte("png"), "image/png").Return("etag", nil)
+	client.EXPECT().PublicURL(gomock.Any(), "attachments", key).Return("https://cdn/attachments/" + key)
+	got, err := SaveAttachment(s, 1, 2, id, b64, "image/png")
+	if err != nil || got != "https://cdn/attachments/"+key {
+		t.Fatalf("got %q, %v", got, err)
+	}
+
+	// A type a browser could run, or none, is stored as a download.
+	for _, ct := range []string{"", "text/html", "image/svg+xml", "application/javascript"} {
+		client.EXPECT().PutPrivate(gomock.Any(), "attachments", key, []byte("png"), "application/octet-stream").Return("etag", nil)
+		client.EXPECT().PublicURL(gomock.Any(), "attachments", key).Return("u")
+		if _, err := SaveAttachment(s, 1, 2, id, b64, ct); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A failed upload has no link.
+	client.EXPECT().PutPrivate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("s3 down"))
+	if got, err := SaveAttachment(s, 1, 2, id, b64, "image/png"); err == nil || got != "" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+
+	// Plain Save keeps working, as the fork and cleanup paths rely on the Service interface.
+	client.EXPECT().PutPrivate(gomock.Any(), "attachments", "a4", []byte("png"), "application/octet-stream").Return("etag", nil)
+	if err := s.Save("a4", b64); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // fakeBucket is a path-style S3 endpoint holding objects in memory.
 type fakeBucket struct {
 	mu        sync.Mutex
 	objects   map[string][]byte
 	acls      []string
 	checksums []string
+	types     []string
 }
 
 func (b *fakeBucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +144,7 @@ func (b *fakeBucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		b.objects[r.URL.Path] = data
 		b.acls = append(b.acls, r.Header.Get("X-Amz-Acl"))
+		b.types = append(b.types, r.Header.Get("Content-Type"))
 		sums := r.Header.Get("X-Amz-Trailer")
 		for h := range r.Header {
 			if strings.HasPrefix(h, "X-Amz-Checksum-") {
@@ -176,5 +216,35 @@ func TestS3Storage_RealClient(t *testing.T) {
 	}
 	if _, err := s.LoadRaw(key); err == nil {
 		t.Error("a deleted skill still loads")
+	}
+}
+
+// TestS3PublicStorage_RealClient checks the link points at the object the
+// real SDK uploaded, which went up with its own type and no ACL.
+func TestS3PublicStorage_RealClient(t *testing.T) {
+	bucket := &fakeBucket{objects: map[string][]byte{}}
+	srv := httptest.NewServer(bucket)
+	defer srv.Close()
+	client, err := s3.New(s3.Params{Config: s3Config{"s3": map[string]any{
+		"endpoint": srv.URL, "accessKey": "ak", "secretAccessKey": "sk", "region": "us-east-1", "bucket": "b",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Workspace 62 and task 63 are 10 and 11 in base62.
+	id := monoflake.ID(64).String()
+	link, err := SaveAttachment(NewS3Public(client, "attachments"), 62, 63, id, base64.StdEncoding.EncodeToString([]byte("gif")), "image/gif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "/b/attachments/w-00000000010/00000000011/" + id
+	if link != srv.URL+key {
+		t.Errorf("link %q", link)
+	}
+	if got := string(bucket.objects[key]); got != "gif" {
+		t.Errorf("bucket holds %q: %v", got, bucket.objects)
+	}
+	if len(bucket.types) != 1 || bucket.types[0] != "image/gif" || bucket.acls[0] != "" {
+		t.Errorf("uploaded as %q with ACL %q", bucket.types, bucket.acls)
 	}
 }

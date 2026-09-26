@@ -89,7 +89,7 @@ event: code_changed
 ### Attachments
 | Tool | Description |
 |------|-------------|
-| `getAttachment` | Retrieve attachment data (base64) and metadata by ID |
+| `getAttachment` | Get an attachment by workspace, task and attachment ID: its public link by default, or its base64 content with `format=base64` |
 
 ### Workspace Memory
 | Tool | Description |

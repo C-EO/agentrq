@@ -5,6 +5,7 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -65,10 +66,13 @@ func TestCreateWorkspace_ClearContextDefaultsToTrue(t *testing.T) {
 func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().GetWorkspaceAttachmentIDs(gomock.Any(), int64(1)).Return([]string{"att-1", "att-2"}, nil)
+	e.repo.EXPECT().GetWorkspaceAttachments(gomock.Any(), int64(1)).Return([]entity.TaskAttachment{{TaskID: 2, ID: "att-1"}, {TaskID: 3, ID: "att-2"}}, nil)
 	e.repo.EXPECT().GetWorkspaceSkillStorageIDs(gomock.Any(), int64(1)).Return([]string{"skill-1"}, nil)
 	e.repo.EXPECT().DeleteWorkspace(gomock.Any(), int64(1), testUserID).Return(nil)
-	e.storage.EXPECT().Delete("att-1").Return(nil)
+	// Each attachment is filed under its own task.
+	e.storage.EXPECT().Delete("w-00000000001/00000000002/att-1").Return(nil)
+	// One kept flat, from before that, is deleted by its bare id.
+	e.storage.EXPECT().Delete("w-00000000001/00000000003/att-2").Return(errors.New("not found"))
 	e.storage.EXPECT().Delete("att-2").Return(nil)
 	// A workspace's skill files are in storage too, and go with it.
 	e.storage.EXPECT().Delete("skill-1").Return(nil)

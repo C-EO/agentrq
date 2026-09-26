@@ -46,6 +46,7 @@ type (
 		MachineController
 		MachineManageController
 		SessionController
+		PublicFileController
 	}
 
 	controller struct {

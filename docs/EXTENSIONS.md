@@ -124,7 +124,7 @@ than an oversight to route around.
 **The per-workspace server** — what an agent working a queue can do:
 
 ```
-createTask  updateTaskStatus  reply  downloadAttachment  getWorkspace
+createTask  updateTaskStatus  reply  getAttachment  getWorkspace
 getTask  publishEvent  loadMemory  saveMemory  deleteMemory  searchSkills
 loadSkill  saveSkill  deleteSkill  elicit
 ```

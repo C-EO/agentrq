@@ -77,10 +77,15 @@ storage:
   dir: ${AGENTRQ_STORAGE_DIR:./_storage}
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
 
-# Where skill file content is kept: "local" (<storage dir>/skills) or "s3", which uses
-# the s3 block below.
+# Where skill files and attachments (artifacts) are kept: "local" (<storage dir>/skills
+# and <storage dir>/artifacts) or "s3", which uses the s3 block below. Either way each
+# file has a public link: <baseUrl>/storage/... when local, the bucket when s3, which
+# must then allow public reads under skills/ and artifacts/.
 skills:
   storage: ${AGENTRQ_SKILLS_STORAGE:local}
+
+artifacts:
+  storage: ${AGENTRQ_ARTIFACTS_STORAGE:local}
 
 # Any S3-compatible store. Objects are addressed path-style.
 s3:
@@ -89,6 +94,8 @@ s3:
   secretAccessKey: "${AGENTRQ_S3_SECRET_ACCESS_KEY:}"
   region: "${AGENTRQ_S3_REGION:us-east-1}"
   bucket: "${AGENTRQ_S3_BUCKET:}"
+  # Base of public links to the bucket, such as a CDN. Unset, it is <endpoint>/<bucket>.
+  publicUrl: "${AGENTRQ_S3_PUBLIC_URL:}"
 
 
 # The node id must be unique across running instances: monoflake ids collide

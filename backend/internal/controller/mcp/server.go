@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"context"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -222,13 +224,13 @@ func (ps *WorkspaceServer) Close() {
 
 // CreateTaskParams is the input to the create_task tool.
 type CreateTaskParams struct {
-	Title        string              `json:"title" jsonschema:"Short title of the task"`
-	Body         string              `json:"body" jsonschema:"Detailed description of the task or action needed"`
-	Assignee     string              `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
-	Attachments  []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments"`
-	CronSchedule string              `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
-	EventID      string              `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
-	ClearContext bool                `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
+	Title        string            `json:"title" jsonschema:"Short title of the task"`
+	Body         string            `json:"body" jsonschema:"Detailed description of the task or action needed"`
+	Assignee     string            `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
+	Attachments  []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	CronSchedule string            `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
+	EventID      string            `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+	ClearContext bool              `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
 }
 
 // PublishEventParams is the input to the publishEvent tool.
@@ -257,15 +259,36 @@ type UpdateTaskStatusParams struct {
 
 // ReplyParams is the input to the reply tool.
 type ReplyParams struct {
-	ChatID      string              `json:"chatId" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
-	Text        string              `json:"text" jsonschema:"The message text to send"`
-	Attachments []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
+	ChatID      string            `json:"chatId" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
+	Text        string            `json:"text" jsonschema:"The message text to send"`
+	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
 }
 
-// DownloadAttachmentParams is the input to the download_attachment tool.
-type DownloadAttachmentParams struct {
-	AttachmentID string `json:"attachmentId" jsonschema:"The ID of the attachment to download"`
+// AttachmentParam is an attachment as a tool receives it. It is not
+// entity.Attachment, whose url only the server sets and a tool must not offer.
+type AttachmentParam struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"` // base64
+}
+
+func toEntityAttachments(in []AttachmentParam) []entity.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]entity.Attachment, len(in))
+	for i, a := range in {
+		out[i] = entity.Attachment{ID: a.ID, Filename: a.Filename, MimeType: a.MimeType, Data: a.Data}
+	}
+	return out
+}
+
+// GetAttachmentParams is the input to the getAttachment tool.
+type GetAttachmentParams struct {
+	AttachmentID string `json:"attachmentId" jsonschema:"The ID of the attachment"`
 	TaskID       string `json:"taskId" jsonschema:"The ID of the task containing the attachment"`
+	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content when it does not. 'base64' always returns the content."`
 }
 
 // GetTaskParams is the input to the getTask tool.
@@ -519,10 +542,10 @@ func NewWorkspaceServer(
 	}, ps.handleReply)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
-		Name:        "downloadAttachment",
-		Description: "Download the content of an attachment by its ID",
-		Annotations: mcphint.Read("Download an attachment"),
-	}, ps.handleDownloadAttachment)
+		Name:        "getAttachment",
+		Description: "Get an attachment of a task by its ID: its name, type and public link, or its content as base64",
+		Annotations: mcphint.Read("Get an attachment"),
+	}, ps.handleGetAttachment)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "getWorkspace",
@@ -1346,9 +1369,13 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		}
 	}
 
+	// The attachments are filed under the task, so it needs its id first.
+	taskID := ps.idgen.NextID()
+
 	var attachmentsJSON string
-	if len(params.Attachments) > 0 {
-		if b, err := json.Marshal(params.Attachments); err == nil {
+	if atts := toEntityAttachments(params.Attachments); len(atts) > 0 {
+		crud.SaveAttachments(ps.storage, ps.idgen, ps.workspaceID, taskID, atts)
+		if b, err := json.Marshal(atts); err == nil {
 			attachmentsJSON = string(b)
 		}
 	}
@@ -1367,7 +1394,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 	eventID := monoflake.IDFromBase62(params.EventID).Int64()
 
 	t := model.Task{
-		ID:           ps.idgen.NextID(),
+		ID:           taskID,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 		WorkspaceID:  ps.workspaceID,
@@ -1497,7 +1524,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
-	if _, err := ps.reply(ctx, params.ChatID, params.Text, params.Attachments, nil); err != nil {
+	if _, err := ps.reply(ctx, params.ChatID, params.Text, toEntityAttachments(params.Attachments), nil); err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to deliver reply: %v", err)}},
@@ -1517,8 +1544,8 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	}, nil, nil
 }
 
-func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mcp.CallToolRequest, params DownloadAttachmentParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "downloadAttachment", clientIdentityFromRequest(req))
+func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, params GetAttachmentParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getAttachment", clientIdentityFromRequest(req))
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -1529,6 +1556,13 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
+		}, nil, nil
+	}
+	format, err := AttachmentFormat(params.Format)
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 		}, nil, nil
 	}
 
@@ -1549,42 +1583,80 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 		}, nil, nil
 	}
 
-	// Check task attachments
-	if len(task.Attachments) > 0 {
-		var atts []entity.Attachment
-		if err := json.Unmarshal(task.Attachments, &atts); err == nil {
-			for _, a := range atts {
-				if a.ID == params.AttachmentID {
-					data, _ := ps.storage.Load(a.ID)
-					return &mcp.CallToolResult{
-						Content: []mcp.Content{&mcp.TextContent{Text: data}}, // Return base64 data
-					}, nil, nil
-				}
-			}
-		}
+	a, ok := findAttachment(task, params.AttachmentID)
+	if !ok {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "attachment not found in task"}},
+		}, nil, nil
 	}
-
-	// Check message attachments
-	for _, m := range task.Messages {
-		if len(m.Attachments) > 0 {
-			var atts []entity.Attachment
-			if err := json.Unmarshal(m.Attachments, &atts); err == nil {
-				for _, a := range atts {
-					if a.ID == params.AttachmentID {
-						data, _ := ps.storage.Load(a.ID)
-						return &mcp.CallToolResult{
-							Content: []mcp.Content{&mcp.TextContent{Text: data}},
-						}, nil, nil
-					}
-				}
-			}
+	out := AttachmentView{Filename: a.Filename, MimeType: a.MimeType}
+	if format == AttachmentFormatURL && a.URL != "" {
+		out.URL = a.URL
+	} else {
+		data, err := storage.LoadAttachment(ps.storage, ps.workspaceID, task.ID, a.ID)
+		if err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "attachment file not found; it may have passed its retention period"}},
+			}, nil, nil
 		}
+		out.Data = data
 	}
-
+	b, _ := json.Marshal(out)
 	return &mcp.CallToolResult{
-		IsError: true,
-		Content: []mcp.Content{&mcp.TextContent{Text: "attachment not found in task"}},
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
 	}, nil, nil
+}
+
+// AttachmentView is what both servers' getAttachment answer: the link or the
+// content, whichever was given.
+type AttachmentView struct {
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	URL      string `json:"url,omitempty"`
+	Data     []byte `json:"data,omitempty"` // base64 in JSON
+}
+
+// The formats an attachment tool answers in. A local attachment has no link,
+// so it comes back as base64 whichever is asked for.
+const (
+	AttachmentFormatURL    = "url"
+	AttachmentFormatBase64 = "base64"
+)
+
+// AttachmentFormat checks a tool's format argument, where "" means url.
+func AttachmentFormat(format string) (string, error) {
+	switch format {
+	case "", AttachmentFormatURL:
+		return AttachmentFormatURL, nil
+	case AttachmentFormatBase64:
+		return AttachmentFormatBase64, nil
+	}
+	return "", fmt.Errorf("format must be %q or %q", AttachmentFormatURL, AttachmentFormatBase64)
+}
+
+// findAttachment looks for an attachment among a task's own and its messages'.
+func findAttachment(task model.Task, id string) (entity.Attachment, bool) {
+	lists := []datatypes.JSON{task.Attachments}
+	for _, m := range task.Messages {
+		lists = append(lists, m.Attachments)
+	}
+	for _, raw := range lists {
+		if len(raw) == 0 {
+			continue
+		}
+		var atts []entity.Attachment
+		if json.Unmarshal(raw, &atts) != nil {
+			continue
+		}
+		for _, a := range atts {
+			if a.ID == id {
+				return a, true
+			}
+		}
+	}
+	return entity.Attachment{}, false
 }
 
 func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.CallToolRequest, params PublishEventParams) (*mcp.CallToolResult, any, error) {
@@ -1968,6 +2040,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 			ID       string `json:"id"`
 			Filename string `json:"filename"`
 			MimeType string `json:"mimeType"`
+			URL      string `json:"url,omitempty"`
 		}
 		var attachments []attMeta
 		if len(m.Attachments) > 0 {
@@ -1979,6 +2052,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 							ID:       a.ID,
 							Filename: a.Filename,
 							MimeType: a.MimeType,
+							URL:      a.URL,
 						})
 					}
 				}
@@ -2869,7 +2943,7 @@ func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, too
 }
 
 // formatModelAttachments builds an attachment summary from raw JSON (model.Task.Attachments)
-// for inclusion in LLM notifications so the agent can call downloadAttachment.
+// for inclusion in LLM notifications so the agent can call getAttachment.
 func formatModelAttachments(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
@@ -2881,7 +2955,11 @@ func formatModelAttachments(raw []byte) string {
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {
-			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
+			part := fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType)
+			if a.URL != "" {
+				part += " url=" + a.URL
+			}
+			parts = append(parts, part)
 		}
 	}
 	if len(parts) == 0 {

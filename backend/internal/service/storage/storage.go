@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mustafaturan/monoflake"
 )
 
 type Service interface {
@@ -16,6 +18,57 @@ type Service interface {
 	Load(id string) (string, error)
 	LoadRaw(id string) ([]byte, error)
 	Delete(id string) error
+}
+
+func (s *fallbackService) Load(id string) (string, error) {
+	if data, err := s.primary.Load(id); err == nil {
+		return data, nil
+	}
+	return s.fallback.Load(id)
+}
+
+func (s *fallbackService) LoadRaw(id string) ([]byte, error) {
+	if data, err := s.primary.LoadRaw(id); err == nil {
+		return data, nil
+	}
+	return s.fallback.LoadRaw(id)
+}
+
+func (s *fallbackService) Delete(id string) error {
+	if s.primary.Delete(id) == nil {
+		return nil
+	}
+	return s.fallback.Delete(id)
+}
+
+// AttachmentKey is where an attachment is kept, w-<workspace>/<task>/<id>,
+// every id in base62. svc must accept nested keys (NewNested or S3).
+func AttachmentKey(workspaceID, taskID int64, id string) string {
+	return "w-" + monoflake.ID(workspaceID).String() + "/" + monoflake.ID(taskID).String() + "/" + id
+}
+
+// SaveAttachment saves an attachment of a task and returns its public URL, or
+// "" when svc keeps blobs to be read through the server only.
+func SaveAttachment(svc Service, workspaceID, taskID int64, id, dataBase64, contentType string) (string, error) {
+	return SaveBlob(svc, AttachmentKey(workspaceID, taskID, id), dataBase64, contentType)
+}
+
+// LoadAttachment reads an attachment of a task. One saved before keys named
+// the workspace and task is looked for under its bare id.
+func LoadAttachment(svc Service, workspaceID, taskID int64, id string) ([]byte, error) {
+	data, err := svc.LoadRaw(AttachmentKey(workspaceID, taskID, id))
+	if err != nil {
+		return svc.LoadRaw(id)
+	}
+	return data, nil
+}
+
+// DeleteAttachment removes an attachment of a task, wherever LoadAttachment
+// would find it.
+func DeleteAttachment(svc Service, workspaceID, taskID int64, id string) {
+	if svc.Delete(AttachmentKey(workspaceID, taskID, id)) != nil {
+		_ = svc.Delete(id)
+	}
 }
 
 type service struct {
@@ -57,23 +110,26 @@ func (s *service) Save(id string, dataBase64 string) error {
 }
 
 func (s *service) Load(id string) (string, error) {
-	path, err := s.fullPath(id)
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(path)
+	data, err := s.LoadRaw(id)
 	if err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
+// LoadRaw reads through an os.Root on the base directory, so that on top of
+// the id checks, no path and no symlink can reach a file outside it: some of
+// these files are served to anyone holding a link.
 func (s *service) LoadRaw(id string) ([]byte, error) {
-	path, err := s.fullPath(id)
+	if _, err := s.fullPath(id); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(s.baseDir)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(path)
+	defer root.Close()
+	return root.ReadFile(filepath.FromSlash(id))
 }
 
 func (s *service) Delete(id string) error {

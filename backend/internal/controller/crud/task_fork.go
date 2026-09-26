@@ -15,6 +15,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
@@ -63,15 +64,16 @@ func (c *controller) ForkTask(ctx context.Context, req entity.ForkTaskRequest) (
 	// Deleting a task deletes its attachment files, so the fork gets copies
 	// under its own IDs rather than sharing the source's.
 	var copied []string
+	forkID := c.idgen.NextID()
 	copyAtts := func(raw datatypes.JSON) datatypes.JSON {
-		out, ids := c.copyAttachments(raw)
-		copied = append(copied, ids...)
+		out, keys := c.copyAttachments(src.WorkspaceID, src.ID, forkID, raw)
+		copied = append(copied, keys...)
 		return out
 	}
 
 	now := time.Now()
 	fork := model.Task{
-		ID:               c.idgen.NextID(),
+		ID:               forkID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		UserID:           userID,
@@ -102,8 +104,8 @@ func (c *controller) ForkTask(ctx context.Context, req entity.ForkTaskRequest) (
 
 	created, err := c.repository.CreateTaskWithMessages(ctx, fork, copies)
 	if err != nil {
-		for _, id := range copied {
-			_ = c.storage.Delete(id)
+		for _, key := range copied {
+			_ = c.storage.Delete(key)
 		}
 		return nil, fmt.Errorf("fork task: %w", err)
 	}
@@ -123,11 +125,11 @@ func (c *controller) ForkTask(ctx context.Context, req entity.ForkTaskRequest) (
 	return &entity.ForkTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
 
-// copyAttachments stores a copy of each attachment's file under a new ID and
-// returns the rewritten metadata with the new IDs. A file that can no longer
-// be read — attachments are cleaned up after a while — is left out rather
-// than failing the fork.
-func (c *controller) copyAttachments(raw datatypes.JSON) (datatypes.JSON, []string) {
+// copyAttachments stores a copy of each of task srcTaskID's attachment files
+// under a new ID in the fork's task, and returns the rewritten metadata and
+// the storage keys it wrote. A file that can no longer be read — attachments
+// are cleaned up after a while — is left out rather than failing the fork.
+func (c *controller) copyAttachments(workspaceID, srcTaskID, forkID int64, raw datatypes.JSON) (datatypes.JSON, []string) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -136,26 +138,27 @@ func (c *controller) copyAttachments(raw datatypes.JSON) (datatypes.JSON, []stri
 		return nil, nil
 	}
 	out := make([]entity.Attachment, 0, len(atts))
-	ids := make([]string, 0, len(atts))
+	keys := make([]string, 0, len(atts))
 	for _, a := range atts {
-		data, err := c.storage.LoadRaw(a.ID)
+		data, err := storage.LoadAttachment(c.storage, workspaceID, srcTaskID, a.ID)
 		if err != nil {
 			zlog.Warn().Err(err).Str("attachmentID", a.ID).Msg("fork: attachment file missing, skipped")
 			continue
 		}
 		id := monoflake.ID(c.idgen.NextID()).String()
-		if err := c.storage.Save(id, base64.StdEncoding.EncodeToString(data)); err != nil {
+		link, err := storage.SaveAttachment(c.storage, workspaceID, forkID, id, base64.StdEncoding.EncodeToString(data), a.MimeType)
+		if err != nil {
 			zlog.Warn().Err(err).Str("attachmentID", a.ID).Msg("fork: attachment copy failed, skipped")
 			continue
 		}
-		ids = append(ids, id)
-		out = append(out, entity.Attachment{ID: id, Filename: a.Filename, MimeType: a.MimeType})
+		keys = append(keys, storage.AttachmentKey(workspaceID, forkID, id))
+		out = append(out, entity.Attachment{ID: id, Filename: a.Filename, MimeType: a.MimeType, URL: link})
 	}
 	if len(out) == 0 {
-		return nil, ids
+		return nil, keys
 	}
 	b, _ := json.Marshal(out)
-	return datatypes.JSON(b), ids
+	return datatypes.JSON(b), keys
 }
 
 // The conversation is the messages people and the agent wrote, the questions

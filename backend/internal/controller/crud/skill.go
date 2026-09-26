@@ -19,6 +19,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/gorm"
 )
@@ -204,7 +205,7 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 	e := fromModelSkill(s, sharedFrom)
 	e.Files = make([]entity.SkillFile, len(files))
 	for i, f := range files {
-		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt}
+		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: storage.PublicURL(c.skillStorage, f.StorageID)}
 	}
 	return &entity.GetSkillResponse{Skill: e}, nil
 }
@@ -237,7 +238,7 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	c.emitSkillEvent(ctx, entity.ActionSkillView, uid, req.WorkspaceID, s.ID)
 	return &entity.GetSkillFileResponse{
 		Skill: fromModelSkill(s, sharedFrom),
-		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content)},
+		File:  entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, Content: string(content), URL: storage.PublicURL(c.skillStorage, f.StorageID)},
 	}, nil
 }
 
@@ -313,7 +314,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	return &entity.SaveSkillFileResponse{
 		Skill: fromModelSkill(saved, 0),
-		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now},
+		File:  entity.SkillFile{Path: path, SizeBytes: len(content), UpdatedAt: now, URL: storage.PublicURL(c.skillStorage, f.StorageID)},
 	}, nil
 }
 
@@ -331,11 +332,14 @@ func (c *controller) storeSkillFile(s model.Skill, path string, content []byte, 
 		SHA256:    hex.EncodeToString(sum[:]),
 		StorageID: skillStorageID(s, c.idgen.NextID()),
 	}
-	if err := c.skillStorage.Save(f.StorageID, base64.StdEncoding.EncodeToString(content)); err != nil {
+	// Served as plain text wherever it is public, so a skill file never renders as a page.
+	if _, err := storage.SaveBlob(c.skillStorage, f.StorageID, base64.StdEncoding.EncodeToString(content), skillContentType); err != nil {
 		return model.SkillFile{}, fmt.Errorf("store skill file: %w", err)
 	}
 	return f, nil
 }
+
+const skillContentType = "text/plain; charset=utf-8"
 
 // skillStorageID keys a skill file's blob as w-<workspace>/skill-<skill>/<blob>.
 // The blob id is fresh on every write, because a replace stores the new blob

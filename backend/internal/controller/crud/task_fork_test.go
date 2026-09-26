@@ -15,6 +15,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
@@ -59,8 +60,8 @@ func TestForkTask_CopiesConversationUpToTheMessage(t *testing.T) {
 	e.idgen.EXPECT().NextID().DoAndReturn(func() int64 { next++; return next }).AnyTimes()
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(100), testUserID).Return(forkSource(t), nil)
-	e.storage.EXPECT().LoadRaw("src-task-att").Return([]byte("spec"), nil)
-	e.storage.EXPECT().LoadRaw("src-msg-att").Return([]byte("png"), nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-task-att")).Return([]byte("spec"), nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-msg-att")).Return([]byte("png"), nil)
 	saved := map[string]string{}
 	e.storage.EXPECT().Save(gomock.Any(), gomock.Any()).DoAndReturn(func(id, data string) error {
 		saved[id] = data
@@ -122,8 +123,9 @@ func TestForkTask_CopiesConversationUpToTheMessage(t *testing.T) {
 	if len(msgAtts) != 1 || msgAtts[0].ID == "src-msg-att" {
 		t.Errorf("message attachments = %+v", msgAtts)
 	}
-	if saved[taskAtts[0].ID] != base64.StdEncoding.EncodeToString([]byte("spec")) {
-		t.Errorf("task attachment bytes not copied under its new id")
+	// The copy is filed under the fork, not the source task.
+	if saved[storage.AttachmentKey(1, gotTask.ID, taskAtts[0].ID)] != base64.StdEncoding.EncodeToString([]byte("spec")) {
+		t.Errorf("task attachment bytes not copied under the fork: %v", saved)
 	}
 	if len(rs.Task.Messages) != 3 {
 		t.Errorf("response carries %d messages, want 3", len(rs.Task.Messages))
@@ -136,8 +138,10 @@ func TestForkTask_SkipsAttachmentsWhoseFilesAreGone(t *testing.T) {
 	e.idgen.EXPECT().NextID().DoAndReturn(func() int64 { next++; return next }).AnyTimes()
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(100), testUserID).Return(forkSource(t), nil)
+	// Gone from both where it is filed now and where it was kept before.
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-task-att")).Return(nil, errors.New("gone"))
 	e.storage.EXPECT().LoadRaw("src-task-att").Return(nil, errors.New("gone"))
-	e.storage.EXPECT().LoadRaw("src-msg-att").Return([]byte("png"), nil)
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-msg-att")).Return([]byte("png"), nil)
 	e.storage.EXPECT().Save(gomock.Any(), gomock.Any()).Return(errors.New("disk full"))
 
 	var gotTask model.Task
@@ -251,7 +255,7 @@ func TestCopyAttachments_NothingToCopy(t *testing.T) {
 	e := newTestController(t)
 	c := e.controller.(*controller)
 	for _, raw := range []datatypes.JSON{nil, datatypes.JSON(`not json`), datatypes.JSON(`[]`)} {
-		if out, ids := c.copyAttachments(raw); out != nil || ids != nil {
+		if out, ids := c.copyAttachments(1, 2, 3, raw); out != nil || ids != nil {
 			t.Errorf("copyAttachments(%s) = %s, %v", raw, out, ids)
 		}
 	}

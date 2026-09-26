@@ -268,7 +268,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `reply`：向 AgentRQ 面板实时发送消息。
 - `getWorkspace`：读取工作区名称、任务说明和统计信息。
 - `getTask`：获取任务——不传 `taskId` 时返回分配给 Agent 的下一个未开始任务，传入 `taskId` 时返回该任务；设置 `includeConversation: true` 可一并返回对话历史（游标分页）。
-- `downloadAttachment`：按 ID 下载附件。
+- `getAttachment`：按 ID 获取附件——默认返回公开链接，也可返回 base64 内容。
 - `publishEvent`：触发命名事件，让订阅的 Workspace 自动创建对应的触发任务。
 - `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
 - `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。

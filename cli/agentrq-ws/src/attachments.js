@@ -82,33 +82,6 @@ export function readAttachment(filePath, { readFile = readFileSync, stat = statS
 }
 
 /**
- * Index the attachments mentioned in a task's text, id → {filename, mimeType}.
- *
- * `downloadAttachment` answers with base64 and nothing else — no name, no type
- * — so the only way to save a file under the name a human gave it is to read
- * the task first. Task-level attachments arrive as `- id=… name=… type=…`
- * lines and message-level ones inside the conversation JSON, so both shapes are
- * scanned.
- */
-export function indexAttachments(taskText) {
-  const index = new Map()
-  const text = String(taskText || '')
-
-  const linePattern = /^\s*-\s*id=(\S+)\s+name=(.*?)\s+type=(\S+)\s*$/gm
-  for (const match of text.matchAll(linePattern)) {
-    index.set(match[1], { filename: match[2], mimeType: match[3] })
-  }
-
-  const jsonPattern = /"id"\s*:\s*"([^"]+)"\s*,\s*"filename"\s*:\s*"([^"]*)"\s*,\s*"mimeType"\s*:\s*"([^"]*)"/g
-  for (const match of text.matchAll(jsonPattern)) {
-    if (!index.has(match[1])) {
-      index.set(match[1], { filename: match[2], mimeType: match[3] })
-    }
-  }
-  return index
-}
-
-/**
  * Work out where a downloaded attachment should land.
  *
  * With no `--out` it goes to the OS temp directory, which is what makes
@@ -139,9 +112,10 @@ function isDirectory(path, stat) {
   }
 }
 
-/** Write base64 content to `path`, creating the directory if it is missing. */
-export function writeAttachment(path, base64, { write = writeFileSync, mkdir = mkdirSync } = {}) {
-  const buffer = Buffer.from(String(base64 || '').trim(), 'base64')
+/** Write content — bytes, or base64 text — to `path`, creating the directory if it is missing. */
+export function writeAttachment(path, content, { write = writeFileSync, mkdir = mkdirSync } = {}) {
+  // Bytes as they are, or base64 text to decode.
+  const buffer = Buffer.isBuffer(content) ? content : Buffer.from(String(content || '').trim(), 'base64')
   try {
     mkdir(dirname(path), { recursive: true })
     write(path, buffer)

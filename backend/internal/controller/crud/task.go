@@ -15,7 +15,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -86,8 +88,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 
 	now := time.Now()
 
+	// The attachments are filed under the task, so it needs its id first.
+	taskID := c.idgen.NextID()
+
 	// Save attachments binary to filesystem and clear Data for metadata DB storage
-	c.saveAttachments(req.Task.Attachments)
+	c.saveAttachments(req.Task.WorkspaceID, taskID, req.Task.Attachments)
 
 	var attachJSON datatypes.JSON
 	if len(req.Task.Attachments) > 0 {
@@ -139,7 +144,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	m := model.Task{
-		ID:                    c.idgen.NextID(),
+		ID:                    taskID,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 		UserID:                userID,
@@ -264,7 +269,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 
 	if createMsg && (msgText != "" || len(req.Attachments) > 0) {
 		// Save attachments
-		c.saveAttachments(req.Attachments)
+		c.saveAttachments(req.WorkspaceID, req.TaskID, req.Attachments)
 
 		var attsData []byte
 		if len(req.Attachments) > 0 {
@@ -545,7 +550,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	}
 
 	// Save attachments
-	c.saveAttachments(req.Attachments)
+	c.saveAttachments(req.WorkspaceID, req.TaskID, req.Attachments)
 
 	var attsData []byte
 	if len(req.Attachments) > 0 {
@@ -663,7 +668,7 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 
 	// 3. Purge storage files
 	for _, id := range attachmentIDs {
-		_ = c.storage.Delete(id)
+		storage.DeleteAttachment(c.storage, req.WorkspaceID, req.TaskID, id)
 	}
 
 	return &entity.DeleteTaskResponse{}, nil
@@ -775,51 +780,53 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 		return nil, base.ErrNotFound
 	}
 
-	// Search task-level attachments.
-	if len(t.Attachments) > 0 {
-		var atts []entity.Attachment
-		if err := json.Unmarshal(t.Attachments, &atts); err == nil {
-			for _, a := range atts {
-				if a.ID == req.AttachmentID {
-					data, err := c.storage.LoadRaw(a.ID)
-					if err != nil {
-						return nil, base.ErrNotFound
-					}
-					return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-				}
-			}
-		}
-	}
-
-	// Search message-level attachments.
+	lists := []datatypes.JSON{t.Attachments}
 	for _, m := range t.Messages {
-		if len(m.Attachments) == 0 {
+		lists = append(lists, m.Attachments)
+	}
+	for _, raw := range lists {
+		if len(raw) == 0 {
 			continue
 		}
 		var atts []entity.Attachment
-		if err := json.Unmarshal(m.Attachments, &atts); err == nil {
-			for _, a := range atts {
-				if a.ID == req.AttachmentID {
-					data, err := c.storage.LoadRaw(a.ID)
-					if err != nil {
-						return nil, base.ErrNotFound
-					}
-					return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-				}
+		if json.Unmarshal(raw, &atts) != nil {
+			continue
+		}
+		for _, a := range atts {
+			if a.ID != req.AttachmentID {
+				continue
 			}
+			res := &entity.GetAttachmentResponse{Filename: a.Filename, MimeType: a.MimeType, URL: a.URL}
+			if req.LinkOnly && a.URL != "" {
+				return res, nil
+			}
+			data, err := storage.LoadAttachment(c.storage, t.WorkspaceID, t.ID, a.ID)
+			if err != nil {
+				return nil, base.ErrNotFound
+			}
+			res.Data = data
+			return res, nil
 		}
 	}
 
 	return nil, base.ErrNotFound
 }
 
-func (c *controller) saveAttachments(atts []entity.Attachment) {
+func (c *controller) saveAttachments(workspaceID, taskID int64, atts []entity.Attachment) {
+	SaveAttachments(c.storage, c.idgen, workspaceID, taskID, atts)
+}
+
+// SaveAttachments stores each attachment of a task that carries data, and
+// records its public link when the store makes one. A url the caller sent is
+// dropped: only the store makes links, so nobody can plant one.
+func SaveAttachments(store storage.Service, ids idgen.Service, workspaceID, taskID int64, atts []entity.Attachment) {
 	for i := range atts {
+		atts[i].URL = ""
 		if atts[i].Data != "" {
 			// Always generate a server-controlled ID; never trust caller-provided IDs.
 			// This prevents slug-keyed files that break the download path.
-			atts[i].ID = monoflake.ID(c.idgen.NextID()).String()
-			_ = c.storage.Save(atts[i].ID, atts[i].Data)
+			atts[i].ID = monoflake.ID(ids.NextID()).String()
+			atts[i].URL, _ = storage.SaveAttachment(store, workspaceID, taskID, atts[i].ID, atts[i].Data, atts[i].MimeType)
 			atts[i].Data = "" // clear from metadata
 		}
 	}

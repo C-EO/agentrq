@@ -403,7 +403,7 @@ When connected, the AI agent has access to:
 - `reply`: Send messages back to the AgentRQ dashboard in real-time.
 - `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
 - `getTask`: Fetch a task — with no `taskId` it dequeues the next "not started" task assigned to the agent; with a `taskId` it returns that task. Pass `includeConversation: true` to also include the chat history (cursor-based pagination).
-- `downloadAttachment`: Retrieve an attachment by its ID.
+- `getAttachment`: Get an attachment by its ID — its public link by default, or its base64 content.
 - `publishEvent`: Fire a named event so subscriber workspaces spawn their trigger tasks.
 - `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
 - `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
@@ -529,7 +529,7 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 **Communication & Files**
 - `replyToTask`: Post a message to a task's chat thread.
 - `respondToTask`: Submit an allow/deny verdict for a permission request.
-- `getAttachment`: Retrieve data as base64 and metadata for a specific attachment.
+- `getAttachment`: Get an attachment of a task — its public link by default, or its base64 content — with its metadata.
 
 **Workspace Memory**
 - `listMemories`: List a workspace's memories — name, size and when each changed.

@@ -106,10 +106,8 @@ test('--json prints the structured result instead', async () => {
 test('--json falls back to the text when a command returns no raw result', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agentrq-ws-cli-'))
   const createClient = () => ({
-    async callTool(name) {
-      return name === 'getTask'
-        ? { text: '  - id=a1 name=note.txt type=text/plain' }
-        : { text: Buffer.from('hi').toString('base64') }
+    async callTool() {
+      return { text: JSON.stringify({ filename: 'note.txt', mimeType: 'text/plain', data: Buffer.from('hi').toString('base64') }) }
     },
     async close() {},
   })

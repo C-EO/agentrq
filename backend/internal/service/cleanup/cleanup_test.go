@@ -94,6 +94,41 @@ func TestRunOnce(t *testing.T) {
 	assertPresent(t, skill)
 }
 
+func TestRunOnce_Attachments(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	old := now.Add(-10 * 24 * time.Hour)
+	expired := filepath.Join(dir, ArtifactsDir, "w-1", "2", "a")
+	sibling := filepath.Join(dir, ArtifactsDir, "w-1", "3", "b")
+	kept := filepath.Join(dir, ArtifactsDir, "w-1", "3", "c")
+	for path, at := range map[string]time.Time{expired: old, sibling: old, kept: now} {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, path, at)
+	}
+
+	svc := &service{storageDir: dir, retentionPeriod: 7 * 24 * time.Hour}
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertAbsent(t, expired)
+	assertAbsent(t, sibling)
+	assertPresent(t, kept)
+	// The emptied task directory goes; the one still holding a file stays.
+	assertAbsent(t, filepath.Dir(expired))
+	assertPresent(t, filepath.Dir(kept))
+	assertPresent(t, filepath.Join(dir, ArtifactsDir))
+
+	// Once the last one expires, nothing but artifacts/ is left.
+	svc.retentionPeriod = -time.Hour
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertAbsent(t, filepath.Join(dir, ArtifactsDir, "w-1"))
+	assertPresent(t, filepath.Join(dir, ArtifactsDir))
+}
+
 func TestRunOnce_MissingDir(t *testing.T) {
 	svc := &service{storageDir: "/nonexistent/path/xyz", retentionPeriod: 7 * 24 * time.Hour}
 	if err := svc.RunOnce(context.Background()); err == nil {
@@ -133,5 +168,27 @@ func assertAbsent(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); err == nil {
 		t.Errorf("expected file to be deleted: %s", path)
+	}
+}
+
+// A file cleanup cannot remove is left for the next run, not an error.
+func TestRunOnce_AttachmentThatCannotBeRemoved(t *testing.T) {
+	dir := t.TempDir()
+	stuck := filepath.Join(dir, ArtifactsDir, "w-1", "2", "a")
+	if err := os.MkdirAll(filepath.Dir(stuck), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, stuck, time.Now().Add(-10*24*time.Hour))
+	if err := os.Chmod(filepath.Dir(stuck), 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(filepath.Dir(stuck), 0755)
+
+	svc := &service{storageDir: dir, retentionPeriod: 7 * 24 * time.Hour}
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() != 0 {
+		assertPresent(t, stuck)
 	}
 }

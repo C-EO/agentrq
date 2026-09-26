@@ -804,7 +804,10 @@
             <p class="text-[9px] font-semibold text-zinc-400">{{ selectedAtt.mimeType }}</p>
           </div>
           <div class="w-px h-8 bg-zinc-700"></div>
-          <a :href="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
+          <!-- The public link when there is one; previews above stay on the signed-in
+               route, which the desktop app's CSP allows and the attachment cache serves. -->
+          <a :href="selectedAtt.url || getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
+             :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined"
              class="flex items-center gap-2 px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             Download
