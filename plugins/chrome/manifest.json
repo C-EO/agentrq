@@ -30,7 +30,9 @@
   },
   "permissions": [
     "contextMenus",
-    "storage"
+    "scripting",
+    "storage",
+    "tabs"
   ],
   "commands": {
     "_execute_action": {

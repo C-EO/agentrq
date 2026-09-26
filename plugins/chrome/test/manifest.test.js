@@ -31,9 +31,10 @@ test('every file the manifest names is in the package', () => {
 
 // Each permission is a line on Chrome's install prompt. The one site it may
 // read is the hosted server, which the popup cannot show signed in without; a
-// self-hosted one is asked for only when somebody saves it.
+// self-hosted one is asked for only when somebody saves it. Every other site
+// is optional: site tools register their scripts only once it is granted.
 test('the extension asks for nothing it does not use', () => {
-  assert.deepEqual(manifest.permissions.sort(), ['contextMenus', 'storage'])
+  assert.deepEqual(manifest.permissions.sort(), ['contextMenus', 'scripting', 'storage', 'tabs'])
   assert.deepEqual(manifest.host_permissions, ['https://app.agentrq.com/*'])
   assert.deepEqual(manifest.optional_host_permissions, ['https://*/*', 'http://*/*'])
   assert.equal(manifest.manifest_version, 3)
