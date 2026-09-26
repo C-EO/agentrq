@@ -129,6 +129,19 @@ export async function respondToTask(workspaceId, taskId, action, text = '', atta
   return res.json();
 }
 
+// Copies a task's conversation, up to and including messageId, into a new
+// task. The answer's task is ongoing when the agent took it on at once, and
+// notstarted when it is waiting for the agent to be free.
+export async function forkTask(workspaceId, taskId, messageId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId })
+  });
+  if (!res.ok) throw new Error('Failed to fork task');
+  return res.json();
+}
+
 export async function updateTaskStatus(workspaceId, taskId, value) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/status`, {
     method: 'PATCH',
@@ -954,6 +967,7 @@ export const TELEMETRY_UI_SEARCH = 'ui_search';
 export const TELEMETRY_UI_SEARCH_OPEN = 'ui_search_open';
 export const TELEMETRY_UI_COPY_LINK = 'ui_copy_link';
 export const TELEMETRY_UI_COPY_MARKDOWN = 'ui_copy_markdown';
+export const TELEMETRY_UI_COPY_CODE = 'ui_copy_code';
 export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
 
 // Records one local-AI feature use. Never throws and never blocks the caller:

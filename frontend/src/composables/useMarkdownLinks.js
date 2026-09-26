@@ -50,6 +50,29 @@ export function fileLinkFromEvent(event) {
 export const COPY_TEXT_ATTR = 'data-copy-text';
 export const COPY_SELECTOR = `[${COPY_TEXT_ATTR}]`;
 
+/** Marks a copy button that copies a code block rather than a link target. */
+export const COPY_KIND_ATTR = 'data-copy-kind';
+export const COPY_KIND_CODE = 'code';
+
+/**
+ * Whether a copy click was for a code block, which is counted and announced
+ * apart from a link's.
+ *
+ * @param {Event} event
+ * @returns {boolean}
+ */
+export function isCodeCopyEvent(event) {
+  return event?.target?.closest?.(COPY_SELECTOR)?.getAttribute(COPY_KIND_ATTR) === COPY_KIND_CODE;
+}
+
+// A code block can be long, so its toast names it by its first line instead.
+function codePreview(text) {
+  const lines = text.split('\n');
+  const first = lines.find((line) => line.trim()) || '';
+  const clipped = first.trim().slice(0, 60);
+  return clipped.length < first.trim().length || lines.length > 1 ? `${clipped}…` : clipped;
+}
+
 /**
  * The text a copy button was clicked for, or '' when the click was not one.
  *
@@ -88,19 +111,21 @@ export async function writeClipboard(text, { bridge, clipboard }) {
  * Put a link's target on the clipboard.
  *
  * @param {string} text
- * @param {{ copyText?: (text: string) => Promise<void> }} context
+ * @param {{ copyText?: (text: string) => Promise<void>, code?: boolean }} context
+ *        `code` for a code block, whose toast shows its first line, not all of it.
  * @returns {Promise<{ tone: 'success'|'error', title: string, message: string }>}
  *          the target is the message either way — on success so it is clear
  *          *what* was copied, and on failure so it can still be read off the
  *          screen and selected by hand.
  */
-export async function copyLinkTarget(text, { copyText }) {
+export async function copyLinkTarget(text, { copyText, code = false }) {
+  const message = code ? codePreview(text) : text;
   try {
     await copyText?.(text);
-    return { tone: 'success', title: 'Copied', message: text };
+    return { tone: 'success', title: code ? 'Copied code' : 'Copied', message };
   } catch {
     // Denied permission, or no secure context.
-    return { tone: 'error', title: 'Could not copy', message: text };
+    return { tone: 'error', title: code ? 'Could not copy code' : 'Could not copy', message };
   }
 }
 

@@ -317,6 +317,22 @@ type (
 		Task Task
 	}
 
+	// ForkTaskRequest copies a task's conversation, from its first message up
+	// to and including MessageID, into a new task. Status is the new task's:
+	// the caller picks it, because only the caller knows whether the agent has
+	// room to take it on now.
+	ForkTaskRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		MessageID   int64
+		Status      string // "ongoing" | "notstarted"
+		UserID      string
+	}
+
+	ForkTaskResponse struct {
+		Task Task
+	}
+
 	UpdateTaskStatusRequest struct {
 		WorkspaceID int64
 		TaskID      int64
@@ -1253,6 +1269,7 @@ const (
 	ActionUICopyLink       Action = 53
 	ActionUICopyMarkdown   Action = 54
 	ActionUITrajectoryView Action = 55
+	ActionUICopyCode       Action = 56
 	// Machines and the agents run on them, all emitted by the backend right
 	// after it does the work — an enrolment, a delete, a kill switch, a
 	// session row, a terminal socket. None of them is browser-reported and
@@ -1315,6 +1332,9 @@ const (
 	ActionSkillImport Action = 74
 	ActionSkillView   Action = 75
 	ActionSkillSearch Action = 76
+	// A conversation forked into a new task from the interface. The new task
+	// is also counted as a task_create.
+	ActionTaskFork Action = 77
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1343,6 +1363,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUICopyMarkdown, true
 	case "ui_trajectory_view":
 		return ActionUITrajectoryView, true
+	case "ui_copy_code":
+		return ActionUICopyCode, true
 	}
 	return 0, false
 }
@@ -1407,6 +1429,8 @@ func (a Action) String() string {
 		return "ui_copy_markdown"
 	case ActionUITrajectoryView:
 		return "ui_trajectory_view"
+	case ActionUICopyCode:
+		return "ui_copy_code"
 	case ActionMachineAdd:
 		return "machine_add"
 	case ActionMachineRemove:
@@ -1441,6 +1465,8 @@ func (a Action) String() string {
 		return "skill_view"
 	case ActionSkillSearch:
 		return "skill_search"
+	case ActionTaskFork:
+		return "task_fork"
 	}
 	return "unknown"
 }

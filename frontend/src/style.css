@@ -188,6 +188,13 @@ html, body, #app {
 .md-body .md-copy-link svg { width: 0.95em; height: 0.95em; }
 .md-body .md-copy-link:hover, .md-body .md-copy-link:focus-visible { opacity: 1; background: rgba(0,0,0,0.06); }
 .dark .md-body .md-copy-link:hover, .dark .md-body .md-copy-link:focus-visible { background: rgba(255,255,255,0.12); }
+.md-body pre:has(> .md-copy-code) { position: relative; padding-right: 2.6em; }
+.md-body .md-copy-code { position: absolute; top: 0.45em; right: 0.45em; display: inline-flex; padding: 0.35em; border-radius: 5px; border: none; background: none; color: currentColor; opacity: 0.55; cursor: pointer; transition: opacity 0.15s, background-color 0.15s; }
+.md-body .md-copy-code svg { width: 1.05em; height: 1.05em; }
+.md-body .md-copy-code:hover, .md-body .md-copy-code:focus-visible { opacity: 1; background: rgba(0,0,0,0.06); }
+.dark .md-body .md-copy-code:hover, .dark .md-body .md-copy-code:focus-visible { background: rgba(255,255,255,0.12); }
+/* A phone has no hover, so there the button is always shown. */
+@media (hover: hover) { .md-body pre:not(:hover) > .md-copy-code:not(:focus-visible) { opacity: 0; } }
 .md-body strong { font-weight: 700; }
 .md-body em { font-style: italic; }
 .md-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 0.85em 0; }

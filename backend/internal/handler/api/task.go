@@ -28,6 +28,7 @@ const (
 	_routePathTasks       = "/workspaces/:id/tasks"
 	_routePathTask        = "/workspaces/:id/tasks/:taskID"
 	_routePathRespond     = "/workspaces/:id/tasks/:taskID/respond"
+	_routePathFork        = "/workspaces/:id/tasks/:taskID/fork"
 	_routePathReply       = "/workspaces/:id/tasks/:taskID/reply"
 	_routePathStatus      = "/workspaces/:id/tasks/:taskID/status"
 	_routePathOrder       = "/workspaces/:id/tasks/:taskID/order"
@@ -51,6 +52,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Get(_routePathCounts, h.getWorkspaceTaskCounts())
 	h.router.Get(_routePathTask, h.getTask())
 	h.router.Post(_routePathRespond, h.respondToTask())
+	h.router.Post(_routePathFork, h.forkTask())
 	h.router.Post(_routePathReply, h.replyToTask())
 	h.router.Patch(_routePathStatus, h.updateTaskStatus())
 	h.router.Patch(_routePathOrder, h.updateTaskOrder())
@@ -90,87 +92,8 @@ func (h *handler) createTask() fiber.Handler {
 		// If human created the task, notify the LLM via MCP channel
 		// ONLY if status is NOT 'cron' (don't notify for template creation)
 		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
-			// Held back only while the agent is actually working. A task
-			// already waiting in the queue is not a reason to withhold this
-			// one: the agent may never pick that one up, and this used to mean
-			// a task created behind it was never pushed at all — not by this
-			// handler, which skipped it, and not by StartPoller, which offered
-			// the queue's oldest task and only that one. Between them a single
-			// task the agent ignored hid every task created after it.
-			// Held back only when the agent is already running as many tasks
-			// as it will run at once. Asked of the database as the counting
-			// question it is, bounded by that limit: listing the workspace
-			// unfiltered pulled up to a hundred whole tasks — bodies,
-			// responses, and a JSON unmarshal of every task's attachments —
-			// on every task creation, to find out whether one row existed.
-			// Workspace, user and status are exactly the columns
-			// idx_tasks_dequeue covers.
-			//
-			// That call was also wrong, not merely wasteful: its implicit
-			// hundred-row limit took the *most recent* tasks, so an ongoing
-			// task older than those was invisible and the push went out as
-			// though the agent were idle.
-			//
-			// One row more than the limit is asked for because the task just
-			// created is skipped below — a task created directly as ongoing
-			// sorts first on this query's `updated_at desc` and would
-			// otherwise fill a slot in the answer.
-			limit := agentTaskConcurrency(h.mcpManager, rq.Task.WorkspaceID)
-			listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{
-				WorkspaceID: rq.Task.WorkspaceID,
-				UserID:      rq.UserID,
-				Status:      []string{"ongoing"},
-				Limit:       limit + 1,
-			})
-			ongoing := 0
-			if listErr == nil {
-				for _, t := range listRs.Tasks {
-					if t.ID == rs.Task.ID {
-						continue // skip the newly created task itself
-					}
-					ongoing++
-				}
-			}
-			// A listing that failed leaves the count at zero and the task is
-			// pushed. Withholding work from an agent because a count could
-			// not be taken is the worse of the two mistakes: the poller
-			// re-offers a task the agent was not ready for, and nothing
-			// re-offers one that was never sent.
-			shouldNotifyMCP := ongoing < limit
-
-			if shouldNotifyMCP {
-				srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
-				content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(rs.Task.ID).String(), rs.Task.Title, rs.Task.Body)
-				if atts := formatAttachments(rs.Task.Attachments); atts != "" {
-					content += "\n" + atts
-				}
-				// A task bound to a workflow already carries it on the task row, so
-				// the instruction only has to name the task: publishing with that
-				// ID starts the run explicitly rather than by inference.
-				if rs.Task.EventID != 0 {
-					if ev, evErr := h.crud.GetEvent(ctx, entity.GetEventRequest{ID: rs.Task.EventID, UserID: rq.UserID}); evErr == nil {
-						content += eventinstruction.Build(eventinstruction.Params{
-							EventName:         ev.Event.Name,
-							TaskID:            monoflake.ID(rs.Task.ID).String(),
-							PayloadGuidelines: ev.Event.PayloadGuidelines,
-						})
-					} else {
-						zlog.Warn().Err(evErr).Int64("eventID", rs.Task.EventID).Int64("taskID", rs.Task.ID).
-							Msg("failed to resolve linked event, on-completion publishEvent instruction omitted")
-					}
-				}
-				// This is the same "hand the agent its next task" push StartPoller
-				// makes, only immediate rather than on its next tick — so it must
-				// clear first for the same reason the poller does: the agent has
-				// to read the task on a clean context, and clearing after it has
-				// already been handed the task would throw the task away.
-				//
-				// Nothing records the push. The poller goes on offering the task
-				// until the agent moves it to ongoing, which is what makes a push
-				// made while nothing was attached recoverable. The clear is the
-				// half that must not repeat, and clearContextFor remembers it.
-				srv.ClearContextForTask(ctx, rs.Task.ID, rs.Task.ClearContext)
-				srv.SendChannelNotification(ctx, rs.Task.ID, content)
+			if h.agentHasRoom(ctx, rq.Task.WorkspaceID, rq.UserID, rs.Task.ID) {
+				h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
 			}
 		}
 
@@ -183,6 +106,95 @@ func (h *handler) createTask() fiber.Handler {
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}
+}
+
+// agentHasRoom reports whether the workspace's agent is running fewer tasks
+// than it will run at once, not counting skipID.
+func (h *handler) agentHasRoom(ctx context.Context, workspaceID int64, userID string, skipID int64) bool {
+	// Held back only while the agent is actually working. A task
+	// already waiting in the queue is not a reason to withhold this
+	// one: the agent may never pick that one up, and this used to mean
+	// a task created behind it was never pushed at all — not by this
+	// handler, which skipped it, and not by StartPoller, which offered
+	// the queue's oldest task and only that one. Between them a single
+	// task the agent ignored hid every task created after it.
+	// Held back only when the agent is already running as many tasks
+	// as it will run at once. Asked of the database as the counting
+	// question it is, bounded by that limit: listing the workspace
+	// unfiltered pulled up to a hundred whole tasks — bodies,
+	// responses, and a JSON unmarshal of every task's attachments —
+	// on every task creation, to find out whether one row existed.
+	// Workspace, user and status are exactly the columns
+	// idx_tasks_dequeue covers.
+	//
+	// That call was also wrong, not merely wasteful: its implicit
+	// hundred-row limit took the *most recent* tasks, so an ongoing
+	// task older than those was invisible and the push went out as
+	// though the agent were idle.
+	//
+	// One row more than the limit is asked for because the task just
+	// created is skipped below — a task created directly as ongoing
+	// sorts first on this query's `updated_at desc` and would
+	// otherwise fill a slot in the answer.
+	limit := agentTaskConcurrency(h.mcpManager, workspaceID)
+	listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Status:      []string{"ongoing"},
+		Limit:       limit + 1,
+	})
+	ongoing := 0
+	if listErr == nil {
+		for _, t := range listRs.Tasks {
+			if t.ID == skipID {
+				continue // skip the newly created task itself
+			}
+			ongoing++
+		}
+	}
+	// A listing that failed leaves the count at zero and the task is
+	// pushed. Withholding work from an agent because a count could
+	// not be taken is the worse of the two mistakes: the poller
+	// re-offers a task the agent was not ready for, and nothing
+	// re-offers one that was never sent.
+	return ongoing < limit
+}
+
+// pushTaskToAgent hands a task to the workspace's agent now, rather than on
+// the poller's next tick.
+func (h *handler) pushTaskToAgent(ctx context.Context, userID string, t entity.Task) {
+	srv := h.mcpManager.Get(t.WorkspaceID, userID)
+	content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(t.ID).String(), t.Title, t.Body)
+	if atts := formatAttachments(t.Attachments); atts != "" {
+		content += "\n" + atts
+	}
+	// A task bound to a workflow already carries it on the task row, so
+	// the instruction only has to name the task: publishing with that
+	// ID starts the run explicitly rather than by inference.
+	if t.EventID != 0 {
+		if ev, evErr := h.crud.GetEvent(ctx, entity.GetEventRequest{ID: t.EventID, UserID: userID}); evErr == nil {
+			content += eventinstruction.Build(eventinstruction.Params{
+				EventName:         ev.Event.Name,
+				TaskID:            monoflake.ID(t.ID).String(),
+				PayloadGuidelines: ev.Event.PayloadGuidelines,
+			})
+		} else {
+			zlog.Warn().Err(evErr).Int64("eventID", t.EventID).Int64("taskID", t.ID).
+				Msg("failed to resolve linked event, on-completion publishEvent instruction omitted")
+		}
+	}
+	// This is the same "hand the agent its next task" push StartPoller
+	// makes, only immediate rather than on its next tick — so it must
+	// clear first for the same reason the poller does: the agent has
+	// to read the task on a clean context, and clearing after it has
+	// already been handed the task would throw the task away.
+	//
+	// Nothing records the push. The poller goes on offering the task
+	// until the agent moves it to ongoing, which is what makes a push
+	// made while nothing was attached recoverable. The clear is the
+	// half that must not repeat, and clearContextFor remembers it.
+	srv.ClearContextForTask(ctx, t.ID, t.ClearContext)
+	srv.SendChannelNotification(ctx, t.ID, content)
 }
 
 // agentTaskConcurrency is how many tasks the workspace's connected agent will
@@ -288,6 +300,50 @@ func (h *handler) respondToTask() fiber.Handler {
 
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromRespondToTaskResponseEntityToHTTPResponse(rs))
+	}
+}
+
+// forkTask copies a conversation, up to one of its messages, into a new task.
+//
+// The fork is ongoing and handed to the agent straight away when the agent has
+// room for it. When it has not — usually because the task being forked is the
+// one it is working on — the fork waits as notstarted: the poller only offers
+// notstarted tasks, so an ongoing fork nobody pushed would never be delivered.
+func (h *handler) forkTask() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToForkTaskRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		room := h.agentHasRoom(ctx, rq.WorkspaceID, rq.UserID, 0)
+		rq.Status = "notstarted"
+		if room {
+			rq.Status = "ongoing"
+		}
+		rs, err := h.crud.ForkTask(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to fork task")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		if room {
+			h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
+		}
+
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "task.created",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusCreated)
+		return c.Send(mapper.FromForkTaskResponseEntityToHTTPResponse(rs))
 	}
 }
 

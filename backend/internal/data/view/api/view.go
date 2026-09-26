@@ -226,6 +226,16 @@ type (
 		Response TaskResponse `json:"response"`
 	}
 
+	// ForkTaskRequest names the message a fork copies the conversation up to,
+	// inclusive.
+	ForkTaskRequest struct {
+		MessageID string `json:"messageId"`
+	}
+
+	ForkTaskResponse struct {
+		Task Task `json:"task"`
+	}
+
 	TaskResponse struct {
 		Action      string       `json:"action"` // "allow" | "reject" | "allow_all" | "text"
 		Text        string       `json:"text,omitempty"`

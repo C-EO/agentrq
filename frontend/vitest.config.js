@@ -77,6 +77,7 @@ export default defineConfig({
         'src/composables/useAttachmentCache.js',
         'src/composables/useCacheRetention.js',
         'src/composables/useMarkdownLinks.js',
+        'src/composables/useTaskFork.js',
         'src/composables/useMemories.js',
         'src/composables/useSkills.js',
         'src/composables/useUiTelemetry.js',

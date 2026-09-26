@@ -44,6 +44,7 @@ func TestActionString(t *testing.T) {
 		{ActionUICopyLink, "ui_copy_link"},
 		{ActionUICopyMarkdown, "ui_copy_markdown"},
 		{ActionUITrajectoryView, "ui_trajectory_view"},
+		{ActionUICopyCode, "ui_copy_code"},
 		{ActionMachineAdd, "machine_add"},
 		{ActionMachineRemove, "machine_remove"},
 		{ActionMachineDisable, "machine_disable"},
@@ -61,6 +62,7 @@ func TestActionString(t *testing.T) {
 		{ActionSkillImport, "skill_import"},
 		{ActionSkillView, "skill_view"},
 		{ActionSkillSearch, "skill_search"},
+		{ActionTaskFork, "task_fork"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

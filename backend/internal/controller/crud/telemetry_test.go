@@ -30,6 +30,7 @@ var clientReportable = map[string]entity.Action{
 	"ui_copy_link":            entity.ActionUICopyLink,
 	"ui_copy_markdown":        entity.ActionUICopyMarkdown,
 	"ui_trajectory_view":      entity.ActionUITrajectoryView,
+	"ui_copy_code":            entity.ActionUICopyCode,
 }
 
 func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {

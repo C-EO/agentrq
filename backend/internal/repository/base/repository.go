@@ -30,6 +30,9 @@ type Repository interface {
 
 	// Task
 	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
+	// CreateTaskWithMessages writes a task and its messages together, or
+	// neither.
+	CreateTaskWithMessages(ctx context.Context, t model.Task, msgs []model.Message) (model.Task, error)
 	GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
@@ -280,6 +283,22 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 
 func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
 	if err := r.conn(ctx).Create(&t).Error; err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
+}
+
+func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, msgs []model.Message) (model.Task, error) {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		if len(msgs) == 0 {
+			return nil
+		}
+		return tx.Create(&msgs).Error
+	})
+	if err != nil {
 		return model.Task{}, err
 	}
 	return t, nil

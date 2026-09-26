@@ -440,6 +440,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionUICopyLink, model.ActionIDUICopyLink, "copy link"},
 		{entity.ActionUICopyMarkdown, model.ActionIDUICopyMarkdown, "copy markdown"},
 		{entity.ActionUITrajectoryView, model.ActionIDUITrajectoryView, "trajectory view"},
+		{entity.ActionUICopyCode, model.ActionIDUICopyCode, "copy code"},
 		// Backend-emitted rather than browser-reported, unlike everything above
 		// it, but it travels the same bus and needs the same mapping — an
 		// action that reaches here unmapped is dropped in silence.
@@ -450,6 +451,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionSkillImport, model.ActionIDSkillImport, "skill import"},
 		{entity.ActionSkillView, model.ActionIDSkillView, "skill view"},
 		{entity.ActionSkillSearch, model.ActionIDSkillSearch, "skill search"},
+		{entity.ActionTaskFork, model.ActionIDTaskFork, "task fork"},
 	}
 
 	for _, tc := range cases {

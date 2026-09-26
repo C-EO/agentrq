@@ -325,6 +325,7 @@ describe('each tool calls the interface the way the UI does', () => {
       'respondToTask',
       ['ws1', 't1', 'reject', 'no'],
     ],
+    ['forkTask', { workspaceId: 'ws1', taskId: 't1', messageId: 'm1' }, 'forkTask', ['ws1', 't1', 'm1']],
     [
       'updateTaskStatus',
       { workspaceId: 'ws1', taskId: 't1', status: 'completed' },

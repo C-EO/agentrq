@@ -4,7 +4,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
-import { COPY_TEXT_ATTR, FILE_LINK_ATTR, filePathFromUrl } from '../composables/useMarkdownLinks';
+import { COPY_KIND_ATTR, COPY_KIND_CODE, COPY_TEXT_ATTR, FILE_LINK_ATTR, filePathFromUrl } from '../composables/useMarkdownLinks';
 import { MEMORY_LINK_ATTR, memoryLinkTarget } from '../composables/useMemories';
 import { SKILL_LINK_ATTR, inlineCodeFileMatch, skillLinkTarget, skillUri } from '../composables/useSkills';
 
@@ -118,7 +118,8 @@ const COPY_ICON =
   '<path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>';
 
 /**
- * Give every link a button that copies where it points.
+ * Give every link a button that copies where it points, and every code block
+ * one that copies its code.
  *
  * Done *after* sanitising, on the DOM rather than on a string: these nodes are
  * the app's own, so building them here means no attribute of theirs is ever
@@ -145,6 +146,21 @@ function addCopyButtons(fragment) {
     button.setAttribute('aria-label', `Copy ${target}`);
     button.innerHTML = COPY_ICON;
     anchor.after(button);
+  }
+  // A code block is the part of a message most often copied on its own, and
+  // selecting it by hand is hard on a phone.
+  for (const pre of fragment.querySelectorAll('pre')) {
+    const text = pre.textContent.replace(/\n$/, '');
+    if (!text) continue;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'md-copy-code';
+    button.setAttribute(COPY_TEXT_ATTR, text);
+    button.setAttribute(COPY_KIND_ATTR, COPY_KIND_CODE);
+    button.title = 'Copy code';
+    button.setAttribute('aria-label', 'Copy code');
+    button.innerHTML = COPY_ICON;
+    pre.prepend(button);
   }
 }
 

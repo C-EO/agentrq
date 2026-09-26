@@ -1038,6 +1038,36 @@ paths:
               schema: { $ref: '#/components/schemas/TaskEnvelope' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /workspaces/{id}/tasks/{taskID}/fork:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Fork a task's conversation into a new task
+      description: |
+        Copies the task, and its messages from the first up to and including
+        `messageId`, into a new task in the same workspace. Attachments are
+        copied under new IDs. The new task is `ongoing` and handed to the agent
+        at once when the agent has room for it, and `notstarted` otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageId]
+              properties:
+                messageId: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/tasks/{taskID}/reply:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'

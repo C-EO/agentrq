@@ -4,11 +4,14 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import {
+  COPY_KIND_ATTR,
+  COPY_KIND_CODE,
   COPY_TEXT_ATTR,
   FILE_LINK_ATTR,
   FileLinkAction,
   copyLinkTarget,
   copyTargetFromEvent,
+  isCodeCopyEvent,
   writeClipboard,
   fileLinkAction,
   fileLinkFromEvent,
@@ -363,6 +366,55 @@ describe('copy buttons', () => {
   });
 });
 
+describe('code block copy buttons', () => {
+  const mount = (markdown) => {
+    document.body.innerHTML = `<div id="root">${renderMarkdown(markdown)}</div>`;
+    return [...document.querySelectorAll('pre > button')];
+  };
+
+  it('offers to copy exactly the code, without the fence or a trailing newline', () => {
+    const [button] = mount('```css\n.a {\n  color: red;\n}\n```');
+
+    expect(button.getAttribute(COPY_TEXT_ATTR)).toBe('.a {\n  color: red;\n}');
+    expect(button.getAttribute(COPY_KIND_ATTR)).toBe(COPY_KIND_CODE);
+    expect(button.getAttribute('aria-label')).toBe('Copy code');
+    expect(button.getAttribute('type')).toBe('button');
+  });
+
+  it('gives every code block its own button, and inline code none', () => {
+    const found = mount('```\none\n```\n\nsome `inline` code\n\n```\ntwo\n```');
+
+    expect(found.map((b) => b.getAttribute(COPY_TEXT_ATTR))).toEqual(['one', 'two']);
+  });
+
+  it('adds nothing to an empty code block', () => {
+    expect(mount('```\n```')).toHaveLength(0);
+  });
+
+  it('keeps the code in the block free of the button', () => {
+    mount('```\necho hi\n```');
+
+    expect(document.querySelector('pre code').textContent).toBe('echo hi\n');
+  });
+});
+
+describe('isCodeCopyEvent', () => {
+  it('is true for a click on a code block copy button, icon included', () => {
+    document.body.innerHTML = renderMarkdown('```\nls\n```');
+    const button = document.querySelector('pre > button');
+
+    expect(isCodeCopyEvent({ type: 'click', target: button })).toBe(true);
+    expect(isCodeCopyEvent({ type: 'click', target: button.querySelector('svg') })).toBe(true);
+  });
+
+  it('is false for a link copy button and for nothing at all', () => {
+    document.body.innerHTML = renderMarkdown('[docs](https://agentrq.com/docs)');
+
+    expect(isCodeCopyEvent({ type: 'click', target: document.querySelector('button') })).toBe(false);
+    expect(isCodeCopyEvent(undefined)).toBe(false);
+  });
+});
+
 describe('copyTargetFromEvent', () => {
   const mount = (markdown) => {
     document.body.innerHTML = `<div id="root">${renderMarkdown(markdown)}</div>`;
@@ -415,6 +467,32 @@ describe('copyLinkTarget', () => {
     });
 
     expect(result).toEqual({ tone: 'error', title: 'Could not copy', message: '/Users/mt/plan.md' });
+  });
+});
+
+describe('copyLinkTarget for code', () => {
+  it('copies all of it but names it by its first line', async () => {
+    const copyText = vi.fn().mockResolvedValue(undefined);
+    const result = await copyLinkTarget('\n.a {\n  color: red;\n}', { copyText, code: true });
+
+    expect(copyText).toHaveBeenCalledWith('\n.a {\n  color: red;\n}');
+    expect(result).toEqual({ tone: 'success', title: 'Copied code', message: '.a {…' });
+  });
+
+  it('shows a one-line block whole, and clips a long one', async () => {
+    const copyText = vi.fn().mockResolvedValue(undefined);
+
+    expect((await copyLinkTarget('npm test', { copyText, code: true })).message).toBe('npm test');
+    expect((await copyLinkTarget('x'.repeat(80), { copyText, code: true })).message).toBe(`${'x'.repeat(60)}…`);
+  });
+
+  it('says it was code that could not be copied', async () => {
+    const result = await copyLinkTarget('   ', {
+      copyText: vi.fn().mockRejectedValue(new Error('denied')),
+      code: true,
+    });
+
+    expect(result).toEqual({ tone: 'error', title: 'Could not copy code', message: '' });
   });
 });
 
