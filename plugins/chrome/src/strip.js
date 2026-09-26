@@ -60,15 +60,17 @@ export async function initStrip({ doc, chrome, fetchImpl, server }) {
       return show(shared, 'Stop sharing', () => unshare(chrome, state.origin).then(render), null, !!refusal)
     }
     const host = new URL(state.origin).host
-    const offers = `${refusal ? `Not shared: ${refusal} · ` : ''}${host} offers ${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
-    if (!workspaces) return show(`${offers} · Sign in to AgentRQ to share it`, null, null, null, !!refusal)
-    if (!workspaces.length) return show(`${offers} · Create a workspace to share it`, null, null, null, !!refusal)
+    // Sharing the same tools again would be refused again; the worker clears
+    // the refusal once the site offers different ones.
+    if (refusal) return show(`${host} could not be shared: ${refusal}`, null, null, null, true)
+    const offers = `${host} offers ${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
+    if (!workspaces) return show(`${offers} · Sign in to AgentRQ to share it`)
+    if (!workspaces.length) return show(`${offers} · Create a workspace to share it`)
     show(
       `${offers} · Share with`,
       'Share',
       () => share(chrome, state.origin, picker.value, state.url, state.tools).then(render),
       workspaces,
-      !!refusal,
     )
   }
   // A refusal comes back moments after Share is clicked, while the popup is open.
