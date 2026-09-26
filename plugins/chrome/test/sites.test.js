@@ -303,6 +303,15 @@ test('the popup is told what the front tab offers and who it is shared with', as
   // The tab has moved on to a page that has not said anything.
   chrome.tabs.active = { id: 4, url: 'https://c.com/' }
   assert.equal((await ask()).origin, null)
+
+  // A shared site is still reported while its page offers nothing.
+  chrome.tabs.active = { id: 4, url: `${GH}/other` }
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/other`, tools: [], toolCount: 0, sharedWith: 'ws1' })
+  chrome.tabs.active = { id: 9, url: `${GH}/new` }
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/new`, tools: [], toolCount: 0, sharedWith: 'ws1' })
+  // A tab whose URL Chrome withholds.
+  chrome.tabs.active = { id: 9 }
+  assert.equal((await ask()).origin, null)
 })
 
 test('a website’s page cannot ask for the popup’s state, and a failure to find the front tab answers null', async () => {
