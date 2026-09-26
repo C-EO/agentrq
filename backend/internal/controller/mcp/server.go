@@ -1667,6 +1667,30 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 		}
 	}
 
+	resp, err := ps.askHuman(ctx, taskID, params.Message, metadata, timeout)
+	if errors.Is(err, errAskCancelled) {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "request cancelled"}},
+		}, nil, nil
+	}
+	if err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to send elicitation request: %v", err)}},
+		}, nil, nil
+	}
+	resultJSON, _ := json.Marshal(resp)
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}}}, nil, nil
+}
+
+// errAskCancelled is askHuman's caller going away before the human answered.
+var errAskCancelled = errors.New("request cancelled")
+
+// askHuman posts message to the task as an elicitation and waits for the
+// human's answer. A timeout is the answer "cancel", not an error; the error
+// is a failed post, or errAskCancelled.
+func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message string, metadata map[string]any, timeout time.Duration) (elicitationResponse, error) {
 	requestID := monoflake.ID(ps.idgen.NextID()).String()
 	metadata["requestId"] = requestID
 
@@ -1683,12 +1707,9 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 		ps.elicitationsMu.Unlock()
 	}()
 
-	msgID, err := ps.reply(ctx, monoflake.ID(taskID).String(), params.Message, nil, metadata)
+	msgID, err := ps.reply(ctx, monoflake.ID(taskID).String(), message, nil, metadata)
 	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to send elicitation request: %v", err)}},
-		}, nil, nil
+		return elicitationResponse{}, err
 	}
 
 	select {
@@ -1703,21 +1724,16 @@ func (ps *WorkspaceServer) handleElicit(ctx context.Context, req *mcp.CallToolRe
 			}
 			_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, metaUpdate)
 		}
-		resultJSON, _ := json.Marshal(resp)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}}}, nil, nil
+		return resp, nil
 	case <-time.After(timeout):
 		// The human simply didn't respond in time — matching ACP's model where
 		// "cancel" is a legitimate response action (not a protocol error).
 		if msgID != 0 {
 			_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, map[string]any{"status": "cancel"})
 		}
-		resultJSON, _ := json.Marshal(elicitationResponse{Action: "cancel"})
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}}}, nil, nil
+		return elicitationResponse{Action: "cancel"}, nil
 	case <-ctx.Done():
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "request cancelled"}},
-		}, nil, nil
+		return elicitationResponse{}, errAskCancelled
 	}
 }
 
