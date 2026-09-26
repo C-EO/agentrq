@@ -642,4 +642,9 @@ Bug reports go in a [GitHub issue](https://github.com/agentrq/agentrq/issues/new
 - [HasMCP](https://hasmcp.com) — Bridge the Gap Between APIs and Agents.
 
 ## 📝 License
-Apache-2.0
+AgentRQ is dual-licensed:
+
+- **Open source:** [AGPL-3.0-only](LICENSE).
+- **Commercial:** a binary-only [commercial licence](LICENSE-COMMERCIAL) from Contextual, Inc., for proprietary use without the AGPL's obligations. Contact [hi@agentrq.com](mailto:hi@agentrq.com).
+
+The separately published packages — the [`agentrq-ws`](cli/agentrq-ws) command-line client and the plugins under [`plugins/`](plugins) — keep their own Apache-2.0 licence.

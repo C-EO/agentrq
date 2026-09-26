@@ -234,4 +234,4 @@ Two things that break it, both non-obvious:
 
 ## License
 
-[Apache-2.0](./LICENSE), matching the rest of the AgentRQ repository.
+[Apache-2.0](./LICENSE). The AgentRQ server itself is AGPL-3.0-only; this plugin, like the other published packages, keeps Apache-2.0.
