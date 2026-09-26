@@ -30,12 +30,15 @@ CI signs in to Google with GitHub's own OIDC token, through Workload Identity
 Federation, as a service account the store trusts. There is no key file, OAuth
 client or refresh token, so nothing can leak and nothing expires.
 
-In a Google Cloud project (any; a new `agentrq-release` one keeps it tidy):
+In a Google Cloud project you own (a new `agentrq-release` one keeps it tidy;
+project IDs are global, so pick another if that one is taken):
 
 ```sh
 PROJECT_ID=agentrq-release
+gcloud projects create "$PROJECT_ID"   # skip for an existing project
 gcloud config set project "$PROJECT_ID"
-gcloud services enable chromewebstore.googleapis.com iamcredentials.googleapis.com
+# Without iam and sts, creating the pool below is refused as PERMISSION_DENIED.
+gcloud services enable chromewebstore.googleapis.com iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 
 # The identity CI will act as. It needs no Cloud roles of its own.
 gcloud iam service-accounts create chrome-web-store --display-name="Chrome Web Store publishing"
