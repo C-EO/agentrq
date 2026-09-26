@@ -134,6 +134,28 @@ describe('the Download button', () => {
   })
 })
 
+describe('clicking Download', () => {
+  it('saves from the signed-in route under the filename and mimeType', async () => {
+    const createObjectURL = vi.fn(() => 'blob:app/1')
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['png'])) }))
+    const saved = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+    const link = await open(await mount(), 'shot.png')
+    click.mockImplementation(function () { saved.push({ href: this.getAttribute('href'), download: this.download }) })
+
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await settle()
+
+    expect(fetchSpy).toHaveBeenCalledWith('/api/v1/workspaces/ws1/tasks/t1/attachments/a1')
+    expect(createObjectURL.mock.calls[0][0].type).toBe('image/png')
+    expect(saved).toEqual([{ href: 'blob:app/1', download: 'shot.png' }])
+    fetchSpy.mockRestore()
+    click.mockRestore()
+  })
+})
+
 describe('the Copy link button', () => {
   const button = (el) => [...el.querySelectorAll('button')].find((b) => /Copy link|Copied/.test(b.textContent))
 
