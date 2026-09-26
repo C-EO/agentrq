@@ -3,7 +3,7 @@
   "displayName": "Daily Digest",
   "version": "1.0.0",
   "description": "Summarises every workspace once a day, posts it back as a task, and can mirror it to a Slack webhook.",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "engines": { "agentrq": ">=0.5" },
   "mcp": {
     "supervisor": ["listWorkspaces", "listAllTasks", "createTask"]

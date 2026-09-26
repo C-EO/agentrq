@@ -169,4 +169,4 @@ See [SETUP.md](https://github.com/agentrq/agentrq/blob/main/SETUP.md) for the co
 
 ## Source
 
-[github.com/agentrq/agentrq](https://github.com/agentrq/agentrq) — Apache-2.0
+[github.com/agentrq/agentrq](https://github.com/agentrq/agentrq) — AGPL-3.0-only
