@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 /**
  * Fail the build when a source file has lost its copyright notice.
@@ -14,7 +15,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
-import { NOTICE_LINES, carriesNotice, isOurs, withNotice } from '../src/copyright.js'
+import { NOTICE_LINES, SPDX, carriesNotice, isOurs, withNotice } from '../src/copyright.js'
 
 /** The repository, not this package: the notice belongs on every file in it. */
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -46,6 +47,7 @@ if (fix) {
   if (missing.length > 40) console.error(`    … and ${missing.length - 40} more`)
   // The whole block, because a file may be failing on the second line alone.
   console.error(`\nExpected, exactly:\n\n${NOTICE_LINES.map((line) => `    ${line}`).join('\n')}`)
+  console.error(`\nand under backend/, daemon/, desktop/ and frontend/, a third line:\n\n    ${SPDX}`)
   console.error(`\nRun: node desktop/scripts/copyright.mjs --fix`)
   process.exit(1)
 } else {

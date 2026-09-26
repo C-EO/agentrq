@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect } from 'vitest'
 
@@ -7,10 +8,12 @@ import {
   COMMENT,
   NOTICE,
   NOTICE_LINES,
+  SPDX,
   carriesNotice,
   extensionOf,
   isOurs,
   noticeFor,
+  noticeLinesFor,
   withNotice,
 } from '../src/copyright.js'
 
@@ -63,6 +66,27 @@ describe('NOTICE', () => {
     }
     // And the second line is held to the same standard as the first.
     expect(carriesNotice(`// ${NOTICE}\n// This notice may not be removed.`, file)).toBe(false)
+  })
+})
+
+describe('noticeLinesFor', () => {
+  it('adds the licence line on the AGPL parts of the repository', () => {
+    for (const path of ['backend/internal/app/app.go', 'daemon/cmd/agentrqd/main.go', 'desktop/src/main/index.js', 'frontend/src/App.vue']) {
+      expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
+    }
+    expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
+  })
+
+  // Published under their own licences, where the line would be false.
+  it('leaves it off everything published separately', () => {
+    for (const path of ['cli/agentrq-ws/bin/agentrq-ws.js', 'plugins/chrome/popup.js', 'examples/extensions/digest/index.js', 'a.js', undefined]) {
+      expect(noticeLinesFor(path), path).toEqual(NOTICE_LINES)
+    }
+  })
+
+  it('does not match a directory that only starts with the same name', () => {
+    expect(noticeLinesFor('frontend-old/a.js')).toEqual(NOTICE_LINES)
+    expect(noticeLinesFor('plugins/backend/a.js')).toEqual(NOTICE_LINES)
   })
 })
 
@@ -178,6 +202,17 @@ describe('withNotice', () => {
 
     expect(withNotice(already, 'a.js')).toBe(already)
     expect(withNotice(withNotice(already, 'a.js'), 'a.js')).toBe(already)
+  })
+
+  // A file marked before the licence line existed is completed, not stacked.
+  it('adds the licence line to an older notice in place', () => {
+    for (const path of ['backend/a.go', 'frontend/src/A.vue']) {
+      const older = `${COMMENT[extensionOf(path)](NOTICE_LINES)}\n\nbody\n`
+
+      expect(carriesNotice(older, path), path).toBe(false)
+      expect(withNotice(older, path), path).toBe(`${noticeFor(path)}\n\nbody\n`)
+      expect(carriesNotice(withNotice(older, path), path), path).toBe(true)
+    }
   })
 
   it('leaves a file it does not mark exactly as it was', () => {

@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 /**
  * The copyright line every source file carries, and the rules about it.
@@ -45,6 +46,20 @@ export const NOTICE_LINES = Object.freeze([
 export const NOTICE = NOTICE_LINES[0]
 
 /**
+ * The licence line, on the AGPL parts of the repository only. The CLI, the
+ * plugins and the examples are published under their own licences, and this
+ * line in one of them would be false.
+ */
+export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only'
+
+const AGPL = /^(backend|daemon|desktop|frontend)\//
+
+/** Every line this file's notice has: the two above, and the licence where it applies. */
+export function noticeLinesFor(path) {
+  return AGPL.test(String(path ?? '')) ? [...NOTICE_LINES, SPDX] : NOTICE_LINES
+}
+
+/**
  * How each kind of file says it.
  *
  * A Vue single-file component is markup at the top level, so its line goes in
@@ -86,7 +101,7 @@ export function isOurs(path) {
 /** The exact line this file should carry, or '' for a file that carries none. */
 export function noticeFor(path) {
   const comment = COMMENT[extensionOf(path)]
-  return comment ? comment(NOTICE_LINES) : ''
+  return comment ? comment(noticeLinesFor(path)) : ''
 }
 
 /**
@@ -125,5 +140,11 @@ export function carriesNotice(contents, path, within = 8) {
 export function withNotice(contents, path) {
   const text = String(contents ?? '')
   if (!noticeFor(path) || carriesNotice(text, path)) return text
+
+  // A notice written before the licence line existed is completed in place,
+  // not given a second notice above it.
+  const before = COMMENT[extensionOf(path)](NOTICE_LINES)
+  if (text.includes(before)) return text.replace(before, noticeFor(path))
+
   return `${noticeFor(path)}\n\n${text}`
 }

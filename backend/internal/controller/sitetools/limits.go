@@ -1,5 +1,6 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 // Package sitetools routes workspace agents' calls to the WebMCP tools of the
 // sites a user shares from the AgentRQ Chrome extension.
