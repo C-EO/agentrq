@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
 	"github.com/agentrq/agentrq/backend/internal/controller/pub"
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
+	"github.com/agentrq/agentrq/backend/internal/controller/sitetools"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -366,6 +368,9 @@ func New(cfg Config) (*App, error) {
 	// each workspace's MCP server, which sends /clear down a session's terminal
 	// before pushing a task that asked for a clean context.
 	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
+	// The browsers whose sockets this process holds. Call ids must be
+	// unguessable: a result is matched to its call by id alone.
+	siteHub := sitetools.NewHub(instanceID(idgenNode), rand.Text)
 	machineRelay := machine.NewRelay(machineRegistry)
 
 	// ── MCP manager ───────────────────────────────────────────────────────────
@@ -1047,6 +1052,16 @@ func New(cfg Config) (*App, error) {
 		// database and no bus on purpose.
 		OnAttach: countTerminalView(crudCtrl, true),
 		OnDetach: countTerminalView(crudCtrl, false),
+	})
+
+	// The Chrome extension's socket, on the mux for the same hijacking reason.
+	// Never also a Fiber route: the mux would shadow it.
+	mux.Handle("/api/v1/browser/connect", &sitetools.Handler{
+		Hub:       siteHub,
+		Store:     siteShareStore{repo: repo, ids: ids},
+		Auth:      browserTicketAuth(tokenSvc),
+		OnShare:   countSiteShare(crudCtrl, true),
+		OnUnshare: countSiteShare(crudCtrl, false),
 	})
 
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))

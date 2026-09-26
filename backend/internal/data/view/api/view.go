@@ -707,4 +707,11 @@ type (
 	WorkflowTextErrorResponse struct {
 		Error WorkflowTextError `json:"error"`
 	}
+
+	// BrowserTicket is the credential the Chrome extension presents to the
+	// browser socket; expiresIn is seconds.
+	BrowserTicket struct {
+		Ticket    string `json:"ticket"`
+		ExpiresIn int    `json:"expiresIn"`
+	}
 )

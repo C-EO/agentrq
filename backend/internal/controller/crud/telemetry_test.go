@@ -75,6 +75,9 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		"skill_import",
 		"skill_view",
 		"skill_search",
+		// Site shares: the server sees every announce and withdraw itself.
+		"site_share",
+		"site_unshare",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

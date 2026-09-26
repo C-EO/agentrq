@@ -28,7 +28,7 @@ import (
 // specPath is openapi.yaml, relative to this package.
 const specPath = "../../../openapi.yaml"
 
-// muxRoutes are the two paths the standard-library mux in app.go serves.
+// muxRoutes are the paths the standard-library mux in app.go serves.
 //
 // They cannot come from the Fiber app because they never reach it: the mux
 // takes exact path matches first, which is how an endless SSE stream avoids
@@ -37,6 +37,7 @@ const specPath = "../../../openapi.yaml"
 var muxRoutes = []string{
 	"GET /events/stream",
 	"GET /workspaces/{id}/events",
+	"GET /browser/connect",
 }
 
 // registeredRoutes builds the route table the way the server does.
@@ -65,6 +66,7 @@ func registeredRoutes(t *testing.T) map[string]bool {
 		t.Fatalf("registerTelemetryRoutes: %v", err)
 	}
 	h.registerPushRoutes(nil)
+	h.registerBrowserRoutes()
 
 	routes := map[string]bool{}
 	for _, r := range app.GetRoutes(true) {

@@ -1335,6 +1335,10 @@ const (
 	// A conversation forked into a new task from the interface. The new task
 	// is also counted as a task_create.
 	ActionTaskFork Action = 77
+	// A site shared into a workspace from the Chrome extension, or withdrawn.
+	// Backend-observed, on the browser socket.
+	ActionSiteShare   Action = 78
+	ActionSiteUnshare Action = 79
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1467,6 +1471,10 @@ func (a Action) String() string {
 		return "skill_search"
 	case ActionTaskFork:
 		return "task_fork"
+	case ActionSiteShare:
+		return "site_share"
+	case ActionSiteUnshare:
+		return "site_unshare"
 	}
 	return "unknown"
 }
@@ -1663,6 +1671,14 @@ type (
 		// than one with a duration, because the socket can be closed by a
 		// crash, and half an interval is worse than two counts.
 		Open bool
+	}
+
+	// RecordSiteShareRequest counts a site shared into (Shared) or withdrawn
+	// from a workspace.
+	RecordSiteShareRequest struct {
+		UserID      int64
+		WorkspaceID int64
+		Shared      bool
 	}
 
 	GetSessionRequest struct {

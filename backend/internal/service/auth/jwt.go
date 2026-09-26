@@ -35,7 +35,15 @@ const (
 	// withheld from it by the browser. A ticket is a credential the page can
 	// hold and present explicitly, which works from either build.
 	TerminalTicketAudience = "terminal_ticket"
+
+	// BrowserTicketAudience marks a credential for the Chrome extension's
+	// browser socket. The extension's origin never receives the `at` cookie.
+	BrowserTicketAudience = "browser_ticket"
 )
+
+// BrowserTicketTTL is short for the terminal ticket's reason: it travels in a
+// URL, and every connect mints a new one.
+const BrowserTicketTTL = time.Minute
 
 // TerminalTicketTTL is how long a terminal ticket is worth presenting.
 //
@@ -92,6 +100,8 @@ type TokenService interface {
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
 	CreateTerminalTicket(userID, sessionID string) (string, error)
 	ValidateTerminalTicket(tokenStr, sessionID string) (*Claims, error)
+	CreateBrowserTicket(userID string) (string, error)
+	ValidateBrowserTicket(tokenStr string) (*Claims, error)
 	CreateOAuthStateToken(redirectURL, provider string) (string, error)
 	CreateClientRegistrationToken(redirectURIs []string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
@@ -305,6 +315,32 @@ func (s *tokenService) ValidateTerminalTicket(tokenStr, sessionID string) (*Clai
 	}
 	if sessionID == "" || !HasAudience(claims, sessionID) {
 		return nil, errors.New("terminal ticket is for another session")
+	}
+	return claims, nil
+}
+
+// CreateBrowserTicket mints the credential the extension presents when it
+// opens the browser socket.
+func (s *tokenService) CreateBrowserTicket(userID string) (string, error) {
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(BrowserTicketTTL)),
+			Audience:  jwt.ClaimStrings{BrowserTicketAudience},
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+}
+
+// ValidateBrowserTicket accepts only a ticket minted by CreateBrowserTicket;
+// without the audience check the 24-hour access token would work in a URL.
+func (s *tokenService) ValidateBrowserTicket(tokenStr string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if !HasAudience(claims, BrowserTicketAudience) {
+		return nil, errors.New("not a browser ticket")
 	}
 	return claims, nil
 }

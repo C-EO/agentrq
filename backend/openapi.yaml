@@ -37,6 +37,7 @@ tags:
   - name: Workflows
   - name: Push
   - name: Telemetry
+  - name: Browser
   - name: Streaming
 
 paths:
@@ -1938,6 +1939,52 @@ paths:
         '204': { description: Recorded }
         '403': { $ref: '#/components/responses/AccessDenied' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  # ── Browser ─────────────────────────────────────────────────────────────────
+  /browser/ticket:
+    post:
+      tags: [Browser]
+      summary: Mint a ticket for the browser socket
+      description: |
+        For the AgentRQ Chrome extension, whose origin never receives the `at`
+        cookie. The ticket is good for one connect, within `expiresIn` seconds.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket, expiresIn]
+                properties:
+                  ticket: { type: string }
+                  expiresIn: { type: integer, description: Seconds. }
+
+  /browser/connect:
+    get:
+      tags: [Browser]
+      summary: The Chrome extension's WebSocket
+      description: |
+        Carries the shared sites' WebMCP tools and the calls to them, as JSON
+        frames. Authenticated by the ticket, not the cookie. Served by the
+        standard-library mux, because a WebSocket upgrade must hijack the
+        connection.
+      security: []
+      parameters:
+        - name: ticket
+          in: query
+          required: true
+          schema: { type: string }
+          description: From `POST /browser/ticket`.
+        - name: browser
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9-]{1,64}$' }
+          description: The extension's own id for this Chrome profile.
+      responses:
+        '101': { description: Switching protocols }
+        '400': { description: Bad browser id, or not a WebSocket upgrade }
+        '401': { description: Missing or invalid ticket }
 
   # ── Streaming ───────────────────────────────────────────────────────────────
   /events/stream:

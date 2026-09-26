@@ -37,6 +37,7 @@ type (
 		EventController
 		MemoryController
 		SkillController
+		SiteShareController
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController
