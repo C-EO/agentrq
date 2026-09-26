@@ -187,7 +187,7 @@ what it found. A background check that finds nothing stays silent.
 > that check:
 >
 > ```sh
-> curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
+> curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit --force
 > ```
 >
 > Windows and Linux are unaffected and update themselves normally.
