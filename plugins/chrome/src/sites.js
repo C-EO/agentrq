@@ -5,12 +5,12 @@
  * Site tools in the worker: which pages offer tools, telling the server about
  * the shared ones, and running the calls it sends.
  */
-import { getServerUrl, originPattern } from './settings.js'
+import { ALL_SITES, getServerUrl, originPattern } from './settings.js'
 import { listShares, reconcile, refused, remember } from './shares.js'
 import { createSocket } from './socket.js'
 import { createTabs } from './tabs.js'
 
-export const ALL_SITES = ['https://*/*', 'http://*/*']
+export { ALL_SITES }
 export const TOOL_WAIT = 20_000
 const MATCHES = ['https://*/*', 'http://localhost/*']
 const SCRIPT_IDS = ['agentrq-bridge', 'agentrq-observer']
@@ -69,7 +69,29 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
     announce(origin, (await listShares(chrome))[origin])
   }
 
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  // What the popup's strip shows: the front tab's site, its tools, and the
+  // workspace it is shared with.
+  const popupState = async () => {
+    const [front] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    const entry = front && tabs.entry(front.id)
+    // A tab that has moved to another site keeps the old one's entry until
+    // that page says something; it offers nothing yet.
+    if (!entry?.tools.length || new URL(front.url).origin !== entry.origin) {
+      return { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null }
+    }
+    const share = (await listShares(chrome))[entry.origin]
+    return { origin: entry.origin, url: entry.url, tools: entry.tools, toolCount: entry.tools.length, sharedWith: share?.workspaceId ?? null }
+  }
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Only the extension's own pages ask; a page's scripts send from its URL.
+    if (message?.type === 'popup-state' && sender.url?.startsWith(chrome.runtime.getURL(''))) {
+      popupState().then(sendResponse, (err) => {
+        log.error('AgentRQ: popup state:', err)
+        sendResponse(null)
+      })
+      return true
+    }
     const tabId = sender.tab?.id
     if (tabId === undefined || sender.frameId !== 0) return
     if (message?.type === 'site-tools') run(() => onSiteTools(tabId, sender.url, message.tools ?? []))

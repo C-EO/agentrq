@@ -8,7 +8,7 @@ import { initPopup } from '../src/popup.js'
 import { fakeChrome, settle } from './fake-chrome.js'
 import { fakeDocument } from './fake-document.js'
 
-const IDS = ['app', 'message', 'text', 'action', 'options', 'full']
+const IDS = ['app', 'message', 'text', 'action', 'options', 'full', 'strip', 'strip-text', 'strip-workspace', 'strip-action']
 const answer = (status) => async () => ({ status, ok: status < 300 })
 
 async function open({ status = 200, chrome = fakeChrome({ windows: [{ type: 'normal', focused: true }] }), fetchImpl } = {}) {
@@ -91,4 +91,11 @@ test('the popup sets itself up from its entry point', async () => {
   } finally {
     Object.assign(globalThis, saved)
   }
+})
+
+test('the site-tools strip sits above the app', async () => {
+  const { el } = await open()
+  assert.equal(el.app.hidden, false)
+  assert.equal(el.strip.hidden, false)
+  assert.equal(el['strip-action'].textContent, 'Turn on')
 })

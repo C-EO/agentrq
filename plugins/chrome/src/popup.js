@@ -3,11 +3,12 @@
 
 /**
  * The toolbar popup: the server's own web app in a frame at mobile width,
- * with the way out to full size in its header.
+ * with the way out to full size in its header and the site-tools strip under it.
  */
 import { openFullSize } from './fullsize.js'
 import { isSignedIn } from './session.js'
 import { getServerUrl, originPattern } from './settings.js'
+import { initStrip } from './strip.js'
 
 export async function initPopup({ doc, chrome, fetchImpl, close }) {
   const $ = (id) => doc.getElementById(id)
@@ -56,5 +57,5 @@ export async function initPopup({ doc, chrome, fetchImpl, close }) {
     frame.hidden = false
     frame.src = server
   }
-  return show()
+  await Promise.all([show(), initStrip({ doc, chrome, fetchImpl, server })])
 }

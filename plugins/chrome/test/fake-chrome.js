@@ -110,6 +110,9 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
       },
       sent: [],
       sendMessage: async (tabId, message) => void chrome.tabs.sent.push([tabId, structuredClone(message)]),
+      // The tab a test says is in front, if any.
+      active: null,
+      query: async () => (chrome.tabs.active ? [structuredClone(chrome.tabs.active)] : []),
       onActivated: makeEvent(),
       onRemoved: makeEvent(),
       onUpdated: makeEvent(),
@@ -125,8 +128,19 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
       onInstalled: makeEvent(),
       onMessage: makeEvent(),
       openOptionsPage: async () => void calls.push(['runtime.openOptionsPage']),
-      // Chrome sends a message as JSON, so undefined fields do not arrive.
-      sendMessage: async (message) => void calls.push(['runtime.sendMessage', JSON.parse(JSON.stringify(message))]),
+      getURL: (path) => `chrome-extension://agentrq/${path}`,
+      // Chrome sends a message as JSON, so undefined fields do not arrive. It
+      // is sent from the popup's page; a listener answers by returning true and
+      // calling sendResponse, and nobody answering is undefined.
+      sendMessage: (message) => {
+        const sent = JSON.parse(JSON.stringify(message))
+        calls.push(['runtime.sendMessage', sent])
+        const sender = { url: chrome.runtime.getURL('src/popup.html') }
+        return new Promise((resolve) => {
+          const answering = chrome.runtime.onMessage.listeners.map((fn) => fn(sent, sender, resolve))
+          if (!answering.includes(true)) resolve(undefined)
+        })
+      },
     },
   }
   for (const area of ['sync', 'local', 'session']) chrome.storage[area] = makeArea(area, onChanged)

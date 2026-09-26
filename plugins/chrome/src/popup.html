@@ -16,10 +16,11 @@
         --muted: #737373;
         --line: #e5e5e5;
         --button: #ffffff;
+        --strip: #f0fdf4;
       }
       /* The web app's own neutrals, so the header reads as part of it. */
       @media (prefers-color-scheme: dark) {
-        :root { --bg: #121212; --fg: #e5e5e5; --muted: #a3a3a3; --line: #262626; --button: #1c1c1c; }
+        :root { --bg: #121212; --fg: #e5e5e5; --muted: #a3a3a3; --line: #262626; --button: #1c1c1c; --strip: #0f1f15; }
       }
       /* The popup takes its size from the page: iPhone 17 Pro Max's width, and
          the 600px that is the tallest Chrome lets a popup be. */
@@ -35,6 +36,11 @@
       #message p { margin: 0 0 16px; }
       #message button { padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--button); color: var(--fg); font: inherit; font-weight: 600; cursor: pointer; }
       #options { display: block; margin-top: 12px; color: var(--muted); }
+      #strip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--strip); flex: 0 0 auto; }
+      #strip-text { flex: 1 1 auto; min-width: 0; }
+      #strip select, #strip button { flex: 0 0 auto; height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--button); color: var(--fg); font: inherit; }
+      #strip select { max-width: 140px; }
+      #strip button { font-weight: 600; cursor: pointer; }
       [hidden] { display: none !important; }
     </style>
   </head>
@@ -43,6 +49,11 @@
       <strong>AgentRQ</strong>
       <button id="full" type="button" title="Open in a full-size tab">Full size</button>
     </header>
+    <div id="strip" role="status" hidden>
+      <span id="strip-text"></span>
+      <select id="strip-workspace" aria-label="Workspace" hidden></select>
+      <button id="strip-action" type="button" hidden></button>
+    </div>
     <main>
       <iframe id="app" title="AgentRQ" allow="clipboard-read; clipboard-write; microphone; fullscreen" hidden></iframe>
       <section id="message" hidden>

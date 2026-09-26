@@ -4,4 +4,4 @@
 // The options page's entry point. Everything it does is in options.js.
 import { initOptions } from './options.js'
 
-initOptions(globalThis.document, globalThis.chrome)
+initOptions(globalThis.document, globalThis.chrome, (...args) => globalThis.fetch(...args))

@@ -16,6 +16,16 @@
       p { margin: 8px 0 0; }
       #status { min-height: 1.5em; }
       #status.error { color: #c0262d; }
+      section { margin-top: 24px; padding-top: 16px; border-top: 1px solid #8884; }
+      h2 { font-size: 14px; margin: 0 0 8px; }
+      label.check { display: flex; gap: 8px; align-items: center; }
+      label.check input { width: auto; margin: 0; }
+      .hint { color: GrayText; font-size: 13px; }
+      ul { list-style: none; margin: 8px 0 0; padding: 0; }
+      li { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+      li span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      li span:nth-child(2) { color: GrayText; }
+      [hidden] { display: none !important; }
     </style>
   </head>
   <body>
@@ -28,6 +38,17 @@
       </div>
       <p id="status" role="status"></p>
     </form>
+    <section>
+      <h2>Websites' tools</h2>
+      <label class="check"><input id="detect" type="checkbox" /> Notice websites that offer tools to agents</label>
+      <p class="hint">
+        This needs access to every site, but only to see whether a page offers WebMCP tools. Nothing leaves your
+        browser until you share a site with a workspace from the popup.
+      </p>
+      <h2 style="margin-top: 16px">Shared websites</h2>
+      <p id="none" hidden>No websites are shared.</p>
+      <ul id="shares"></ul>
+    </section>
     <script type="module" src="options-page.js"></script>
   </body>
 </html>

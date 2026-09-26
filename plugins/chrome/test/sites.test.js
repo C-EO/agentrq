@@ -258,3 +258,37 @@ test('shares removed from storage altogether withdraw and close too', async () =
   assert.deepEqual(sent('withdraw'), [{ type: 'withdraw', origin: GH }])
   assert.equal(ws().closed, true)
 })
+
+test('the popup is told what the front tab offers and who it is shared with', async () => {
+  const { chrome, page } = await start({ shares: stored })
+  const ask = () => chrome.runtime.sendMessage({ type: 'popup-state' })
+  assert.deepEqual(await ask(), { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null })
+
+  chrome.tabs.active = { id: 3, url: `${GH}/me` }
+  page(3, `${GH}/me`, [hi, del])
+  await settle()
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/me`, tools: [hi, del], toolCount: 2, sharedWith: 'ws1' })
+
+  page(4, 'https://b.com/', [del])
+  chrome.tabs.active = { id: 4, url: 'https://b.com/' }
+  assert.deepEqual(await ask(), { origin: 'https://b.com', url: 'https://b.com/', tools: [del], toolCount: 1, sharedWith: null })
+
+  // The tab has moved on to a page that has not said anything.
+  chrome.tabs.active = { id: 4, url: 'https://c.com/' }
+  assert.equal((await ask()).origin, null)
+})
+
+test('a website’s page cannot ask for the popup’s state, and a failure to find the front tab answers null', async () => {
+  const { chrome, errors } = await start()
+  const fromPage = (url) => chrome.runtime.onMessage.fire({ type: 'popup-state' }, { tab: { id: 1 }, frameId: 0, url })[0]
+  assert.equal(fromPage(`${GH}/`), undefined)
+  assert.equal(fromPage(undefined), undefined)
+  // The popup's page opened in a tab still has the extension's URL.
+  assert.equal(fromPage(chrome.runtime.getURL('src/popup.html')), true)
+
+  chrome.tabs.query = async () => {
+    throw new Error('no window')
+  }
+  assert.equal(await chrome.runtime.sendMessage({ type: 'popup-state' }), null)
+  assert.match(String(errors.at(-1)), /no window/)
+})
