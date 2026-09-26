@@ -458,14 +458,31 @@ describe('the tools that only WebMCP can offer', () => {
     expect(result).toEqual(page);
   });
 
-  it('moves the user to a page and confirms where it went', async () => {
+  it('moves the user to a page and reports where they landed', async () => {
     const navigate = vi.fn().mockResolvedValue(undefined);
-    const catalogue = build({ navigate });
+    // A guard may send them somewhere else; the answer is the page, not the ask.
+    const landed = { path: '/login', params: {}, query: {} };
+    const catalogue = build({ navigate, currentPage: () => landed });
 
     const result = await catalogue.find((t) => t.name === 'navigate').execute({ path: '/events' }, {});
 
     expect(navigate).toHaveBeenCalledWith('/events');
-    expect(result).toEqual({ navigatedTo: '/events' });
+    expect(result).toEqual({ navigatedTo: '/events', page: landed });
+  });
+
+  it.each([
+    ['a full URL', 'https://evil.example/'],
+    ['a protocol-relative URL', '//evil.example/'],
+    ['a relative path', 'events'],
+    ['no path at all', undefined],
+  ])('refuses %s without moving the user', async (_label, path) => {
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    const catalogue = build({ navigate });
+
+    await expect(catalogue.find((t) => t.name === 'navigate').execute({ path }, {})).rejects.toThrow(
+      'in-app path beginning with "/"'
+    );
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('lets an API failure reach the agent rather than swallowing it', async () => {

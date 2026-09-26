@@ -67,7 +67,8 @@ function tool({ name, description, properties = {}, required = [], readOnly = fa
  *
  * @param {object} deps
  * @param {object} deps.api the `src/api.js` module, or a stand-in
- * @param {(path: string) => Promise<unknown>} deps.navigate router push
+ * @param {(path: string) => Promise<unknown>} deps.navigate router push; rejects a
+ *        path that matches no route
  * @param {() => { path: string, params: object, query: object }} deps.currentPage
  *        where the person is right now
  * @returns {Array<object>} descriptors ready for `registerTools`
@@ -87,14 +88,32 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Open a page in the AgentRQ interface, moving the user there. Paths are the ones in the ' +
-        'address bar, for example "/", "/tasks/ongoing", "/workspaces/<workspaceId>/board", ' +
-        '"/workspaces/<workspaceId>/tasks/<taskId>", "/events", "/workflows".',
-      properties: { path: str('An in-app path beginning with "/".') },
+        'Open a page in the AgentRQ interface, moving the user there. Give the in-app path as it ' +
+        'appears in the address bar (no origin), optionally with a ?query. IDs are base62, taken ' +
+        'from getCurrentPage or the list tools. Pages:\n' +
+        '- "/" home: every workspace.\n' +
+        '- "/tasks/<filter>" tasks across all workspaces; <filter> is active, notstarted, pending ' +
+        '(waiting on the user), ongoing, completed or scheduled. Append "/<workspaceId>/<taskId>" ' +
+        'to open a task beside that list, and "/instances" after it for a scheduled task\'s runs.\n' +
+        '- "/workspaces/<workspaceId>" a workspace\'s task list; "?filter=<filter>" takes the same ' +
+        'values. Below it: "/board" (kanban), "/analytics", "/settings", "/tasks/<taskId>", ' +
+        '"/tasks/<taskId>/instances", "/tasks/<taskId>/edit" and "/tasks/new". "/settings" takes ' +
+        '"?tab=" general, setup, automations, notifications, memories, skills, slack or danger.\n' +
+        '- "/events", "/events/<eventId>"; "/workflows", "/workflows/<workflowId>".\n' +
+        '- "/machines", "/machines/<machineId>"; "/sessions/<sessionId>" a running agent\'s terminal.\n' +
+        '- "/extensions", "/extensions/<name>/<pageId>" (desktop app only).\n' +
+        'A path that matches none of these is refused. Returns the page the user ended up on.',
+      properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
+        // In-app only: "//host" would read as another origin, and a full URL is
+        // not a route. Moving the user off the app is not this tool's to do.
+        if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
+          throw new Error(`navigate takes an in-app path beginning with "/", not ${JSON.stringify(path)}`)
+        }
         await navigate(path)
-        return { navigatedTo: path }
+        // Where they landed, not what was asked: a guard may have redirected.
+        return { navigatedTo: path, page: currentPage() }
       },
     }),
 

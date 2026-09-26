@@ -40,6 +40,11 @@ looking at and the IDs in the URL, which is what turns "reply to this task" into
 a real call. Without it the agent would have to ask you for IDs you should never
 have to read.
 
+`navigate` takes you to a page. Its description maps every page in the app,
+query parameters included (a workspace's `?filter=`, its settings' `?tab=`), so
+an agent can build the path itself. It refuses anything that isn't an in-app
+path, or that matches no page, and answers with the page you actually landed on.
+
 Two things in the interface are deliberately **not** tools:
 
 - **Attachments.** Their URLs are rendered by the page and fetched by the

@@ -48,7 +48,14 @@ export async function connectWebMCP({ api, router, context }) {
 
   const tools = createToolCatalogue({
     api,
-    navigate: (path) => router.push(path),
+    // The route table has no catch-all, so an unknown path would push the
+    // person onto a blank page; refusing it tells the agent its guess was wrong.
+    navigate: (path) => {
+      if (!router.resolve(path).matched.length) {
+        return Promise.reject(new Error(`No page at ${path}; see the navigate tool's description for the routes`))
+      }
+      return router.push(path)
+    },
     // Read at call time, not at registration: the person moves around the app
     // while the tools stay registered, and a snapshot would answer for the page
     // they happened to be on when they signed in.
