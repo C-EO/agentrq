@@ -33,6 +33,9 @@ LET YOUR AGENTS USE WEBSITES' TOOLS
 CLAUDE CODE TERMINALS IN THE EXTENSION
 • Open the live Claude Code terminal an agent is working in, right in the popup, to watch it or take over. Works for agents on any machine you have connected with agentrqd, AgentRQ's agent runner.
 
+CONTROL AGENTS WITH AGENT CLIENT PROTOCOL (ACP)
+• Claude Code, Codex, Antigravity, Hermes, OpenClaw and more, all in a single control plane.
+
 ONE CLICK FROM YOUR TOOLBAR
 • A mobile-sized popup that is always there; "Full size" or Alt+Shift+F opens AgentRQ in a tab when you want the room.
 • Uses your existing AgentRQ sign-in, in light or dark.
@@ -41,6 +44,8 @@ ONE CLICK FROM YOUR TOOLBAR
 Keyboard shortcuts (change them at chrome://extensions/shortcuts):
 • Alt+Shift+A: open AgentRQ
 • Alt+Shift+F: open AgentRQ full size
+
+Open source: https://github.com/agentrq/agentrq
 ```
 
 **Category** — Productivity → Workflow & Planning
