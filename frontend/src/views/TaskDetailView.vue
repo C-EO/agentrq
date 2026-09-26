@@ -437,7 +437,7 @@
                        <svg v-if="m.metadata.status === 'accept'" class="w-3.5 h-3.5 text-gray-700 dark:text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
                        <svg v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                        <span class="text-[10px] font-semibold flex-1 min-w-0 truncate" :class="m.metadata.status === 'accept' ? 'text-gray-700 dark:text-zinc-100' : 'text-red-700 dark:text-red-500'">
-                         {{ m.metadata.status === 'accept' ? 'Answered' : m.metadata.status === 'decline' ? 'Declined' : 'Cancelled' }}
+                         {{ m.metadata.status === 'accept' ? 'Answered' : m.metadata.status === 'decline' ? 'Declined' : 'Cancelled' }}<template v-if="!m._detailsExpanded && elicitAnswerSummary(m)"><span class="font-normal text-gray-400 dark:text-zinc-500"> — </span><span class="font-normal text-gray-600 dark:text-zinc-300">{{ elicitAnswerSummary(m) }}</span></template>
                        </span>
                        <svg v-if="m.metadata.content" class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                      </div>
@@ -861,6 +861,7 @@ import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
+import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary } from '../composables/useElicitAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import {
@@ -1433,19 +1434,6 @@ async function submitElicitation(m, action) {
   } catch (err) {
     notifyError('Failed to send response: ' + err.message);
   }
-}
-
-// Once resolved, m.metadata.content holds the answer keyed by schema property
-// name — look up that property's own title for a human-readable label.
-function elicitAnswerLabel(m, key) {
-  return m.metadata?.requestedSchema?.properties?.[key]?.title || key;
-}
-
-function formatElicitAnswerValue(value) {
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '(none)';
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (value === undefined || value === null || value === '') return '(empty)';
-  return String(value);
 }
 
 async function updateStatus(newStatus) {
