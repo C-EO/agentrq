@@ -19,6 +19,8 @@ opened full size in a tab when you want the room.
 | Open AgentRQ | Click the toolbar button, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> |
 | Open full size, in a tab | **Full size** in the header, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, or right-click the button → **Open full size** |
 | Use a self-hosted server | Right-click → **Options** |
+| Let your agents use a website's tools | Turn on detection in the popup, then **Share** a site that lights up the icon |
+| Stop sharing a website | **Stop sharing** in the popup, or **Stop** in Options → **Shared websites** |
 
 Chrome stops a popup at 800×600 and closes it when you click elsewhere, so the
 popup is 440×600; full size is the way to more.
@@ -26,6 +28,22 @@ popup is 440×600; full size is the way to more.
 **Signing in happens in a tab.** Google and GitHub will not show their sign-in
 inside another page, so a signed-out popup offers **Sign in**, which opens a
 tab. Once signed in there, the popup is signed in too.
+
+## Websites' tools
+
+Some websites offer tools to AI agents through
+[WebMCP](https://github.com/webmachinelearning/webmcp). With detection on, the
+toolbar icon shows a green count on a site that offers some, and the popup
+offers to share that site with one of your workspaces. Its agents can then list
+the site's tools and call them in your own signed-in Chrome; any tool the site
+does not mark read-only waits for your approval in the task first. A shared
+site's tab that is closed is reopened in the background when a call needs it.
+
+Detection needs access to every site, and it is off until you turn it on. It
+only notices what a page registers with Chrome's own `document.modelContext`
+(the extension never adds one), and only in the top frame. Nothing is sent to
+AgentRQ until you share a site, and then only that site's tools, its last
+address, and the results of the calls your agents make.
 
 ## How it works
 
@@ -41,8 +59,10 @@ an extension page, and Chrome sends it the sign-in cookie only when the
 extension has access to that site. Without it the app shows as signed out
 however signed in the browser is. A self-hosted server's access is asked for
 when you save it in Options, and given back when you switch away. The other
-permissions are `contextMenus` for the right-click menu and `storage` for your
-settings.
+permissions are `contextMenus` for the right-click menu, `storage` for your
+settings and shared sites, and `scripting` and `tabs` for site tools: to add
+the detection script to pages once you allow it, and to find, and reopen, the
+tab a call needs.
 
 ## Publishing
 

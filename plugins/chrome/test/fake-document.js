@@ -2,10 +2,14 @@
 // This notice may not be modified or removed.
 
 // Just enough of a page for the popup and options scripts: elements by id,
-// with their properties and click/submit listeners.
+// with their properties, children and click/submit/change listeners.
 
-function element() {
+function element(tagName = 'div') {
   return {
+    tagName,
+    children: [],
+    checked: false,
+    type: '',
     value: '',
     textContent: '',
     className: '',
@@ -16,10 +20,16 @@ function element() {
     addEventListener(type, fn) {
       this.events[type] = fn
     },
+    append(...children) {
+      this.children.push(...children)
+    },
+    replaceChildren(...children) {
+      this.children = children
+    },
   }
 }
 
 export function fakeDocument(ids) {
   const elements = Object.fromEntries(ids.map((id) => [id, element()]))
-  return { elements, getElementById: (id) => elements[id] }
+  return { elements, getElementById: (id) => elements[id], createElement: (tag) => element(tag) }
 }

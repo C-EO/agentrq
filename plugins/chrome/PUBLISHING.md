@@ -78,7 +78,10 @@ Then:
 ## 3. Every release after that
 
 1. Raise `version` in **both** `manifest.json` and `package.json` (a test
-   fails if they differ) and merge it.
+   fails if they differ) and merge it. A release that adds a permission or
+   collects something new also needs the dashboard's **Privacy practices** tab
+   updated by hand from [`store/LISTING.md`](store/LISTING.md) first: the upload
+   does not carry it, and review rejects a mismatch.
 2. Tag the merge and push the tag:
 
    ```sh

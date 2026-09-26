@@ -12,6 +12,9 @@
 // The hosted instance, the same default as the desktop app.
 export const DEFAULT_SERVER_URL = 'https://app.agentrq.com'
 
+// Every site: what noticing a website's tools needs, and only while it is on.
+export const ALL_SITES = ['https://*/*', 'http://*/*']
+
 const LOCAL_HOST = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/
 
 // The host of a bare address, without its port: `[::1]:3000` is `[::1]`.
