@@ -40,6 +40,24 @@ test('results go to the service worker, answers and errors alike', () => {
   ])
 })
 
+test('the page unloading tells the service worker; a return from the back/forward cache re-announces its tools', () => {
+  const { page, post, sent } = bridged()
+  const show = (persisted) => page.window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }))
+  // Loaded afresh, and restored before it had announced anything.
+  show(false)
+  show(true)
+  page.window.dispatchEvent(new Event('pagehide'))
+  post({ type: 'tools', tools: [{ name: 'search' }] })
+  page.window.dispatchEvent(new Event('pagehide'))
+  show(true)
+  assert.deepEqual(sent(), [
+    { type: 'site-gone' },
+    { type: 'site-tools', tools: [{ name: 'search' }] },
+    { type: 'site-gone' },
+    { type: 'site-tools', tools: [{ name: 'search' }] },
+  ])
+})
+
 test('a call from the service worker goes to the observer', () => {
   const { chrome, observer } = bridged()
   chrome.runtime.onMessage.fire({ type: 'site-call', callId: 'c1', tool: 'search', arguments: { q: 'x' } })

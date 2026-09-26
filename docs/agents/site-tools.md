@@ -10,5 +10,6 @@ Workspace agents list and call the WebMCP tools of websites the human shares fro
 - **Calls are not relayed across backend instances**, as with terminals. A call that lands on an instance other than the browser's fails with "try again".
 - **The socket `/api/v1/browser/connect` lives on the stdlib mux**, with a ticket in the query rather than the cookie. Never add it to Fiber as well: the mux shadows the route and the request hangs.
 - **Site content is data, not instructions.** Tool descriptions and results come from a third party, and the tool descriptions and server instructions say so.
+- **A call fails when its page unloads, on the bridge's `pagehide`, matched by `sender.documentId`.** Not `tabs.onUpdated` 'loading', which pushState and hash changes fire too, before their results; and after a cross-site navigation the old page is no longer frame 0.
 - Content scripts are classic scripts (no `export`). Tests run them with `vm.runInContext(src, ctx, { filename })`, which Node's coverage counts, so no build step is needed.
 - `cd plugins/chrome && npm run verify:site-tools` drives the whole chain in real Chromium: a local backend, a stubbed native page, approval, and reopening a closed tab.

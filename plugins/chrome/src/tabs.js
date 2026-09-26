@@ -11,8 +11,8 @@ export const BADGE_COLOR = '#16a34a'
 export const CALL_WAIT = 60_000
 
 export function createTabs(chrome, timers = globalThis) {
-  const tabs = new Map() // tabId → { origin, url, tools, used }
-  const calls = new Map() // callId → { tabId, settle }
+  const tabs = new Map() // tabId → { origin, url, tools, used, documentId }
+  const calls = new Map() // callId → { tabId, documentId, settle }
   const waiters = new Set() // { origin, tool, resolve }
   let clock = 0
 
@@ -24,9 +24,9 @@ export function createTabs(chrome, timers = globalThis) {
     chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR })
   }
 
-  const set = (tabId, origin, url, tools) => {
+  const set = (tabId, origin, url, tools, documentId) => {
     const used = tabs.get(tabId)?.used ?? 0
-    const entry = { origin, url, tools, used }
+    const entry = { origin, url, tools, used, documentId }
     tabs.set(tabId, entry)
     badge(tabId)
     for (const w of waiters) if (has(entry, w.origin, w.tool)) w.resolve(tabId)
@@ -44,6 +44,24 @@ export function createTabs(chrome, timers = globalThis) {
     for (const [callId, call] of calls) {
       if (call.tabId === tabId) call.settle({ error: `the ${entry.origin} tab was closed during the call` })
     }
+  }
+
+  /**
+   * The page documentId in tabId has unloaded. Its pending calls fail, and the tab
+   * offers nothing until its next page announces. After a cross-site
+   * navigation that page may have announced first, so only its own entry goes.
+   */
+  const gone = (tabId, documentId) => {
+    const entry = tabs.get(tabId)
+    if (!entry) return
+    for (const call of calls.values()) {
+      if (call.tabId === tabId && call.documentId === documentId) {
+        call.settle({ error: `the ${entry.origin} page navigated away during the call` })
+      }
+    }
+    if (entry.documentId !== documentId) return
+    entry.tools = []
+    badge(tabId)
   }
 
   const toolsFor = (tabId) => tabs.get(tabId)?.tools ?? []
@@ -85,7 +103,7 @@ export function createTabs(chrome, timers = globalThis) {
         calls.delete(callId)
         resolve(result)
       }
-      calls.set(callId, { tabId, settle })
+      calls.set(callId, { tabId, documentId: tabs.get(tabId)?.documentId, settle })
     })
 
   /** A result from tabId; one from any other tab is not this call's. */
@@ -94,5 +112,5 @@ export function createTabs(chrome, timers = globalThis) {
     if (call?.tabId === tabId) call.settle(result)
   }
 
-  return { set, touch, remove, toolsFor, bestTab, waitForTool, expect, deliver, badge, entry: (tabId) => tabs.get(tabId) }
+  return { set, touch, remove, gone, toolsFor, bestTab, waitForTool, expect, deliver, badge, entry: (tabId) => tabs.get(tabId) }
 }

@@ -29,10 +29,12 @@ const start = async ({ shares = {}, granted = [], registered = [] } = {}) => {
   const ws = () => sockets.at(-1)
   const sent = (type) => ws().sent.filter((f) => f.type === type)
   // A page's bridge telling the worker what the page offers.
-  const page = (tabId, url, tools, frameId = 0) =>
-    chrome.runtime.onMessage.fire({ type: 'site-tools', tools }, { tab: { id: tabId }, frameId, url })
+  const page = (tabId, url, tools, frameId = 0, documentId = `doc${tabId}`) =>
+    chrome.runtime.onMessage.fire({ type: 'site-tools', tools }, { tab: { id: tabId }, frameId, url, documentId })
+  const gone = (tabId, frameId = 0, documentId = `doc${tabId}`) =>
+    chrome.runtime.onMessage.fire({ type: 'site-gone' }, { tab: { id: tabId }, frameId, documentId })
   const answer = (tabId, message) => chrome.runtime.onMessage.fire({ type: 'site-result', ...message }, { tab: { id: tabId }, frameId: 0 })
-  return { chrome, timers, tabs, sockets, ws, sent, page, answer, errors }
+  return { chrome, timers, tabs, sockets, ws, sent, page, gone, answer, errors }
 }
 
 const stored = { [GH]: { workspaceId: 'ws1', lastUrl: `${GH}/me`, tools: [hi], alwaysAllow: [], pending: false } }
@@ -197,6 +199,31 @@ test('with no tab of the site open, its last page opens in the background and th
   answer(12, { callId: 'c1', text: 'hi' })
   await settle()
   assert.deepEqual(sent('result'), [{ type: 'result', callId: 'c1', text: 'hi' }])
+})
+
+test('a page navigating away fails its call at once, and the next call waits for the new page', async () => {
+  const { chrome, ws, sent, page, gone, answer } = await start({ shares: stored })
+  ws().open()
+  page(7, `${GH}/a`, [hi])
+  await settle()
+  ws().receive(call)
+  await settle()
+  // A cross-site navigation: the old page is no longer frame 0 when it unloads.
+  gone(7, 4)
+  await settle()
+  assert.deepEqual(sent('result'), [{ type: 'result', callId: 'c1', error: 'the https://github.com page navigated away during the call' }])
+  assert.equal(chrome.action.badges.get(7).text, '')
+
+  // The share keeps its last-seen tools for announcing.
+  assert.deepEqual((await listShares(chrome))[GH].tools, [hi])
+  page(7, `${GH}/b`, [hi], 0, 'doc7b')
+  await settle()
+  ws().receive({ ...call, callId: 'c2' })
+  await settle()
+  assert.equal(chrome.tabs.sent.at(-1)[0], 7)
+  answer(7, { callId: 'c2', text: 'hi' })
+  await settle()
+  assert.deepEqual(sent('result').at(-1), { type: 'result', callId: 'c2', text: 'hi' })
 })
 
 test('every way a call fails is reported to the server', async () => {

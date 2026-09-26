@@ -20,8 +20,12 @@
     } catch {}
   }
 
+  // The page's last tools, for a return from the back/forward cache: its
+  // scripts do not run again, so the observer does not announce again.
+  let tools = null
+
   const relayed = new Map([
-    ['tools', ({ tools }) => ({ type: 'site-tools', tools })],
+    ['tools', (message) => (tools = { type: 'site-tools', tools: message.tools })],
     ['result', ({ callId, text, error }) => ({ type: 'site-result', callId, text, error })],
   ])
 
@@ -34,6 +38,14 @@
     }
     const relay = message?.source === 'agentrq-observer' && relayed.get(message.type)
     if (relay) send(relay(message))
+  })
+
+  // The page unloading fails the calls still running in it. It goes the way
+  // results go, so a result sent before it, like a navigate tool's, arrives first.
+  // Same-document navigations keep the page and its tools, and fire nothing.
+  window.addEventListener('pagehide', () => send({ type: 'site-gone' }))
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted && tools) send(tools)
   })
 
   chrome.runtime.onMessage.addListener((message) => {
