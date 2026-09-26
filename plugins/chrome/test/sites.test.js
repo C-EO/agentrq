@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { install } from '../src/extension.js'
-import { listShares, reconcile, share, unshare } from '../src/shares.js'
+import { lastRefusal, listShares, reconcile, share, unshare } from '../src/shares.js'
 import { ALL_SITES, TOOL_WAIT } from '../src/sites.js'
 import { fakeChrome, fakeTimers, fakeWebSocketClass, settle } from './fake-chrome.js'
 
@@ -155,6 +155,21 @@ test('the server’s list reconciles the shares, and a refusal of a new share dr
   await settle()
   assert.deepEqual(Object.keys(await listShares(chrome)), [GH])
   assert.match(String(errors.at(-1)[0]), /refused https:\/\/new.com: no such workspace/)
+  assert.equal(await lastRefusal(chrome, 'https://new.com'), 'no such workspace')
+
+  // Sharing again announces again, and that clears the old reason.
+  await share(chrome, 'https://new.com', 'ws1', 'https://new.com/')
+  await settle()
+  assert.equal(await lastRefusal(chrome, 'https://new.com'), null)
+})
+
+test('the popup is told why the server refused the front tab’s site', async () => {
+  const { chrome, page } = await start({ shares: stored })
+  chrome.tabs.active = { id: 3, url: `${GH}/me` }
+  page(3, `${GH}/me`, [hi])
+  await settle()
+  await chrome.storage.local.set({ [`refused:${GH}`]: 'too many tools' })
+  assert.equal((await chrome.runtime.sendMessage({ type: 'popup-state' })).refusal, 'too many tools')
 })
 
 const call = { type: 'call', callId: 'c1', origin: GH, tool: 'getGreeting', arguments: { who: 'me' } }
@@ -288,16 +303,16 @@ test('shares removed from storage altogether withdraw and close too', async () =
 test('the popup is told what the front tab offers and who it is shared with', async () => {
   const { chrome, page } = await start({ shares: stored })
   const ask = () => chrome.runtime.sendMessage({ type: 'popup-state' })
-  assert.deepEqual(await ask(), { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null })
+  assert.deepEqual(await ask(), { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null, refusal: null })
 
   chrome.tabs.active = { id: 3, url: `${GH}/me` }
   page(3, `${GH}/me`, [hi, del])
   await settle()
-  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/me`, tools: [hi, del], toolCount: 2, sharedWith: 'ws1' })
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/me`, tools: [hi, del], toolCount: 2, sharedWith: 'ws1', refusal: null })
 
   page(4, 'https://b.com/', [del])
   chrome.tabs.active = { id: 4, url: 'https://b.com/' }
-  assert.deepEqual(await ask(), { origin: 'https://b.com', url: 'https://b.com/', tools: [del], toolCount: 1, sharedWith: null })
+  assert.deepEqual(await ask(), { origin: 'https://b.com', url: 'https://b.com/', tools: [del], toolCount: 1, sharedWith: null, refusal: null })
 
   // The tab has moved on to a page that has not said anything.
   chrome.tabs.active = { id: 4, url: 'https://c.com/' }
@@ -305,9 +320,9 @@ test('the popup is told what the front tab offers and who it is shared with', as
 
   // A shared site is still reported while its page offers nothing.
   chrome.tabs.active = { id: 4, url: `${GH}/other` }
-  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/other`, tools: [], toolCount: 0, sharedWith: 'ws1' })
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/other`, tools: [], toolCount: 0, sharedWith: 'ws1', refusal: null })
   chrome.tabs.active = { id: 9, url: `${GH}/new` }
-  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/new`, tools: [], toolCount: 0, sharedWith: 'ws1' })
+  assert.deepEqual(await ask(), { origin: GH, url: `${GH}/new`, tools: [], toolCount: 0, sharedWith: 'ws1', refusal: null })
   // A tab whose URL Chrome withholds.
   chrome.tabs.active = { id: 9 }
   assert.equal((await ask()).origin, null)

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { browserId, listShares, reconcile, refused, remember, share, unshare } from '../src/shares.js'
+import { browserId, clearRefusal, isRefusalChange, lastRefusal, listShares, reconcile, refused, remember, share, unshare } from '../src/shares.js'
 import { fakeChrome } from './fake-chrome.js'
 
 const GH = 'https://github.com'
@@ -88,4 +88,23 @@ test('a refusal drops a share the server never had, and only that', async () => 
   await refused(chrome, 'https://kept.com')
   await refused(chrome, 'https://never.shared')
   assert.deepEqual(Object.keys(await listShares(chrome)).sort(), [GH, 'https://kept.com'])
+})
+
+test('a refusal keeps its reason per site until it is cleared', async () => {
+  const chrome = fakeChrome()
+  assert.equal(await lastRefusal(chrome, GH), null)
+
+  await refused(chrome, GH, 'too long')
+  await refused(chrome, 'https://b.com', 'no such workspace')
+  assert.equal(await lastRefusal(chrome, GH), 'too long')
+  assert.equal(await lastRefusal(chrome, 'https://b.com'), 'no such workspace')
+
+  await clearRefusal(chrome, GH)
+  assert.equal(await lastRefusal(chrome, GH), null)
+  assert.equal(await lastRefusal(chrome, 'https://b.com'), 'no such workspace')
+})
+
+test('only a refusal key is a refusal change', () => {
+  assert.equal(isRefusalChange({ [`refused:${GH}`]: {} }), true)
+  assert.equal(isRefusalChange({ shares: {}, browserId: {} }), false)
 })

@@ -26,7 +26,12 @@ function makeArea(name, onChanged) {
       }
       onChanged.fire(changes, name)
     },
-    remove: async (key) => void delete data[key],
+    remove: async (key) => {
+      if (!(key in data)) return
+      const changes = { [key]: { oldValue: structuredClone(data[key]) } }
+      delete data[key]
+      onChanged.fire(changes, name)
+    },
   }
 }
 

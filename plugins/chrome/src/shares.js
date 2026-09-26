@@ -39,13 +39,28 @@ export async function remember(chrome, origin, lastUrl, tools) {
   return true
 }
 
-/** The server refused an announce: a share it never had is not a share. */
-export async function refused(chrome, origin) {
+/**
+ * The server refused an announce: a share it never had is not a share. Its
+ * reason is kept for the popup, under a key of its own per site so two sites'
+ * refusals cannot overwrite each other.
+ */
+export async function refused(chrome, origin, error) {
+  await chrome.storage.local.set({ [refusalKey(origin)]: error })
   const shares = await read(chrome)
   if (!shares[origin]?.pending) return
   delete shares[origin]
   await write(chrome, shares)
 }
+
+const refusalKey = (origin) => `refused:${origin}`
+
+/** Why the server refused the site's latest announce, or null. */
+export const lastRefusal = async (chrome, origin) => (await chrome.storage.local.get(refusalKey(origin)))[refusalKey(origin)] ?? null
+
+/** A new announce supersedes the last refusal; a new one comes back as its answer. */
+export const clearRefusal = (chrome, origin) => chrome.storage.local.remove(refusalKey(origin))
+
+export const isRefusalChange = (changes) => Object.keys(changes).some((key) => key.startsWith('refused:'))
 
 /** This browser's id on the server, made once. */
 export async function browserId(chrome) {
