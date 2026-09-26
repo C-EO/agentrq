@@ -169,9 +169,13 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     }),
     tool({
       name: 'archiveWorkspace',
-      description: 'Archive a workspace, hiding it from the default list without deleting anything.',
+      description:
+        'Archive a workspace, hiding it from the default list. Its tasks are kept, but the event ' +
+        'triggers and workflow steps that create tasks in it are deleted, and unarchiving does not ' +
+        'restore them.',
       properties: { workspaceId: WORKSPACE_ID },
       required: ['workspaceId'],
+      destructive: true,
       run: ({ workspaceId }) => api.archiveWorkspace(workspaceId),
     }),
     tool({

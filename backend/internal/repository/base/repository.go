@@ -28,6 +28,9 @@ type Repository interface {
 	ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error)
 	DeleteWorkspace(ctx context.Context, id int64, userID int64) error
 	UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+	// ArchiveWorkspace saves p, which carries its ArchivedAt, and deletes the
+	// triggers and workflow steps that create tasks in it, in one transaction.
+	ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
 
 	// Task
 	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
@@ -169,6 +172,9 @@ type Repository interface {
 	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
 	UpdateEventTrigger(ctx context.Context, id int64, userID int64, t model.EventTrigger) (model.EventTrigger, error)
 	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
+	// SystemDeleteOrphanedEventRouting deletes the triggers and workflow steps
+	// whose workspace is deleted or archived, returning how many rows went.
+	SystemDeleteOrphanedEventRouting(ctx context.Context) (int64, error)
 	ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error)
 
 	// Workflows
@@ -243,6 +249,29 @@ func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (mo
 	return p, nil
 }
 
+func (r *repository) ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&p).Error; err != nil {
+			return err
+		}
+		return deleteEventRouting(tx, p.ID)
+	})
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	return p, nil
+}
+
+// deleteEventRouting deletes the triggers and workflow steps that create tasks
+// in a workspace being deleted or archived. Either way nobody would see those
+// tasks, and a left-behind row is drawn and fanned out to forever.
+func deleteEventRouting(tx *gorm.DB, workspaceID int64) error {
+	if err := tx.Where("workspace_id = ?", workspaceID).Delete(&model.EventTrigger{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("workspace_id = ?", workspaceID).Delete(&model.WorkflowStep{}).Error
+}
+
 func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Delete everything that references any task in this workspace.
@@ -272,6 +301,9 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 			return err
 		}
 		if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
+			return err
+		}
+		if err := deleteEventRouting(tx, id); err != nil {
 			return err
 		}
 
@@ -1365,6 +1397,25 @@ func (r *repository) DeleteEvent(ctx context.Context, id int64, userID int64) er
 			Where("start_event_id = ? AND user_id = ?", id, userID).
 			Update("start_event_id", 0).Error
 	})
+}
+
+func (r *repository) SystemDeleteOrphanedEventRouting(ctx context.Context) (int64, error) {
+	var deleted int64
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		workspaceIDs := tx.Model(&model.Workspace{}).Select("id").Where("archived_at IS NULL")
+		for _, m := range []any{&model.EventTrigger{}, &model.WorkflowStep{}} {
+			res := tx.Where("workspace_id NOT IN (?)", workspaceIDs).Delete(m)
+			if res.Error != nil {
+				return res.Error
+			}
+			deleted += res.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // ── EventTriggers ──────────────────────────────────────────────────────────────

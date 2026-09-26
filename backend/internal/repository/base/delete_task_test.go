@@ -31,7 +31,7 @@ func deleteTaskDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -275,6 +275,8 @@ func TestDeleteWorkspace_RollsBackWhenAChildDeleteFails(t *testing.T) {
 		{"skill shares", &model.SkillShare{}},
 		{"skill files", &model.SkillFile{}},
 		{"site shares", &model.SiteShare{}},
+		{"event triggers", &model.EventTrigger{}},
+		{"workflow steps", &model.WorkflowStep{}},
 		{"tasks", &model.Task{}},
 	} {
 		t.Run(drop.name, func(t *testing.T) {
@@ -401,5 +403,219 @@ func TestDeleteWorkspace_LeavesOtherWorkspacesAlone(t *testing.T) {
 		if n != 1 {
 			t.Errorf("other workspace's %s: expected 1 row, got %d", c.what, n)
 		}
+	}
+}
+
+// A trigger or workflow step creating tasks in a deleted workspace has nowhere
+// left to create them. Left behind, the canvas drew it as "(deleted workspace)"
+// forever and every publish logged "workspace not found".
+func TestDeleteWorkspace_DeletesItsTriggersAndSteps(t *testing.T) {
+	db := deleteTaskDB(t)
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}); err != nil {
+		t.Fatalf("migrate workspace: %v", err)
+	}
+	now := time.Now()
+	otherWorkspace := int64(498041479541817346)
+	for _, id := range []int64{dtWorkspaceID, otherWorkspace} {
+		if err := db.Create(&model.Workspace{ID: id, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "w"}).Error; err != nil {
+			t.Fatalf("seed workspace: %v", err)
+		}
+	}
+	for i, ws := range []int64{dtWorkspaceID, otherWorkspace} {
+		id := int64(i + 1)
+		if err := db.Create(&model.EventTrigger{ID: id, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "t"}).Error; err != nil {
+			t.Fatalf("seed trigger: %v", err)
+		}
+		if err := db.Create(&model.WorkflowStep{ID: id, WorkflowID: 7, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "s"}).Error; err != nil {
+			t.Fatalf("seed step: %v", err)
+		}
+	}
+
+	repo := New(&mockDB{db: db})
+	if err := repo.DeleteWorkspace(context.Background(), dtWorkspaceID, dtUserID); err != nil {
+		t.Fatalf("DeleteWorkspace: %v", err)
+	}
+
+	for _, m := range []any{&model.EventTrigger{}, &model.WorkflowStep{}} {
+		var gone, kept int64
+		db.Model(m).Where("workspace_id = ?", dtWorkspaceID).Count(&gone)
+		db.Model(m).Where("workspace_id = ?", otherWorkspace).Count(&kept)
+		if gone != 0 || kept != 1 {
+			t.Errorf("%T: %d row(s) left in the deleted workspace, %d in the other (want 0 and 1)", m, gone, kept)
+		}
+	}
+}
+
+// Rows left behind by workspaces deleted or archived before either removed them
+// are swept separately; only a live workspace keeps its rows.
+func TestSystemDeleteOrphanedEventRouting(t *testing.T) {
+	db := deleteTaskDB(t)
+	if err := db.AutoMigrate(&model.Workspace{}); err != nil {
+		t.Fatalf("migrate workspace: %v", err)
+	}
+	now := time.Now()
+	live, archived, gone := int64(10), int64(20), int64(30)
+	for _, ws := range []model.Workspace{
+		{ID: live, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "live"},
+		{ID: archived, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "archived", ArchivedAt: &now},
+	} {
+		if err := db.Create(&ws).Error; err != nil {
+			t.Fatalf("seed workspace: %v", err)
+		}
+	}
+	for i, ws := range []int64{live, archived, gone} {
+		id := int64(i + 1)
+		if err := db.Create(&model.EventTrigger{ID: id, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "t"}).Error; err != nil {
+			t.Fatalf("seed trigger: %v", err)
+		}
+		if err := db.Create(&model.WorkflowStep{ID: id, WorkflowID: 7, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "s"}).Error; err != nil {
+			t.Fatalf("seed step: %v", err)
+		}
+	}
+
+	repo := New(&mockDB{db: db})
+	n, err := repo.SystemDeleteOrphanedEventRouting(context.Background())
+	if err != nil {
+		t.Fatalf("SystemDeleteOrphanedEventRouting: %v", err)
+	}
+	if n != 4 {
+		t.Errorf("deleted %d rows, want 4 (a trigger and a step for each of two workspaces)", n)
+	}
+	for _, m := range []any{&model.EventTrigger{}, &model.WorkflowStep{}} {
+		var orphans, kept int64
+		db.Model(m).Where("workspace_id IN ?", []int64{archived, gone}).Count(&orphans)
+		db.Model(m).Where("workspace_id = ?", live).Count(&kept)
+		if orphans != 0 || kept != 1 {
+			t.Errorf("%T: %d orphan(s) left, %d kept (want 0 and 1)", m, orphans, kept)
+		}
+	}
+
+	// Running it again finds nothing.
+	if n, err := repo.SystemDeleteOrphanedEventRouting(context.Background()); err != nil || n != 0 {
+		t.Errorf("second sweep: n=%d err=%v, want 0 and nil", n, err)
+	}
+}
+
+// A failure in either delete rolls the sweep back and reports it.
+func TestSystemDeleteOrphanedEventRouting_Fails(t *testing.T) {
+	for _, drop := range []struct {
+		name  string
+		table any
+	}{
+		{"event triggers", &model.EventTrigger{}},
+		{"workflow steps", &model.WorkflowStep{}},
+	} {
+		t.Run(drop.name, func(t *testing.T) {
+			db := deleteTaskDB(t)
+			if err := db.AutoMigrate(&model.Workspace{}); err != nil {
+				t.Fatalf("migrate workspace: %v", err)
+			}
+			if err := db.Create(&model.EventTrigger{ID: 1, EventID: 42, WorkspaceID: 30, UserID: dtUserID, Title: "t"}).Error; err != nil {
+				t.Fatalf("seed trigger: %v", err)
+			}
+			if err := db.Migrator().DropTable(drop.table); err != nil {
+				t.Fatalf("drop %s: %v", drop.name, err)
+			}
+
+			repo := New(&mockDB{db: db})
+			if n, err := repo.SystemDeleteOrphanedEventRouting(context.Background()); err == nil || n != 0 {
+				t.Fatalf("expected an error and 0 rows, got n=%d err=%v", n, err)
+			}
+			if db.Migrator().HasTable(&model.EventTrigger{}) {
+				var left int64
+				db.Model(&model.EventTrigger{}).Count(&left)
+				if left != 1 {
+					t.Errorf("rollback failed: %d trigger(s) left, want 1", left)
+				}
+			}
+		})
+	}
+}
+
+// Archiving a workspace deletes the triggers and steps that create tasks in it,
+// since nobody would see those tasks; unarchiving does not bring them back.
+func TestArchiveWorkspace_DeletesItsTriggersAndSteps(t *testing.T) {
+	db := deleteTaskDB(t)
+	if err := db.AutoMigrate(&model.Workspace{}); err != nil {
+		t.Fatalf("migrate workspace: %v", err)
+	}
+	now := time.Now()
+	otherWorkspace := int64(498041479541817346)
+	for _, id := range []int64{dtWorkspaceID, otherWorkspace} {
+		if err := db.Create(&model.Workspace{ID: id, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "w"}).Error; err != nil {
+			t.Fatalf("seed workspace: %v", err)
+		}
+	}
+	for i, ws := range []int64{dtWorkspaceID, otherWorkspace} {
+		id := int64(i + 1)
+		if err := db.Create(&model.EventTrigger{ID: id, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "t"}).Error; err != nil {
+			t.Fatalf("seed trigger: %v", err)
+		}
+		if err := db.Create(&model.WorkflowStep{ID: id, WorkflowID: 7, EventID: 42, WorkspaceID: ws, UserID: dtUserID, Title: "s"}).Error; err != nil {
+			t.Fatalf("seed step: %v", err)
+		}
+	}
+
+	repo := New(&mockDB{db: db})
+	updated, err := repo.ArchiveWorkspace(context.Background(), model.Workspace{
+		ID: dtWorkspaceID, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "w", ArchivedAt: &now,
+	})
+	if err != nil {
+		t.Fatalf("ArchiveWorkspace: %v", err)
+	}
+	if updated.ArchivedAt == nil {
+		t.Error("returned workspace has no ArchivedAt")
+	}
+	var stored model.Workspace
+	if err := db.First(&stored, dtWorkspaceID).Error; err != nil || stored.ArchivedAt == nil {
+		t.Errorf("workspace not stored as archived: %+v, %v", stored, err)
+	}
+	for _, m := range []any{&model.EventTrigger{}, &model.WorkflowStep{}} {
+		var gone, kept int64
+		db.Model(m).Where("workspace_id = ?", dtWorkspaceID).Count(&gone)
+		db.Model(m).Where("workspace_id = ?", otherWorkspace).Count(&kept)
+		if gone != 0 || kept != 1 {
+			t.Errorf("%T: %d row(s) left in the archived workspace, %d in the other (want 0 and 1)", m, gone, kept)
+		}
+	}
+}
+
+// A failure deleting either leaves the workspace unarchived, so it never ends
+// up archived with its triggers still firing into it.
+func TestArchiveWorkspace_RollsBackWhenADeleteFails(t *testing.T) {
+	for _, drop := range []struct {
+		name  string
+		table any
+	}{
+		{"workspaces", &model.Workspace{}},
+		{"event triggers", &model.EventTrigger{}},
+		{"workflow steps", &model.WorkflowStep{}},
+	} {
+		t.Run(drop.name, func(t *testing.T) {
+			db := deleteTaskDB(t)
+			if err := db.AutoMigrate(&model.Workspace{}); err != nil {
+				t.Fatalf("migrate workspace: %v", err)
+			}
+			now := time.Now()
+			if err := db.Create(&model.Workspace{ID: dtWorkspaceID, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "w"}).Error; err != nil {
+				t.Fatalf("seed workspace: %v", err)
+			}
+			if err := db.Migrator().DropTable(drop.table); err != nil {
+				t.Fatalf("drop %s: %v", drop.name, err)
+			}
+
+			repo := New(&mockDB{db: db})
+			if _, err := repo.ArchiveWorkspace(context.Background(), model.Workspace{
+				ID: dtWorkspaceID, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: "w", ArchivedAt: &now,
+			}); err == nil {
+				t.Fatal("expected an error when a delete fails")
+			}
+			if db.Migrator().HasTable(&model.Workspace{}) {
+				var stored model.Workspace
+				if err := db.First(&stored, dtWorkspaceID).Error; err != nil || stored.ArchivedAt != nil {
+					t.Errorf("rollback failed: %+v, %v", stored, err)
+				}
+			}
+		})
 	}
 }

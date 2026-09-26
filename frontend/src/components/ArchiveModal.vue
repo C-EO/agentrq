@@ -56,6 +56,7 @@ const confirmArchive = () => {
                     <p class="text-[14px] leading-relaxed text-gray-500 dark:text-zinc-400 font-medium">
                       Are you sure you want to archive <span class="text-black dark:text-white font-semibold">{{ toKebabCase(workspaceName) }}</span>?
                       It will be hidden from the active workspaces list, but you can still access it via direct link.
+                      Event triggers and workflow steps that create tasks in it are deleted, and unarchiving does not restore them.
                     </p>
                   </div>
                 </div>

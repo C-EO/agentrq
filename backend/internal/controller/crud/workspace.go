@@ -135,7 +135,7 @@ func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWor
 	}
 	now := time.Now()
 	m.ArchivedAt = &now
-	updated, err := c.repository.UpdateWorkspace(ctx, m)
+	updated, err := c.repository.ArchiveWorkspace(ctx, m)
 	if err == nil {
 		c.emitEvent(ctx, entity.CRUDEvent{
 			Action:       entity.ActionWorkspaceUpdate,

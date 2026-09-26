@@ -122,7 +122,9 @@ func TestArchiveWorkspace_Success(t *testing.T) {
 
 	ws := activeWorkspace()
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-	e.repo.EXPECT().UpdateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
+	// ArchiveWorkspace, not UpdateWorkspace: it also deletes the workspace's
+	// triggers and workflow steps.
+	e.repo.EXPECT().ArchiveWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
 		if w.ArchivedAt == nil {
 			return model.Workspace{}, fmt.Errorf("expected ArchivedAt to be set")
 		}
