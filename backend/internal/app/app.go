@@ -222,6 +222,7 @@ func New(cfg Config) (*App, error) {
 		&model.Skill{},
 		&model.SkillFile{},
 		&model.SkillShare{},
+		&model.SiteShare{},
 		&model.Machine{},
 		&model.EnrolmentCode{},
 		&model.Session{},
