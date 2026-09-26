@@ -57,8 +57,9 @@ Open source: https://github.com/agentrq/agentrq
 | Field | File |
 |---|---|
 | Store icon (128×128) | `../icons/128.png` |
-| Screenshots (1280×800) | `screenshot-1-popup.png`, `screenshot-2-dark.png`, `screenshot-3-full-size.png` |
+| Screenshots (1280×800) | `screenshot-1-claude-code-webmcp.png`, `screenshot-2-popup.png`, `screenshot-3-dark.png`, `screenshot-4-full-size.png` |
 | Small promo tile (440×280) | `promo-small-440x280.png` |
+| Marquee promo tile (1400×560) | `promo-marquee-1400x560.png` |
 
 **Official URL** — `https://agentrq.com` (only offered once the domain is verified in Google Search Console for the publisher account; skip it otherwise)
 
