@@ -22,12 +22,12 @@ const WORKSPACES = [
 
 // The strip against the real worker, on one fake browser whose front tab is
 // `tab` and whose page there offered `tools`.
-async function open({ granted = ALL_SITES, allow = true, tab = { id: 7, url: `${GH}/me` }, tools = [hi, del], signedIn = true, shares } = {}) {
+async function open({ granted = ALL_SITES, allow = true, tab = { id: 7, url: `${GH}/me` }, tools = [hi, del], signedIn = true, workspaces = WORKSPACES, shares } = {}) {
   const chrome = fakeChrome({ granted: [`${SERVER}/*`, ...granted], allow })
   if (shares) await chrome.storage.local.set({ shares })
   chrome.tabs.active = tab
   const fetchImpl = async (url) => {
-    if (url.endsWith('/workspaces')) return { status: signedIn ? 200 : 401, ok: signedIn, json: async () => ({ workspaces: WORKSPACES }) }
+    if (url.endsWith('/workspaces')) return { status: signedIn ? 200 : 401, ok: signedIn, json: async () => ({ workspaces }) }
     if (url.endsWith('/auth/refresh')) return { status: 401, ok: false }
     return { status: 200, ok: true, json: async () => ({ ticket: 'tk' }) }
   }
@@ -110,9 +110,12 @@ test('no strip when the front tab offers nothing', async () => {
   }
 })
 
-test('signed out, a site cannot be shared, but a share still shows and can stop', async () => {
+test('signed out, a site cannot be shared, but its tools and a share still show', async () => {
   const offered = await open({ signedIn: false })
-  assert.equal(offered.el.strip.hidden, true)
+  assert.equal(offered.el.strip.hidden, false)
+  assert.equal(offered.text.textContent, 'github.com offers 2 WebMCP tools · Sign in to AgentRQ to share it')
+  assert.equal(offered.action.hidden, true)
+  assert.equal(offered.picker.hidden, true)
 
   const shares = { [GH]: { workspaceId: 'gone', lastUrl: `${GH}/me`, tools: [hi], alwaysAllow: [], pending: false } }
   const { chrome, text, action } = await open({ signedIn: false, shares })
@@ -129,4 +132,24 @@ test('a worker that does not answer shows no strip', async () => {
   const doc = fakeDocument(STRIP_IDS)
   await initStrip({ doc, chrome, fetchImpl: async () => {}, server: SERVER })
   assert.equal(doc.elements.strip.hidden, true)
+})
+
+test('with no workspace to share with, a site with tools still shows', async () => {
+  const { el, text, action } = await open({ workspaces: [] })
+  assert.equal(el.strip.hidden, false)
+  assert.equal(text.textContent, 'github.com offers 2 WebMCP tools · Create a workspace to share it')
+  assert.equal(action.hidden, true)
+})
+
+test('a shared site keeps its strip while its page offers nothing yet', async () => {
+  const shares = { [GH]: { workspaceId: 'ws1', lastUrl: `${GH}/me`, tools: [hi], alwaysAllow: [], pending: false } }
+  for (const tools of [null, []]) {
+    const { chrome, el, text, action } = await open({ tools, shares })
+    assert.equal(el.strip.hidden, false, JSON.stringify(tools))
+    assert.equal(text.textContent, 'Shared with Alpha')
+    await click(action)
+    assert.deepEqual(chrome.storage.local.data.shares, {})
+    // Stopped, a page with nothing to offer has nothing to say.
+    assert.equal(el.strip.hidden, true)
+  }
 })

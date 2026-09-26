@@ -47,17 +47,19 @@ export async function initStrip({ doc, chrome, fetchImpl, server }) {
       return show('Let AgentRQ notice websites that offer tools to agents', 'Turn on', turnOn)
     }
     const state = await chrome.runtime.sendMessage({ type: 'popup-state' }).catch(() => null)
-    if (!state?.toolCount) return
+    // A share or a site's tools always keep the strip up.
+    if (!state?.toolCount && !state?.sharedWith) return
     // Signed out there is nothing to share with, but a share can still stop.
-    const workspaces = await listWorkspaces(fetchImpl, server).catch(() => [])
+    const workspaces = await listWorkspaces(fetchImpl, server).catch(() => null)
     if (state.sharedWith) {
-      const name = workspaces.find((w) => w.id === state.sharedWith)?.name ?? 'a workspace'
+      const name = workspaces?.find((w) => w.id === state.sharedWith)?.name ?? 'a workspace'
       return show(`Shared with ${name}`, 'Stop sharing', () => unshare(chrome, state.origin).then(render))
     }
-    if (!workspaces.length) return
-    const count = `${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
+    const offers = `${new URL(state.origin).host} offers ${state.toolCount} WebMCP tool${state.toolCount === 1 ? '' : 's'}`
+    if (!workspaces) return show(`${offers} · Sign in to AgentRQ to share it`)
+    if (!workspaces.length) return show(`${offers} · Create a workspace to share it`)
     show(
-      `${new URL(state.origin).host} offers ${count} · Share with`,
+      `${offers} · Share with`,
       'Share',
       () => share(chrome, state.origin, picker.value, state.url, state.tools).then(render),
       workspaces,

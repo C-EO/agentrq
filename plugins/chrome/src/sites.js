@@ -70,17 +70,21 @@ export function installSites(chrome, { run, log, fetchImpl, WebSocketImpl, timer
   }
 
   // What the popup's strip shows: the front tab's site, its tools, and the
-  // workspace it is shared with.
+  // workspace it is shared with. A shared site is reported even while its page
+  // offers nothing yet, so the strip never hides a share.
   const popupState = async () => {
     const [front] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    const origin = front?.url ? new URL(front.url).origin : null
+    const share = origin && (await listShares(chrome))[origin]
+    const sharedWith = share?.workspaceId ?? null
     const entry = front && tabs.entry(front.id)
     // A tab that has moved to another site keeps the old one's entry until
     // that page says something; it offers nothing yet.
-    if (!entry?.tools.length || new URL(front.url).origin !== entry.origin) {
+    if (!entry?.tools.length || origin !== entry.origin) {
+      if (sharedWith) return { origin, url: front.url, tools: [], toolCount: 0, sharedWith }
       return { origin: null, url: null, tools: [], toolCount: 0, sharedWith: null }
     }
-    const share = (await listShares(chrome))[entry.origin]
-    return { origin: entry.origin, url: entry.url, tools: entry.tools, toolCount: entry.tools.length, sharedWith: share?.workspaceId ?? null }
+    return { origin, url: entry.url, tools: entry.tools, toolCount: entry.tools.length, sharedWith }
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
