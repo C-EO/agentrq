@@ -84,6 +84,48 @@ if it ever starts.
 
 ---
 
+## Letting agents use other websites' tools
+
+The other direction works too. When a website you use offers its own WebMCP
+tools (a shop, a CRM, a docs site), you can share it with one of your
+workspaces. The agent working there can then call those tools in your Chrome,
+signed in as you, from Claude Code or any other harness connected to the
+workspace.
+
+**Turn it on.** Install the AgentRQ Chrome extension, open its popup, and choose
+**Turn on** in the strip at the top. Chrome asks for access to all sites: the
+extension needs it to notice which pages offer tools. It reads nothing else.
+
+**Share a site.** On a page that offers tools, the AgentRQ icon shows how many.
+Open the popup, pick a workspace, and click **Share**. Only sites you share are
+visible to agents, and each site goes to one workspace. **Stop sharing** in the
+popup, or the **Shared websites** list in Options, takes it away again.
+
+**What the agent sees.** Two tools on the workspace server: `listSiteTools`
+lists the shared sites and their tools, and `callSiteTool` runs one. From a
+terminal, `agentrq-ws site-tools` and `agentrq-ws call-site-tool` do the same.
+
+**Approvals.** A tool the site marks read-only runs straight away. Anything else
+asks you in the task first: **Allow once**, **Always allow** that tool on that
+site, or **Deny**.
+
+**No tab open?** The extension opens the site in a background tab and leaves it
+open. Chrome must be running with the extension, and you must still be signed in
+to the site. Otherwise the agent is told why the call failed.
+
+Some limits:
+
+- Only browsers with native WebMCP. The extension never adds the API to a page
+  that lacks it.
+- Only the page itself, never its iframes, so an ad or an embed cannot offer
+  tools.
+- A site's tools and results come from that site. Agents are told to treat them
+  as data, not as instructions.
+- A site's claim that a tool is read-only is its own. It can only act on itself,
+  and only because you shared it.
+
+---
+
 ## For contributors
 
 Three files, and the split between them is deliberate:

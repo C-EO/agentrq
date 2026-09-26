@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:ci": "node --test --experimental-test-coverage --test-coverage-exclude=test/** --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100 test/*.test.js"
+    "test:ci": "node --test --experimental-test-coverage --test-coverage-exclude=test/** --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100 test/*.test.js",
+    "verify:site-tools": "node scripts/verify-site-tools.mjs"
   }
 }

@@ -60,6 +60,10 @@ Each line says what the note will stop you getting wrong.
   does **not** end an agent's turn, and the turn's end is when the next of the
   composer's held messages is sent. Taking a reply for it posts one into the
   running turn, which is the bug the rule exists to fix.
+- **[Site tools](docs/agents/site-tools.md)** — agents calling a shared
+  website's WebMCP tools through the Chrome extension. Why it is native WebMCP
+  and top frame only, why the nonce must be gone before page scripts run, and
+  why calls never cross backend instances.
 - **[Telemetry](docs/agents/telemetry.md)** — a new action is four places or it
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one
