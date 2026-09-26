@@ -83,17 +83,26 @@ export const SHORTCUTS = [
     scope: 'global',
   },
   {
+    // `M` for machines, bare for the same reason as `W`: Cmd+M minimises the
+    // window on macOS, and a bare letter never fires with a modifier held.
+    id: 'switch-machine',
+    key: 'm',
+    label: 'Switch machine',
+    hint: 'Search your machines by name and open one',
+    scope: 'global',
+  },
+  {
     id: 'show-help',
     key: '?',
     label: 'Show keyboard shortcuts',
     scope: 'global',
   },
   {
-    // `M` for messages, not `C` for chat: `C` sits close enough to copying to
-    // read as a conflict even though it is not one — a bare letter never fires
-    // with a modifier held, so Cmd+C is untouched either way.
+    // `C` for chat. It is not a conflict with copying: a bare letter never
+    // fires with a modifier held, so Cmd/Ctrl+C is untouched. `M` went to the
+    // machine switcher.
     id: 'chat-view',
-    key: 'm',
+    key: 'c',
     label: 'Chat view',
     hint: 'The message thread',
     scope: 'task',
