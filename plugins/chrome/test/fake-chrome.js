@@ -86,7 +86,10 @@ export function fakeChrome({ windows = [], granted = ['https://app.agentrq.com/*
     commands: { onCommand: makeEvent() },
     runtime: {
       onInstalled: makeEvent(),
+      onMessage: makeEvent(),
       openOptionsPage: async () => void calls.push(['runtime.openOptionsPage']),
+      // Chrome sends a message as JSON, so undefined fields do not arrive.
+      sendMessage: async (message) => void calls.push(['runtime.sendMessage', JSON.parse(JSON.stringify(message))]),
     },
   }
   return chrome
