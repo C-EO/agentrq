@@ -386,3 +386,62 @@ func TestTaskEventPayloadFailsWhenTheTaskCannotBeRead(t *testing.T) {
 		t.Fatal("expected an error when the task cannot be read")
 	}
 }
+
+// A task an agent creates over the workspace MCP server skips the CRUD
+// controller, so it must get the self-learning-loop note here or not at all —
+// and from the workspace as it is now, not as it was when the server started.
+func TestMCPTaskDefaultsReadTheWorkspaceFresh(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetWorkspace(ctx, int64(5)).Return(model.Workspace{
+		ID: 5, SelfLearningLoopNote: "Save what you learned.", AllowAllCommands: true, ClearContextDefault: true,
+	}, nil)
+
+	task := mcpTaskDefaults(ctx, repo, 5, model.Workspace{ID: 5}, model.Task{Assignee: "agent", Body: "Do it."})
+	if task.Body != "Do it.\n\nSave what you learned." {
+		t.Errorf("expected the note appended, got %q", task.Body)
+	}
+	if !task.AllowAllCommands || !task.ClearContext {
+		t.Errorf("expected the workspace's current defaults, got allowAll=%v clearContext=%v", task.AllowAllCommands, task.ClearContext)
+	}
+}
+
+// The note is instructions for an agent; a task for the human does not get it.
+func TestMCPTaskDefaultsLeaveAHumanTaskAlone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetWorkspace(ctx, int64(5)).Return(model.Workspace{ID: 5, SelfLearningLoopNote: "Save what you learned."}, nil)
+
+	task := mcpTaskDefaults(ctx, repo, 5, model.Workspace{ID: 5}, model.Task{Assignee: "human", Body: "Approve it."})
+	if task.Body != "Approve it." {
+		t.Errorf("expected the body unchanged, got %q", task.Body)
+	}
+}
+
+// A failed read is no reason to refuse the task: the copy read when the server
+// started is used instead, and an explicit clean-context request is kept.
+func TestMCPTaskDefaultsFallBackWhenTheWorkspaceCannotBeRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetWorkspace(ctx, int64(5)).Return(model.Workspace{}, errors.New("db down"))
+
+	task := mcpTaskDefaults(ctx, repo, 5, model.Workspace{ID: 5, SelfLearningLoopNote: "Note."}, model.Task{Assignee: "agent", Body: "Do it.", ClearContext: true})
+	if task.Body != "Do it.\n\nNote." {
+		t.Errorf("expected the startup copy's note, got %q", task.Body)
+	}
+	if !task.ClearContext {
+		t.Errorf("expected an explicit clean-context request to be kept")
+	}
+}
