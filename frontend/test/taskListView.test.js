@@ -21,8 +21,9 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push, currentRoute: ref(route) }),
 }))
 
+const busEvents = ref([])
 vi.mock('../src/useEventBus', () => ({
-  useEventBus: () => ({ connect() {}, disconnect() {}, events: ref([]) }),
+  useEventBus: () => ({ connect() {}, disconnect() {}, events: busEvents }),
 }))
 
 vi.mock('../src/composables/useCachedTasks', () => ({
@@ -30,8 +31,9 @@ vi.mock('../src/composables/useCachedTasks', () => ({
   sharedCache: () => null,
 }))
 
+const readAllCachedTasks = vi.fn(async () => [])
 vi.mock('../src/composables/useCachedReads', () => ({
-  readAllCachedTasks: async () => [],
+  readAllCachedTasks: (...a) => readAllCachedTasks(...a),
   shouldPaintCache: () => false,
 }))
 
@@ -46,7 +48,8 @@ const WORKSPACES = [
 ]
 
 let pages = []
-const fetchGlobalTasks = vi.fn(async ({ offset }) => ({ tasks: pages[offset === 0 ? 0 : 1] || [] }))
+const byPage = async ({ offset }) => ({ tasks: pages[offset === 0 ? 0 : 1] || [] })
+const fetchGlobalTasks = vi.fn(byPage)
 let fetchTasksPages = []
 const fetchTasks = vi.fn(async () => ({ tasks: fetchTasksPages.shift() || [] }))
 const deleteTask = vi.fn(async () => ({}))
@@ -93,6 +96,9 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   route.params = { filter: 'notstarted' }
+  busEvents.value = []
+  fetchGlobalTasks.mockImplementation(byPage)
+  readAllCachedTasks.mockImplementation(async () => [])
   pages = [
     [...Array.from({ length: 9 }, (_, i) => task(`a${i}`)), task('arch', 'w2')],
     [task('b0'), task('b1')],
@@ -199,6 +205,75 @@ describe('the sidebar task list', () => {
     await settle()
     expect(rows(el)).toHaveLength(12)
     expect(button(el, 'Load More Entries')).toBeUndefined()
+  })
+
+  // One piece of activity arrives as a burst of events, each a refresh of its own.
+  it('shows each task once when refreshes overlap', async () => {
+    const el = await mount(TaskListView)
+    const answers = []
+    fetchGlobalTasks.mockImplementation(() => new Promise((r) => answers.push(r)))
+
+    busEvents.value = [...busEvents.value, { type: 'reply.received' }]
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'task.updated' }]
+    await settle()
+    expect(answers).toHaveLength(2)
+
+    answers[0]({ tasks: pages[0] })
+    await settle()
+    answers[1]({ tasks: pages[0] })
+    await settle()
+    expect(rows(el)).toHaveLength(10)
+  })
+
+  it('drops an older refresh that answers after a newer one', async () => {
+    const el = await mount(TaskListView)
+    const answers = []
+    fetchGlobalTasks.mockImplementation(() => new Promise((r) => answers.push(r)))
+
+    busEvents.value = [...busEvents.value, { type: 'task.updated' }]
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'task.deleted' }]
+    await settle()
+
+    answers[1]({ tasks: [task('fresh')] })
+    await settle()
+    answers[0]({ tasks: pages[0] })
+    await settle()
+    expect(rows(el)).toEqual(['task fresh'])
+  })
+
+  it('asks the server once when a newer refresh starts during the cache read', async () => {
+    await mount(TaskListView)
+    let releaseCache
+    readAllCachedTasks.mockImplementationOnce(() => new Promise((r) => { releaseCache = r }))
+    fetchGlobalTasks.mockClear()
+
+    busEvents.value = [...busEvents.value, { type: 'task.updated' }]
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'reply.received' }]
+    await settle()
+    releaseCache([])
+    await settle()
+
+    expect(fetchGlobalTasks).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a load more that answers after a refresh began', async () => {
+    const el = await mount(TaskListView)
+    const answers = []
+    fetchGlobalTasks.mockImplementation(() => new Promise((r) => answers.push(r)))
+
+    button(el, 'Load More Entries').click()
+    await settle()
+    busEvents.value = [...busEvents.value, { type: 'task.created' }]
+    await settle()
+
+    answers[1]({ tasks: pages[0] })
+    await settle()
+    answers[0]({ tasks: pages[1] })
+    await settle()
+    expect(rows(el)).toHaveLength(10)
   })
 })
 
