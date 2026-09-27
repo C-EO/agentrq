@@ -79,7 +79,7 @@ function openLink(toast) {
   position: relative;
   overflow: hidden;
   width: 380px;
-  padding: 14px 14px 16px 20px;
+  padding: 14px 14px 16px;
   background: #fafafa;
   color: #18181b;
   border: 1px solid #e4e4e7;
@@ -109,28 +109,22 @@ function openLink(toast) {
 }
 
 .toast.clickable:hover {
-  border-color: #d4d4d8;
+  border-top-color: #d4d4d8;
+  border-right-color: #d4d4d8;
+  border-bottom-color: #d4d4d8;
 }
 
 .dark .toast.clickable:hover {
-  border-color: #71717a;
+  border-top-color: #71717a;
+  border-right-color: #71717a;
+  border-bottom-color: #71717a;
 }
 
-/* The bar down the left edge, as on a task card: red error, green success. */
-.toast::before {
-  content: '';
-  position: absolute;
-  left: 6px;
-  top: 12px;
-  bottom: 12px;
-  width: 4px;
-  border-radius: 9999px;
-  background: #d4d4d8;
-}
-
-.dark .toast::before { background: #52525b; }
-.toast.success::before { background: #22c55e; }
-.toast.error::before { background: #ef4444; }
+/* The card's own left edge carries the type: red error, green success. */
+.toast { border-left: 4px solid #d4d4d8; }
+.dark .toast { border-left-color: #52525b; }
+.toast.success { border-left-color: #22c55e; }
+.toast.error { border-left-color: #ef4444; }
 
 .toast-content {
   flex: 1;
