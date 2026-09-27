@@ -29,7 +29,7 @@ type SiteToolsBackend interface {
 	Call(ctx context.Context, userID int64, share SiteShareView, tool string, args json.RawMessage) (text string, err error)
 }
 
-// SiteShareView is one shared site as listSiteTools shows it.
+// SiteShareView is one shared site, with its tools' full definitions.
 type SiteShareView struct {
 	Site        string           `json:"site"` // origin
 	Online      bool             `json:"online"`
@@ -50,13 +50,33 @@ func (e *SiteToolFailedError) Error() string { return e.Message }
 // ListSiteToolsParams takes nothing; the workspace is the connection's.
 type ListSiteToolsParams struct{}
 
+// siteListing is one shared site as listSiteTools shows it: names and
+// descriptions only, since the schemas of every tool on every site cost the
+// agent's context on each call. getSiteToolDefinition has the rest.
+type siteListing struct {
+	Site   string            `json:"site"`
+	Online bool              `json:"online"`
+	Tools  []siteToolSummary `json:"tools"`
+}
+
+type siteToolSummary struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// GetSiteToolDefinitionParams names one tool of one shared site.
+type GetSiteToolDefinitionParams struct {
+	Site string `json:"site" jsonschema:"The site's origin, exactly as listSiteTools prints it, e.g. https://github.com."`
+	Tool string `json:"tool" jsonschema:"The tool's name, as listSiteTools prints it."`
+}
+
 // CallSiteToolParams is one call of a shared site's tool. Arguments is a map,
 // not a json.RawMessage, because the SDK infers a RawMessage as a byte array.
 type CallSiteToolParams struct {
 	TaskID    string         `json:"taskId" jsonschema:"The ID of the task you are working on (base62). A tool that is not read-only asks the human there first."`
 	Site      string         `json:"site" jsonschema:"The site's origin, exactly as listSiteTools prints it, e.g. https://github.com."`
 	Tool      string         `json:"tool" jsonschema:"The tool's name, as listSiteTools prints it."`
-	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"The tool's arguments, matching its inputSchema. Omitted means {}."`
+	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"The tool's arguments, matching the inputSchema getSiteToolDefinition returns. Omitted means {}."`
 }
 
 // siteApprovalTimeout is how long a call waits for the human to decide.
@@ -77,11 +97,50 @@ func (ps *WorkspaceServer) handleListSiteTools(ctx context.Context, req *mcp.Cal
 	if err != nil {
 		return siteToolError("failed to list shared websites: %v", err), nil, nil
 	}
-	if shares == nil {
-		shares = []SiteShareView{}
+	listing := make([]siteListing, len(shares))
+	for i, share := range shares {
+		tools := make([]siteToolSummary, len(share.Tools))
+		for j, t := range share.Tools {
+			tools[j] = siteToolSummary{Name: t.Name, Description: t.Description}
+		}
+		listing[i] = siteListing{Site: share.Site, Online: share.Online, Tools: tools}
 	}
-	b, _ := json.Marshal(shares)
+	b, _ := json.Marshal(listing)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+}
+
+func (ps *WorkspaceServer) handleGetSiteToolDefinition(ctx context.Context, req *mcp.CallToolRequest, params GetSiteToolDefinitionParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getSiteToolDefinition", clientIdentityFromRequest(req))
+	if params.Site == "" || params.Tool == "" {
+		return siteToolError("site and tool are required"), nil, nil
+	}
+	_, tool, refusal := ps.findSiteTool(ctx, ps.ownerID(), params.Site, params.Tool)
+	if refusal != nil {
+		return refusal, nil, nil
+	}
+	b, _ := json.Marshal(tool)
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+}
+
+// findSiteTool looks up a shared site's tool, or says why it cannot, naming
+// what there is instead.
+func (ps *WorkspaceServer) findSiteTool(ctx context.Context, userID int64, site, name string) (SiteShareView, sitetools.Tool, *mcp.CallToolResult) {
+	share, found, err := ps.siteTools.Get(ctx, ps.workspaceID, userID, site)
+	if err != nil {
+		return share, sitetools.Tool{}, siteToolError("failed to look up %s: %v", site, err)
+	}
+	if !found {
+		return share, sitetools.Tool{}, siteToolError("%s is not shared with this workspace. Shared: %s", site, ps.sharedSites(ctx, userID))
+	}
+	i := slices.IndexFunc(share.Tools, func(t sitetools.Tool) bool { return t.Name == name })
+	if i < 0 {
+		names := make([]string, len(share.Tools))
+		for j, t := range share.Tools {
+			names[j] = t.Name
+		}
+		return share, sitetools.Tool{}, siteToolError("%s has no tool %s. It offers: %s", site, name, orNone(names))
+	}
+	return share, share.Tools[i], nil
 }
 
 func (ps *WorkspaceServer) handleCallSiteTool(ctx context.Context, req *mcp.CallToolRequest, params CallSiteToolParams) (*mcp.CallToolResult, any, error) {
@@ -95,23 +154,10 @@ func (ps *WorkspaceServer) handleCallSiteTool(ctx context.Context, req *mcp.Call
 	}
 	userID := ps.ownerID()
 
-	share, found, err := ps.siteTools.Get(ctx, ps.workspaceID, userID, params.Site)
-	if err != nil {
-		return siteToolError("failed to look up %s: %v", params.Site, err), nil, nil
+	share, tool, refusal := ps.findSiteTool(ctx, userID, params.Site, params.Tool)
+	if refusal != nil {
+		return refusal, nil, nil
 	}
-	if !found {
-		return siteToolError("%s is not shared with this workspace. Shared: %s", params.Site, ps.sharedSites(ctx, userID)), nil, nil
-	}
-
-	i := slices.IndexFunc(share.Tools, func(t sitetools.Tool) bool { return t.Name == params.Tool })
-	if i < 0 {
-		names := make([]string, len(share.Tools))
-		for j, t := range share.Tools {
-			names[j] = t.Name
-		}
-		return siteToolError("%s has no tool %s. It offers: %s", params.Site, params.Tool, orNone(names)), nil, nil
-	}
-	tool := share.Tools[i]
 
 	args := params.Arguments
 	if args == nil {

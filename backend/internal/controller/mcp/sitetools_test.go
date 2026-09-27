@@ -156,6 +156,76 @@ func TestListSiteToolsMarksOnlineAndHidesRouting(t *testing.T) {
 	}
 }
 
+// The listing is names and descriptions only: schemas and annotations are
+// getSiteToolDefinition's, so they stop costing context on every listing.
+func TestListSiteToolsListsNamesAndDescriptionsOnly(t *testing.T) {
+	share := githubShare()
+	share.Tools[0].Description = "Search repositories"
+	s := newSiteServer(t, &fakeSiteTools{shares: []SiteShareView{share}}, "", nil)
+
+	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
+	want := `[{"site":"https://github.com","online":true,"tools":[` +
+		`{"name":"search","description":"Search repositories"},` +
+		`{"name":"star","description":""},{"name":"fork","description":""}]}]`
+	if got := resultText(t, res); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+func getSiteTool(t *testing.T, s *siteServer, p GetSiteToolDefinitionParams) (string, bool) {
+	t.Helper()
+	res, _, err := s.handleGetSiteToolDefinition(context.Background(), nil, p)
+	if err != nil {
+		t.Fatalf("handleGetSiteToolDefinition: %v", err)
+	}
+	return resultText(t, res), res.IsError
+}
+
+func TestGetSiteToolDefinitionIsTheWholeTool(t *testing.T) {
+	share := githubShare()
+	share.Tools[0].Description = "Search repositories"
+	s := newSiteServer(t, &fakeSiteTools{shares: []SiteShareView{share}}, "", nil)
+
+	text, isErr := getSiteTool(t, s, GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "search"})
+	want := `{"name":"search","description":"Search repositories",` +
+		`"inputSchema":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]},` +
+		`"annotations":{"readOnlyHint":true}}`
+	if isErr || text != want {
+		t.Fatalf("got  %s (error %v)\nwant %s", text, isErr, want)
+	}
+}
+
+// It refuses as callSiteTool does, with the same pointers to what there is.
+func TestGetSiteToolDefinitionRefusals(t *testing.T) {
+	cases := []struct {
+		name    string
+		backend *fakeSiteTools
+		params  GetSiteToolDefinitionParams
+		want    string
+	}{
+		{"no site", &fakeSiteTools{}, GetSiteToolDefinitionParams{Tool: "search"}, "site and tool are required"},
+		{"no tool", &fakeSiteTools{}, GetSiteToolDefinitionParams{Site: siteGitHub}, "site and tool are required"},
+		{"lookup fails", &fakeSiteTools{getErr: errors.New("db down")},
+			GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "search"},
+			"failed to look up https://github.com: db down"},
+		{"not shared", &fakeSiteTools{shares: []SiteShareView{{Site: "https://example.com"}}},
+			GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "search"},
+			"https://github.com is not shared with this workspace. Shared: https://example.com"},
+		{"no such tool", &fakeSiteTools{shares: []SiteShareView{githubShare()}},
+			GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "nope"},
+			"https://github.com has no tool nope. It offers: search, star, fork"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSiteServer(t, tc.backend, "", nil)
+			text, isErr := getSiteTool(t, s, tc.params)
+			if !isErr || text != tc.want {
+				t.Fatalf("got %q (error %v), want %q", text, isErr, tc.want)
+			}
+		})
+	}
+}
+
 func TestListSiteToolsError(t *testing.T) {
 	s := newSiteServer(t, &fakeSiteTools{listErr: errors.New("db down")}, "", nil)
 	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
@@ -409,13 +479,13 @@ func TestCallSiteToolResultLimit(t *testing.T) {
 	}
 }
 
-// Both descriptions, and the instructions, tell the agent that what a site
+// Every description, and the instructions, tell the agent that what a site
 // sends is data: the names, schemas and results are written by a third party.
 func TestSiteToolsSayContentIsData(t *testing.T) {
 	seen := 0
 	for _, tool := range toolsOverTheWire(t) {
 		name, _ := tool["name"].(string)
-		if name != "listSiteTools" && name != "callSiteTool" {
+		if name != "listSiteTools" && name != "getSiteToolDefinition" && name != "callSiteTool" {
 			continue
 		}
 		seen++
@@ -427,12 +497,26 @@ func TestSiteToolsSayContentIsData(t *testing.T) {
 		if name == "callSiteTool" && annotations["openWorldHint"] != true {
 			t.Errorf("callSiteTool reaches a third-party site but claims a closed world: %v", annotations)
 		}
-		if name == "listSiteTools" && annotations["readOnlyHint"] != true {
-			t.Errorf("listSiteTools is not read-only: %v", annotations)
+		if name != "callSiteTool" && annotations["readOnlyHint"] != true {
+			t.Errorf("%s is not read-only: %v", name, annotations)
 		}
 	}
-	if seen != 2 {
-		t.Fatalf("saw %d of the two site tools", seen)
+	if seen != 3 {
+		t.Fatalf("saw %d of the three site tools", seen)
+	}
+}
+
+// The listing no longer carries schemas, so it and callSiteTool must send the
+// agent to getSiteToolDefinition, or it calls with arguments it guessed.
+func TestSiteToolsPointAtTheDefinition(t *testing.T) {
+	for _, tool := range toolsOverTheWire(t) {
+		name, _ := tool["name"].(string)
+		if name != "listSiteTools" && name != "callSiteTool" {
+			continue
+		}
+		if d, _ := tool["description"].(string); !strings.Contains(d, "getSiteToolDefinition") {
+			t.Errorf("%s does not point at getSiteToolDefinition: %s", name, d)
+		}
 	}
 }
 

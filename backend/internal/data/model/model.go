@@ -685,4 +685,5 @@ const (
 	// Site tools, the WebMCP tools of websites shared from the Chrome extension.
 	SubActionIDMCPListSiteTools
 	SubActionIDMCPCallSiteTool
+	SubActionIDMCPGetSiteToolDefinition
 )

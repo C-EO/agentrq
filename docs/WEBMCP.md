@@ -110,9 +110,11 @@ Open the popup, pick a workspace, and click **Share**. Only sites you share are
 visible to agents, and each site goes to one workspace. **Stop sharing** in the
 popup, or the **Shared websites** list in Options, takes it away again.
 
-**What the agent sees.** Two tools on the workspace server: `listSiteTools`
-lists the shared sites and their tools, and `callSiteTool` runs one. From a
-terminal, `agentrq-ws site-tools` and `agentrq-ws call-site-tool` do the same.
+**What the agent sees.** Three tools on the workspace server: `listSiteTools`
+lists the shared sites and each tool's name and description,
+`getSiteToolDefinition` gives one tool's input schema, and `callSiteTool` runs
+it. From a terminal, `agentrq-ws site-tools`, `agentrq-ws site-tool` and
+`agentrq-ws call-site-tool` do the same.
 
 **Approvals.** A tool the site marks read-only runs straight away. Anything else
 asks you in the task first: **Allow once**, **Always allow** that tool on that
