@@ -53,7 +53,7 @@
         <!-- Legend, always shown: identity never rests on colour alone. -->
         <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
           <span v-for="s in series" :key="s.key" class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400">
-            <span class="w-3 h-0.5 rounded-full" :style="{ background: colors[s.key] }"></span>{{ s.label }}
+            <svg class="w-4 h-2" viewBox="0 0 16 2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" :stroke="colors[s.key]" stroke-width="2" :stroke-dasharray="s.dashed ? '4 3' : null" /></svg>{{ s.label }}
           </span>
         </div>
 
@@ -101,6 +101,7 @@
                 :d="s.path"
                 fill="none"
                 :stroke="colors[s.key]"
+                :stroke-dasharray="s.dash"
                 stroke-width="2"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -131,7 +132,7 @@
               :style="{ left: `${chart.xs[hovered]}%`, transform: `translateX(${chart.xs[hovered] > 60 ? 'calc(-100% - 8px)' : '8px'})` }">
               <div class="font-black uppercase tracking-widest mb-1">{{ tooltip.title }} · {{ tooltip.closed }} closed</div>
               <div v-for="r in tooltip.rows" :key="r.key" class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full shrink-0" :style="{ background: r.color }"></span>
+                <span class="w-2 h-2 rounded-full shrink-0 ring-1 ring-white/50" :style="{ background: r.color }"></span>
                 <span class="flex-1 text-gray-300 dark:text-zinc-400">{{ r.label }}</span>
                 <span class="font-black tabular-nums">{{ r.value }}{{ r.value === '—' ? '' : ' min' }}</span>
               </div>

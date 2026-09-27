@@ -17,17 +17,20 @@ import { customWindowFor } from './useStatsRange';
  */
 
 /**
- * The four lines, in the fixed order their colours are assigned. The colours
- * are the first four categorical slots, validated as a set on the card
- * surface in both themes; the light yellow and aqua sit under 3:1, which is
- * why every line also carries a legend entry and a direct label.
+ * The four lines, in the analytics screen's own colours: the task and message
+ * charts' pair (see statsPalette), which in light mode is a charcoal and a
+ * zinc grey. Two colours for four lines, so the second pair is dashed — and
+ * every line also has a legend entry and a direct label.
  */
 export const LATENCY_SERIES = Object.freeze([
-  { key: 'startToClose', label: 'Start → close', light: '#2a78d6', dark: '#3987e5' },
-  { key: 'worked', label: 'Worked', light: '#eb6834', dark: '#d95926' },
-  { key: 'blocked', label: 'Blocked', light: '#1baf7a', dark: '#199e70' },
-  { key: 'needsInput', label: 'Needs input', light: '#eda100', dark: '#c98500' },
+  { key: 'startToClose', label: 'Start → close', light: '#27272a', dark: '#aec477', dashed: false },
+  { key: 'worked', label: 'Worked', light: '#71717a', dark: '#a8a3d9', dashed: false },
+  { key: 'blocked', label: 'Blocked', light: '#27272a', dark: '#aec477', dashed: true },
+  { key: 'needsInput', label: 'Needs input', light: '#71717a', dark: '#a8a3d9', dashed: true },
 ]);
+
+/** The dash pattern of a dashed line, in pixels (strokes do not scale). */
+export const LATENCY_DASH = '6 4';
 
 /** The aggregate toggle. p50 is the default; there is no average by design. */
 export const LATENCY_AGGREGATES = Object.freeze([
@@ -134,6 +137,7 @@ export function buildLatencyChart(points = [], granularity = 'day') {
     return {
       key: s.key,
       label: s.label,
+      dash: s.dashed ? LATENCY_DASH : null,
       path: segments
         .filter((seg) => seg.length > 1)
         .map((seg) => seg.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' '))

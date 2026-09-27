@@ -72,8 +72,11 @@ describe('formatting', () => {
   });
 
   it('gives each line its colour in each theme', () => {
-    expect(latencyColors(false).startToClose).toBe('#2a78d6');
-    expect(latencyColors(true).needsInput).toBe('#c98500');
+    // The analytics screen's own pair; the second two lines are dashed.
+    expect(latencyColors(false)).toEqual({ startToClose: '#27272a', worked: '#71717a', blocked: '#27272a', needsInput: '#71717a' });
+    expect(latencyColors(true)).toEqual({ startToClose: '#aec477', worked: '#a8a3d9', blocked: '#aec477', needsInput: '#a8a3d9' });
+    const dashes = buildLatencyChart([point(0)], 'day').series.map((s) => s.dash);
+    expect(dashes).toEqual([null, null, '6 4', '6 4']);
     expect(LATENCY_SERIES.map((s) => s.key)).toEqual(['startToClose', 'worked', 'blocked', 'needsInput']);
   });
 });
@@ -289,7 +292,10 @@ describe('TaskLatencyPanel', () => {
     expect(container.textContent).toContain('3 closed');
     expect(container.querySelector('[data-card="startToClose"]').textContent).toContain('75');
     expect(container.querySelector('[data-card="needsInput"]').textContent).toContain('—');
-    expect(container.querySelector('path[stroke="#3987e5"]').getAttribute('d')).toMatch(/^M .* L /);
+    const [solid, dashed] = container.querySelectorAll('path[stroke="#aec477"]');
+    expect(solid.getAttribute('d')).toMatch(/^M .* L /);
+    expect(solid.getAttribute('stroke-dasharray')).toBe(null);
+    expect(dashed.getAttribute('stroke-dasharray')).toBe('6 4');
     expect(container.querySelector('table.sr-only').textContent).toContain('Sep 21');
 
     const svg = container.querySelector('svg[role="img"]');
