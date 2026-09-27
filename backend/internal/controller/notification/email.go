@@ -41,8 +41,8 @@ func (c *controller) NotifyTaskCreated(workspace entity.Workspace, task entity.T
 	}
 
 	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("New Task: %s [%s]", task.Title, workspace.Name),
-		fmt.Sprintf("Workspace: %s\n\nA new task has been created in your workspace:\n\nTitle: %s\nDetails: %s\n\nView Mission: %s/workspaces/%d",
-			workspace.Name, task.Title, task.Body, c.baseURL, workspace.ID))
+		fmt.Sprintf("Workspace: %s\n\nA new task has been created in your workspace:\n\nTitle: %s\nDetails: %s\n\nView Task: %s",
+			workspace.Name, task.Title, task.Body, c.taskURL(workspace, task)))
 }
 
 func (c *controller) NotifyTaskStatusUpdated(workspace entity.Workspace, task entity.Task) {
@@ -52,8 +52,8 @@ func (c *controller) NotifyTaskStatusUpdated(workspace entity.Workspace, task en
 	}
 
 	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Task Status Updated: %s [%s]", task.Title, workspace.Name),
-		fmt.Sprintf("Workspace: %s\n\nThe status of task %s has been updated to: %s.\n\nView Mission: %s/workspaces/%d",
-			workspace.Name, task.Title, task.Status, c.baseURL, workspace.ID))
+		fmt.Sprintf("Workspace: %s\n\nThe status of task %s has been updated to: %s.\n\nView Task: %s",
+			workspace.Name, task.Title, task.Status, c.taskURL(workspace, task)))
 }
 
 func (c *controller) NotifyTaskAllowAllCommandsToggled(workspace entity.Workspace, task entity.Task) {
@@ -68,8 +68,8 @@ func (c *controller) NotifyTaskAllowAllCommandsToggled(workspace entity.Workspac
 	}
 
 	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Auto-Allow Commands Toggled: %s [%s]", task.Title, workspace.Name),
-		fmt.Sprintf("Workspace: %s\n\nThe Auto-Allow Commands (YOLO) setting for task %s has been turned %s.\n\nView Mission: %s/workspaces/%d",
-			workspace.Name, task.Title, state, c.baseURL, workspace.ID))
+		fmt.Sprintf("Workspace: %s\n\nThe Auto-Allow Commands (YOLO) setting for task %s has been turned %s.\n\nView Task: %s",
+			workspace.Name, task.Title, state, c.taskURL(workspace, task)))
 }
 
 func (c *controller) NotifyTaskReceivedMessage(workspace entity.Workspace, task entity.Task, msg entity.Message) {
@@ -79,8 +79,8 @@ func (c *controller) NotifyTaskReceivedMessage(workspace entity.Workspace, task 
 	}
 
 	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("New Message in Task: %s [%s]", task.Title, workspace.Name),
-		fmt.Sprintf("Workspace: %s\n\nAn agent sent a new message in task %s:\n\n%s\n\nReply to Mission: %s/workspaces/%d",
-			workspace.Name, task.Title, msg.Text, c.baseURL, workspace.ID))
+		fmt.Sprintf("Workspace: %s\n\nAn agent sent a new message in task %s:\n\n%s\n\nReply to Task: %s",
+			workspace.Name, task.Title, msg.Text, c.taskURL(workspace, task)))
 }
 
 func (c *controller) NotifyWorkspaceArchived(workspace entity.Workspace) {
@@ -101,8 +101,17 @@ func (c *controller) NotifyWorkspaceUnarchived(workspace entity.Workspace) {
 	}
 
 	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Mission Restored [%s]", workspace.Name),
-		fmt.Sprintf("Workspace: %s\n\nYour workspace has been restored and is now active for operations.\n\nView Mission: %s/workspaces/%d",
-			workspace.Name, c.baseURL, workspace.ID))
+		fmt.Sprintf("Workspace: %s\n\nYour workspace has been restored and is now active for operations.\n\nView Mission: %s",
+			workspace.Name, c.workspaceURL(workspace)))
+}
+
+// The app routes by base62 ID, so a raw int64 in a link is a page not found.
+func (c *controller) workspaceURL(workspace entity.Workspace) string {
+	return fmt.Sprintf("%s/workspaces/%s", c.baseURL, monoflake.ID(workspace.ID).String())
+}
+
+func (c *controller) taskURL(workspace entity.Workspace, task entity.Task) string {
+	return fmt.Sprintf("%s/tasks/%s", c.workspaceURL(workspace), monoflake.ID(task.ID).String())
 }
 
 func (c *controller) hasChannel(ns *entity.NotificationSettings, channel string) bool {
