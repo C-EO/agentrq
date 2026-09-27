@@ -64,6 +64,7 @@
 
           <!-- Description Textarea -->
           <textarea v-model="bodyRef"
+                    ref="bodyInput"
                     @keydown="onDescriptionKeydown"
                     placeholder="Provide detailed context or instructions..." 
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
@@ -389,6 +390,7 @@ function onDescriptionKeydown(event) {
 }
 
 // STT
+const bodyInput = ref(null);
 const {
   isRecording: sttRecording,
   isTranscribing: sttTranscribing,
@@ -397,7 +399,7 @@ const {
   error: sttError,
   isSupported: sttSupported,
   toggleRecording: sttToggle,
-} = useSpeechToText(bodyRef, workspaceId);
+} = useSpeechToText(bodyRef, workspaceId, bodyInput);
 
 // Auto-Title
 const {

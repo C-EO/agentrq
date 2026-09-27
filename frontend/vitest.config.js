@@ -113,6 +113,7 @@ export default defineConfig({
         'src/composables/usePwaUpdateProgress.js',
         'src/composables/useAutoTitle.js',
         'src/utils/markdown.js',
+        'src/utils/insertAtCursor.js',
         'src/utils/workspaceForm.js',
         'src/utils/missionTemplates.js',
         'src/composables/useMissionPicker.js',
