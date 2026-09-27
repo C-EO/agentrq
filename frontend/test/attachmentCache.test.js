@@ -14,6 +14,7 @@ import {
   evictionPlan,
   isAttachmentRequest,
   isCacheableApiRead,
+  isEventStream,
   isTaskRead,
   touchCacheEntry,
   withinSizeCap,
@@ -77,11 +78,31 @@ describe('isCacheableApiRead', () => {
     expect(isCacheableApiRead(attachment)).toBe(false)
   })
 
+  it('leaves the event streams to the network', () => {
+    // An open stream held by the worker stops a new version activating.
+    expect(isCacheableApiRead('/api/v1/events/stream')).toBe(false)
+    expect(isCacheableApiRead('/api/v1/workspaces/ws1/events')).toBe(false)
+  })
+
   it('ignores anything outside the API', () => {
     expect(isCacheableApiRead('/tasks/all')).toBe(false)
     expect(isCacheableApiRead('')).toBe(false)
     expect(isCacheableApiRead(null)).toBe(false)
     expect(isCacheableApiRead(undefined)).toBe(false)
+  })
+})
+
+describe('isEventStream', () => {
+  it('recognises both streams', () => {
+    expect(isEventStream('/api/v1/events/stream')).toBe(true)
+    expect(isEventStream('/base/api/v1/workspaces/ws1/events')).toBe(true)
+  })
+
+  it('does not mistake the events a workspace publishes for one', () => {
+    expect(isEventStream('/api/v1/events')).toBe(false)
+    expect(isEventStream('/api/v1/workspaces/ws1/events/e1')).toBe(false)
+    expect(isEventStream('')).toBe(false)
+    expect(isEventStream(null)).toBe(false)
   })
 })
 
