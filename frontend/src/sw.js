@@ -92,7 +92,8 @@ registerRoute(
  *
  * Deliberately no longer the task reads: the local database owns those now, and
  * a second cache with a different lifetime answering the same question disagrees
- * with it in a way that looks like a database bug. What is left — the workspace
+ * with it in a way that looks like a database bug. Nor the event streams, which
+ * would stop every update activating. What is left — the workspace
  * and user endpoints — is what the shell needs to render at all.
  */
 registerRoute(

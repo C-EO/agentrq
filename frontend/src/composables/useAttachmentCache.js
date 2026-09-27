@@ -65,14 +65,27 @@ export function isTaskRead(pathname) {
 }
 
 /**
+ * A live event stream: the account's, or one workspace's.
+ *
+ * Never through the worker. A stream never finishes, and while the active
+ * worker holds a request open the browser will not activate a new one — so
+ * "Update now" never reloads, and the page keeps the old version.
+ */
+const EVENT_STREAM = /\/api\/v1\/(?:events\/stream|workspaces\/[^/]+\/events)$/;
+
+export function isEventStream(pathname) {
+  return EVENT_STREAM.test(String(pathname ?? ''));
+}
+
+/**
  * Whether the service worker should keep this API response.
  *
- * Everything under `/api/` except the task reads the database owns and the
- * attachments that have a cache of their own.
+ * Everything under `/api/` except the task reads the database owns, the
+ * attachments that have a cache of their own, and the event streams.
  */
 export function isCacheableApiRead(pathname) {
   const path = String(pathname ?? '');
-  return path.includes('/api/') && !isTaskRead(path) && !isAttachmentRequest(path);
+  return path.includes('/api/') && !isTaskRead(path) && !isAttachmentRequest(path) && !isEventStream(path);
 }
 
 /**
