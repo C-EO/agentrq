@@ -16,12 +16,18 @@
       >
         <div class="toast-content">
           <div v-if="toast.title" class="toast-title">{{ toast.title }}</div>
-          <div class="toast-message">{{ toast.message }}</div>
+          <!-- Two lines at most, four for an error; the whole message is on hover. -->
+          <div class="toast-message" :class="{ solo: !toast.title }" :title="toast.message">{{ toast.message }}</div>
+          <div v-if="hasLink(toast)" class="toast-link">View task</div>
         </div>
-        <button @click.stop="removeToast(toast.id)" class="toast-close">
-          &times;
+        <button @click.stop="removeToast(toast.id)" class="toast-close" aria-label="Dismiss">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
-        <div v-if="!toast.persistent" class="toast-progress"></div>
+        <div
+          v-if="!toast.persistent"
+          class="toast-progress"
+          :style="{ animationDuration: `${toast.duration}ms` }"
+        ></div>
       </div>
     </TransitionGroup>
   </div>
@@ -55,7 +61,7 @@ function openLink(toast) {
   z-index: 9999;
   display: flex;
   flex-direction: column-reverse;
-  gap: 12px;
+  gap: 10px;
   pointer-events: none;
 }
 
@@ -71,84 +77,31 @@ function openLink(toast) {
 .toast {
   pointer-events: auto;
   position: relative;
-  min-width: 400px;
-  max-width: 600px;
-  padding: 16px;
-  background: #fff;
-  border: 2px solid #111;
-  box-shadow: 4px 4px 0 0 #111;
-  border-radius: 4px;
+  overflow: hidden;
+  width: 380px;
+  padding: 14px 14px 16px;
+  background: #fafafa;
+  color: #18181b;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 1;
 }
 
 @media (max-width: 640px) {
   .toast {
-    min-width: 0;
     width: 100%;
-    max-width: none;
-    box-shadow: 3px 3px 0 0 #111;
   }
 }
 
 .dark .toast {
-  background: #18181b;
-  border-color: #e4e4e7;
-  box-shadow: 4px 4px 0 0 #e4e4e7;
-}
-
-@media (max-width: 640px) and (prefers-color-scheme: dark) {
-  .dark .toast {
-    box-shadow: 3px 3px 0 0 #e4e4e7;
-  }
-}
-
-/* Stacking: older toasts look smaller and faded */
-.toast:nth-child(2) { transform: translateY(-8px) scale(0.98); opacity: 0.9; z-index: 2; }
-.toast:nth-child(3) { transform: translateY(-16px) scale(0.96); opacity: 0.8; z-index: 3; }
-.toast:nth-child(4) { transform: translateY(-24px) scale(0.94); opacity: 0.7; z-index: 4; }
-.toast:nth-child(5) { transform: translateY(-32px) scale(0.92); opacity: 0.6; z-index: 5; }
-
-.toast:first-child {
-  transform: translateY(0) scale(1);
-  opacity: 1;
-  z-index: 10;
-  box-shadow: 6px 6px 0 0 var(--shadow-color, #111);
-  border-color: var(--border-color, #111);
-}
-
-.dark .toast:first-child {
-  box-shadow: 6px 6px 0 0 var(--shadow-color, #e4e4e7);
-  border-color: var(--border-color, #e4e4e7);
-}
-
-/* Type-specific styles */
-.toast.success {
-  --border-color: #166534;
-  --shadow-color: rgba(22, 101, 52, 0.4);
-  background: #f0fdf4;
-  border-color: #166534;
-  color: #14532d;
-}
-
-.toast.error {
-  --border-color: #991b1b;
-  --shadow-color: rgba(153, 27, 27, 0.4);
-  background: #fef2f2;
-  border-color: #991b1b;
-  color: #7f1d1d;
-}
-
-.toast.info {
-  --border-color: #111;
-  --shadow-color: rgba(0, 0, 0, 0.2);
-  background: #fff;
-  border-color: #111;
-  color: #111;
+  background: #27272a;
+  color: #f4f4f5;
+  border-color: #3f3f46;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
 }
 
 .toast.clickable {
@@ -156,87 +109,130 @@ function openLink(toast) {
 }
 
 .toast.clickable:hover {
-  border-color: #4f46e5;
+  border-top-color: #d4d4d8;
+  border-right-color: #d4d4d8;
+  border-bottom-color: #d4d4d8;
 }
 
 .dark .toast.clickable:hover {
-  border-color: #818cf8;
+  border-top-color: #71717a;
+  border-right-color: #71717a;
+  border-bottom-color: #71717a;
 }
 
-.dark .toast.success {
-  background: #064e3b;
-  border-color: #10b981;
-  color: #ecfdf5;
-  --border-color: #10b981;
-  --shadow-color: rgba(16, 185, 129, 0.25);
-}
-
-.dark .toast.error {
-  background: #7f1d1d;
-  border-color: #f87171;
-  color: #fef2f2;
-  --border-color: #f87171;
-  --shadow-color: rgba(248, 113, 113, 0.25);
-}
-
-.dark .toast.info {
-  background: #18181b;
-  border-color: #e4e4e7;
-  color: #f4f4f5;
-  --border-color: #e4e4e7;
-  --shadow-color: rgba(228, 228, 231, 0.2);
-}
+/* The card's own left edge carries the type: red error, green success. */
+.toast { border-left: 4px solid #d4d4d8; }
+.dark .toast { border-left-color: #52525b; }
+.toast.success { border-left-color: #22c55e; }
+.toast.error { border-left-color: #ef4444; }
 
 .toast-content {
   flex: 1;
+  min-width: 0;
 }
 
 .toast-title {
-  font-weight: 900;
-  color: inherit;
-  font-size: 11px;
-  margin-bottom: 4px;
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toast-message {
   font-size: 13px;
-  font-weight: 500;
+  line-height: 19px;
+  color: #52525b;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.dark .toast-message {
+  color: #a1a1aa;
+}
+
+.toast.error .toast-message {
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+
+/* Without a title the message is the headline. */
+.toast-message.solo {
+  font-size: 14px;
+  line-height: 20px;
   color: inherit;
-  line-height: 1.4;
-  opacity: 0.9;
+}
+
+.toast-link {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #7c3aed;
+}
+
+.dark .toast-link {
+  color: #a78bfa;
+}
+
+.toast.clickable:hover .toast-link {
+  text-decoration: underline;
 }
 
 .toast-close {
+  flex: none;
   background: none;
   border: none;
-  color: inherit;
-  font-size: 18px;
-  line-height: 1;
+  color: #71717a;
   cursor: pointer;
-  padding: 4px;
-  margin: -4px;
-  opacity: 0.6;
-  transition: all 0.2s;
-  font-weight: bold;
+  padding: 2px;
+  margin: -2px -2px 0 0;
+  border-radius: 4px;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.toast-close svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 .toast-close:hover {
-  opacity: 1;
-  transform: scale(1.1);
+  color: #18181b;
+  background: #f4f4f5;
 }
 
+.dark .toast-close {
+  color: #a1a1aa;
+}
+
+.dark .toast-close:hover {
+  color: #fafafa;
+  background: #3f3f46;
+}
+
+/* The auto-close countdown, as long as the toast's own duration. */
 .toast-progress {
   position: absolute;
   bottom: 0;
   left: 0;
-  height: 3px;
-  background: currentColor;
+  height: 2px;
   width: 100%;
-  animation: progress 5s linear forwards;
-  opacity: 0.3;
-  border-radius: 0 0 4px 4px;
+  background: #a1a1aa;
+  opacity: 0.5;
+  animation: progress linear forwards;
+}
+
+.dark .toast-progress {
+  background: #a1a1aa;
 }
 
 @keyframes progress {
@@ -245,23 +241,23 @@ function openLink(toast) {
 }
 
 .toast-enter-active {
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .toast-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .toast-enter-from {
   opacity: 0;
-  transform: translateY(20px) scale(0.8);
+  transform: translateY(12px);
 }
 
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(100%) rotate(5deg);
+  transform: translateX(24px);
 }
 
 .toast-move {
-  transition: transform 0.4s ease;
+  transition: transform 0.3s ease;
 }
 </style>
