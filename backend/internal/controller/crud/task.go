@@ -188,7 +188,62 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 	if err != nil {
 		return nil, err
 	}
-	return &entity.GetTaskResponse{Task: c.fromModelTaskToEntity(m)}, nil
+	rows, err := c.repository.ListTaskStateTransitions(ctx, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	transitions := make([]entity.TaskStateTransition, len(rows))
+	for i, r := range rows {
+		transitions[i] = entity.TaskStateTransition{
+			FromState: r.FromState.String(),
+			ToState:   r.ToState.String(),
+			CreatedAt: r.CreatedAt,
+		}
+	}
+	return &entity.GetTaskResponse{
+		Task:             c.fromModelTaskToEntity(m),
+		StateTransitions: transitions,
+		Timing:           taskTiming(transitions, time.Now()),
+	}, nil
+}
+
+// taskTiming adds up a task's transitions, oldest first. Each state lasts
+// until the next transition, and the current one until now. A task counts as
+// closed only while it is still completed or rejected, so a reopened task has
+// no close time.
+func taskTiming(transitions []entity.TaskStateTransition, now time.Time) entity.TaskTiming {
+	var timing entity.TaskTiming
+	for i, tr := range transitions {
+		end := now
+		if i+1 < len(transitions) {
+			end = transitions[i+1].CreatedAt
+		}
+		seconds := int64(end.Sub(tr.CreatedAt) / time.Second)
+		switch tr.ToState {
+		case "ongoing":
+			timing.WorkedSeconds += seconds
+			if timing.StartedAt == nil {
+				at := tr.CreatedAt
+				timing.StartedAt = &at
+			}
+		case "blocked":
+			timing.BlockedSeconds += seconds
+		case "needsinput":
+			timing.NeedsInputSeconds += seconds
+		}
+	}
+	if n := len(transitions); n > 0 {
+		last := transitions[n-1]
+		if last.ToState == "completed" || last.ToState == "rejected" {
+			at := last.CreatedAt
+			timing.ClosedAt = &at
+		}
+	}
+	if timing.StartedAt != nil && timing.ClosedAt != nil {
+		seconds := int64(timing.ClosedAt.Sub(*timing.StartedAt) / time.Second)
+		timing.StartToCloseSeconds = &seconds
+	}
+	return timing
 }
 
 func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {

@@ -71,7 +71,22 @@ func FromHTTPRequestToGetTaskRequestEntity(c *fiber.Ctx) *entity.GetTaskRequest 
 }
 
 func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte {
-	payload, _ := json.Marshal(view.GetTaskResponse{Task: FromEntityTaskToView(rs.Task)})
+	transitions := make([]view.TaskStateTransition, len(rs.StateTransitions))
+	for i, tr := range rs.StateTransitions {
+		transitions[i] = view.TaskStateTransition{FromState: tr.FromState, ToState: tr.ToState, CreatedAt: tr.CreatedAt}
+	}
+	payload, _ := json.Marshal(view.GetTaskResponse{
+		Task:             FromEntityTaskToView(rs.Task),
+		StateTransitions: transitions,
+		Timing: view.TaskTiming{
+			StartedAt:           rs.Timing.StartedAt,
+			ClosedAt:            rs.Timing.ClosedAt,
+			StartToCloseSeconds: rs.Timing.StartToCloseSeconds,
+			BlockedSeconds:      rs.Timing.BlockedSeconds,
+			NeedsInputSeconds:   rs.Timing.NeedsInputSeconds,
+			WorkedSeconds:       rs.Timing.WorkedSeconds,
+		},
+	})
 	return payload
 }
 

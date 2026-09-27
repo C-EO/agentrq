@@ -990,13 +990,13 @@ paths:
       - $ref: '#/components/parameters/TaskId'
     get:
       tags: [Tasks]
-      summary: Get a task, with its messages and tool calls
+      summary: Get a task, with its messages, tool calls and status history
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+              schema: { $ref: '#/components/schemas/TaskDetailEnvelope' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [Tasks]
@@ -2535,6 +2535,55 @@ components:
       type: object
       properties:
         task: { $ref: '#/components/schemas/Task' }
+
+    TaskDetailEnvelope:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+        stateTransitions:
+          type: array
+          description: Every change of the task's status, oldest first. History begins when it was first recorded, so an older task may have none.
+          items: { $ref: '#/components/schemas/TaskStateTransition' }
+        timing: { $ref: '#/components/schemas/TaskTiming' }
+
+    TaskStateTransition:
+      type: object
+      properties:
+        fromState:
+          type: string
+          description: The status before the change; empty on the row written when the task was created.
+        toState:
+          type: string
+          description: A task status, or needsinput while a question to the human is pending.
+        createdAt: { type: string, format: date-time }
+
+    TaskTiming:
+      type: object
+      description: What the task's state transitions add up to. A state the task is still in counts up to the moment of the request.
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: The first time the task went ongoing.
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the task became completed or rejected; null while it is not.
+        startToCloseSeconds:
+          type: integer
+          nullable: true
+          description: From startedAt to closedAt, when there are both.
+        blockedSeconds:
+          type: integer
+          description: Total time spent blocked, waiting on the human.
+        needsInputSeconds:
+          type: integer
+          description: Total time a question to the human (a permission request, an elicitation) was pending. Needing input is a state of the history only; it is never the task's status.
+        workedSeconds:
+          type: integer
+          description: Total time spent ongoing.
 
     TaskList:
       type: object

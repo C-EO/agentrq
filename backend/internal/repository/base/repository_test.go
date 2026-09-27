@@ -31,7 +31,7 @@ func TestRepository_GetNextTask(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Task{})
+	_ = db.AutoMigrate(&model.Task{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -255,7 +255,7 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -309,7 +309,7 @@ func TestRepository_ListTasks_FiltersByAssignee(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -341,7 +341,7 @@ func TestRepository_CountTasks_FiltersByStatusAndAssignee(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -374,7 +374,7 @@ func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -622,7 +622,7 @@ func TestRepository_EventTrigger_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Task{}, &model.Workflow{}, &model.WorkflowStep{})
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Task{}, &model.Workflow{}, &model.WorkflowStep{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -706,7 +706,7 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Task{})
+	_ = db.AutoMigrate(&model.Task{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -790,7 +790,7 @@ func TestRepository_GetDetailedUserStats(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Telemetry{}, &model.Workspace{})
+	_ = db.AutoMigrate(&model.Telemetry{}, &model.Workspace{}, &model.TaskStateTransition{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()

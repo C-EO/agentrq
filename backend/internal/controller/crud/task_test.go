@@ -317,6 +317,7 @@ func TestGetTask_Success(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Title: "hello", Status: "ongoing"}
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {
@@ -356,6 +357,7 @@ func TestGetTask_Full(t *testing.T) {
 		},
 	}
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
 
 	resp, err := e.controller.GetTask(context.Background(), entity.GetTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {

@@ -229,7 +229,24 @@ type (
 	}
 
 	GetTaskResponse struct {
-		Task Task `json:"task"`
+		Task             Task                  `json:"task"`
+		StateTransitions []TaskStateTransition `json:"stateTransitions"`
+		Timing           TaskTiming            `json:"timing"`
+	}
+
+	TaskStateTransition struct {
+		FromState string    `json:"fromState"`
+		ToState   string    `json:"toState"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+
+	TaskTiming struct {
+		StartedAt           *time.Time `json:"startedAt"`
+		ClosedAt            *time.Time `json:"closedAt"`
+		StartToCloseSeconds *int64     `json:"startToCloseSeconds"`
+		BlockedSeconds      int64      `json:"blockedSeconds"`
+		NeedsInputSeconds   int64      `json:"needsInputSeconds"`
+		WorkedSeconds       int64      `json:"workedSeconds"`
 	}
 
 	ListTasksResponse struct {

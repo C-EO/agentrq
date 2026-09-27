@@ -114,6 +114,7 @@ type Repository interface {
 	ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
+	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -288,6 +289,9 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 		if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.TaskStateTransition{}).Error; err != nil {
+			return err
+		}
 		// Skills go with their workspace, and so does every share of them and
 		// every share into it. The files' content is purged by the caller.
 		skillIDs := tx.Model(&model.Skill{}).Select("id").Where("workspace_id = ?", id)
@@ -327,7 +331,13 @@ func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
-	if err := r.conn(ctx).Create(&t).Error; err != nil {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		return recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status))
+	})
+	if err != nil {
 		return model.Task{}, err
 	}
 	return t, nil
@@ -336,6 +346,9 @@ func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, 
 func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, msgs []model.Message) (model.Task, error) {
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		if err := recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status)); err != nil {
 			return err
 		}
 		if len(msgs) == 0 {
@@ -530,8 +543,50 @@ func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID 
 	return t, err
 }
 
+// UpdateTask saves t and, when that changes its status, records the
+// transition in the same transaction. Every status change in the backend is a
+// save through here, which is why the history is written here and not by the
+// callers.
 func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {
-	if err := r.conn(ctx).Save(&t).Error; err != nil {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var prev struct {
+			Status      string
+			WorkspaceID int64
+		}
+		err := tx.Model(&model.Task{}).
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("status, workspace_id").
+			Where("id = ?", t.ID).
+			Take(&prev).Error
+		inserted := errors.Is(err, gorm.ErrRecordNotFound)
+		if err != nil && !inserted {
+			return err
+		}
+		if err := tx.Save(&t).Error; err != nil {
+			return err
+		}
+		if inserted {
+			// Save inserted it: this is the task's first state.
+			return recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status))
+		}
+		if prev.WorkspaceID != t.WorkspaceID {
+			// A moved task takes its history with it.
+			if err := tx.Model(&model.TaskStateTransition{}).
+				Where("task_id = ?", t.ID).
+				Update("workspace_id", t.WorkspaceID).Error; err != nil {
+				return err
+			}
+		}
+		if prev.Status == t.Status {
+			return nil
+		}
+		from, err := currentTaskState(tx, t.ID, prev.Status)
+		if err != nil {
+			return err
+		}
+		return recordTaskStateTransition(tx, t, from, model.TaskStateFromStatus(t.Status))
+	})
+	if err != nil {
 		return model.Task{}, err
 	}
 	return t, nil
@@ -560,6 +615,9 @@ func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, 
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.SlackTaskThread{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.TaskStateTransition{}).Error; err != nil {
+			return err
+		}
 
 		// 2. Delete the task
 		res := tx.Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).
@@ -575,7 +633,15 @@ func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, 
 }
 
 func (r *repository) CreateMessage(ctx context.Context, m model.Message) error {
-	return r.conn(ctx).Create(&m).Error
+	if !hasRequestStatus(m.Metadata) {
+		return r.conn(ctx).Create(&m).Error
+	}
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&m).Error; err != nil {
+			return err
+		}
+		return syncNeedsInput(tx, m.TaskID)
+	})
 }
 
 func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Message, error) {
@@ -585,7 +651,18 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 }
 
 func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
-	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+	update := func(tx *gorm.DB) error {
+		return tx.Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+	}
+	if !hasRequestStatus(metadata) {
+		return update(r.conn(ctx))
+	}
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := update(tx); err != nil {
+			return err
+		}
+		return syncNeedsInput(tx, taskID)
+	})
 }
 
 func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
