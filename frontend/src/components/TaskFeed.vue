@@ -85,10 +85,10 @@
                         </button>
                       </template>
 
-                      <button v-if="!isArchived && (t.status === 'cron' || t.status === 'notstarted')" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Edit Task">
+                      <button v-if="canEditTask(t, isArchived)" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Edit Task">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
-                      <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all">
+                      <button v-if="canDeleteTask(t, isArchived)" @click.stop="triggerDelete(t)" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all" title="Delete Task">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
                    </div>
@@ -127,11 +127,11 @@
       </div>
       
       <!-- Sticky Load More Footer -->
-      <div v-if="displayGroups.find(g => g.hasMore)" class="sticky bottom-0 left-0 right-0 p-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-t border-gray-100 dark:border-zinc-800 z-30 flex flex-col gap-1.5">
+      <div v-if="displayGroups.find(g => g.hasMore)" class="sticky bottom-0 left-0 right-0 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-30 flex flex-col items-center gap-2">
         <template v-for="grp in displayGroups" :key="'more-' + grp.title">
-          <button v-if="grp.hasMore" @click.stop="fetchGroup(grp.category, true)" class="w-full py-1.5 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 text-[10px] font-semibold hover:border-gray-300 dark:hover:border-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-all shadow-sm">
-            Load More {{ grp.title }}
-          </button>
+          <LoadMoreButton v-if="grp.hasMore" :label="`Load More ${grp.title}`"
+                          :loading="loadingMore === grp.category"
+                          @click="loadMoreGroup(grp.category)" />
         </template>
       </div>
     </div>
@@ -153,6 +153,8 @@ import ExtensionViewPanel from './ExtensionViewPanel.vue';
 import DeleteModal from './DeleteModal.vue';
 import MoveTaskModal from './MoveTaskModal.vue';
 import ContextMenu from './ContextMenu.vue';
+import LoadMoreButton from './LoadMoreButton.vue';
+import { canEditTask, canDeleteTask, taskEditPath } from '../composables/useTaskRowActions';
 import { useToasts } from '../composables/useToasts';
 
 const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
@@ -246,6 +248,8 @@ const pendingHasMore = ref(false);
 const completedHasMore = ref(false);
 
 const loadingTasks = ref(false);
+// The category whose next page is on its way, so only its button spins.
+const loadingMore = ref(null);
 const PAGE_SIZE = 10;
 
 async function fetchGroup(category, isLoadMore = false) {
@@ -295,6 +299,16 @@ async function fetchGroup(category, isLoadMore = false) {
     emitUpdatedTasks();
   } catch (err) {
     notifyError(`Failed to fetch ${category} tasks: ` + err.message);
+  }
+}
+
+async function loadMoreGroup(category) {
+  if (loadingMore.value) return;
+  loadingMore.value = category;
+  try {
+    await fetchGroup(category, true);
+  } finally {
+    loadingMore.value = null;
   }
 }
 
@@ -610,7 +624,7 @@ function openTask(task) {
 }
 
 function triggerEdit(task) {
-  router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}/edit`);
+  router.push(taskEditPath({ ...task, workspaceId: props.workspaceId }));
 }
 
 async function triggerDelete(task) {

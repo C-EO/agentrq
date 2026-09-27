@@ -62,6 +62,7 @@ export default defineConfig({
         'src/composables/useExtensionSurfaces.js',
         'src/composables/useExtensionView.js',
         'src/composables/useTaskContextMenu.js',
+        'src/composables/useTaskRowActions.js',
         'src/composables/useTaskEvents.js',
         'src/composables/useTrajectory.js',
         'src/composables/useWorkflowLabels.js',

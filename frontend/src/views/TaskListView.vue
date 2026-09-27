@@ -6,6 +6,35 @@
 
 <template>
   <div class="flex flex-col h-full w-full bg-transparent">
+    <DeleteModal
+      :show="!!taskToDelete"
+      :taskTitle="taskToDelete?.title || ''"
+      title="Delete Task"
+      @close="taskToDelete = null"
+      @confirm="onDeleteConfirm"
+    />
+
+    <MoveTaskModal
+      :show="!!taskToMove"
+      :taskTitle="taskToMove?.title || ''"
+      :currentWorkspaceId="taskToMove?.workspaceId"
+      @close="taskToMove = null"
+      @confirm="onMoveConfirm"
+    />
+
+    <ContextMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextMenuItems"
+      @close="closeContextMenu"
+      @select="onContextMenuSelect"
+    />
+
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" :values="extensions.values"
+                       @action="onExtensionAction" @input="extensions.setValue"
+                       @submit="extensions.submit" @close="extensions.dismiss" />
+
     <!-- Global Header -->
     <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-center justify-between gap-4"
          :class="{'hidden sm:flex': selectedTaskId}">
@@ -78,6 +107,7 @@
               <template v-for="task in grp.tasks" :key="task.id">
                 <!-- Consistent Compact Task Item (KeywordInbox Style) -->
                 <div @click="openTask(task)"
+                     @contextmenu.prevent.stop="openContextMenu($event, task)"
                      :class="[ 'p-4 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(task.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
                   
                   <div v-if="String(selectedTaskId) === String(task.id)" class="absolute left-0 top-4 bottom-4 w-1 bg-black dark:bg-white rounded-full"></div>
@@ -90,13 +120,21 @@
                       </span>
                     </div>
                     <div class="flex items-center gap-2 relative">
-                       <!-- Reorder buttons for not started -->
-                       <div v-if="filterType === 'notstarted'" class="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button @click.stop="reorderTask(grp.tasks, task, -1)" class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded text-gray-400 hover:text-black dark:hover:text-white transition-colors" title="Move Up">
-                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+                       <!-- Action Menu (Visible on mobile, hover on desktop), as in a workspace's list -->
+                       <div class="opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                          <template v-if="filterType === 'notstarted' && !isArchived(task)">
+                            <button @click.stop="reorderTask(grp.tasks, task, -1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Up">
+                              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+                            </button>
+                            <button @click.stop="reorderTask(grp.tasks, task, 1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Down">
+                              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                          </template>
+                          <button v-if="canEditTask(task, isArchived(task))" @click.stop="router.push(taskEditPath(task))" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Edit Task">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                           </button>
-                          <button @click.stop="reorderTask(grp.tasks, task, 1)" class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded text-gray-400 hover:text-black dark:hover:text-white transition-colors" title="Move Down">
-                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                          <button v-if="canDeleteTask(task, isArchived(task))" @click.stop="taskToDelete = task" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all" title="Delete Task">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                           </button>
                        </div>
                        <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-bold uppercase tracking-wider tabular-nums shrink-0">
@@ -142,11 +180,7 @@
 
           <!-- Sticky Load More -->
           <div v-if="hasMore && tasks.length > 0" class="sticky bottom-0 left-0 right-0 p-4 flex justify-center bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-30">
-            <button @click="loadMore" :disabled="loading" 
-                    class="bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-sm px-8 py-3 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-white transition-all shadow-sm active:scale-95 flex items-center gap-2">
-              <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-              {{ loading ? 'Loading...' : 'Load More Entries' }}
-            </button>
+            <LoadMoreButton :loading="loadingMore" @click="loadMore" />
           </div>
         </div>
       
@@ -173,7 +207,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder } from '../api';
+import { fetchGlobalTasks, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder, deleteTask, moveTask } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
@@ -183,6 +217,14 @@ import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useViewport } from '../composables/useViewport';
 import LoadingState from '../components/LoadingState.vue';
+import LoadMoreButton from '../components/LoadMoreButton.vue';
+import DeleteModal from '../components/DeleteModal.vue';
+import MoveTaskModal from '../components/MoveTaskModal.vue';
+import ContextMenu from '../components/ContextMenu.vue';
+import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
+import { canEditTask, canDeleteTask, taskEditPath, withoutTask } from '../composables/useTaskRowActions';
+import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
+import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 
@@ -198,6 +240,7 @@ const tasks = ref([]);
 // instead of freezing at whatever was true when this list was fetched.
 const workspaceStore = useWorkspaceStore();
 const loading = ref(false);
+const loadingMore = ref(false);
 const offset = ref(0);
 const limit = 10;
 const hasMore = ref(true);
@@ -272,6 +315,91 @@ const displayGroups = computed(() =>
 const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cron').length);
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
 const pendingInputCount = computed(() => pendingOnHuman(tasks.value).length);
+
+const isArchived = (task) => !!workspaceStore.getWorkspace(task.workspaceId)?.archivedAt;
+
+// The same edit, delete and right-click a workspace's own list offers, so a task
+// reached from the sidebar can be handled without first opening its workspace.
+const taskToDelete = ref(null);
+const taskToMove = ref(null);
+
+// After a delete or a move the row goes at once, and the selected task's pane
+// with it; the event that follows refreshes the list anyway.
+const dropTask = (taskId) => {
+  tasks.value = withoutTask(tasks.value, taskId);
+  if (String(selectedTaskId.value) === String(taskId)) router.push(`/tasks/${filterType.value}`);
+};
+
+const onDeleteConfirm = async () => {
+  const task = taskToDelete.value;
+  if (!task) return;
+  try {
+    await deleteTask(task.workspaceId, task.id);
+    dropTask(task.id);
+    notifySuccess('Task deleted');
+  } catch (err) {
+    notifyError('Delete Error: ' + err.message);
+  } finally {
+    taskToDelete.value = null;
+  }
+};
+
+const onMoveConfirm = async (destinationWorkspaceId) => {
+  const task = taskToMove.value;
+  if (!task) return;
+  try {
+    await moveTask(task.workspaceId, task.id, destinationWorkspaceId);
+    dropTask(task.id);
+    notifySuccess('Task moved');
+  } catch (err) {
+    notifyError('Move Error: ' + err.message);
+  } finally {
+    taskToMove.value = null;
+  }
+};
+
+const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
+const extensionItems = ref([]);
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task, extensionItems.value));
+const extensions = useExtensionSurfaces();
+
+watch(() => extensions.error.value, (reason) => {
+  if (reason) notifyError(reason);
+});
+
+// Mirrors TaskFeed's: see there for why the extension rows are cleared first
+// and why a late answer for an earlier right-click is dropped.
+let contextMenuRequest = 0;
+const openContextMenu = async (event, task) => {
+  if (isArchived(task)) return;
+  contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+  extensionItems.value = [];
+  const request = (contextMenuRequest += 1);
+  const entries = await extensions.entriesFor('task-menu', task);
+  if (request === contextMenuRequest) extensionItems.value = entries;
+};
+
+const closeContextMenu = () => {
+  contextMenu.value = { ...contextMenu.value, show: false };
+};
+
+const onContextMenuSelect = (key) => {
+  const task = contextMenu.value.task;
+  if (!task) return;
+  const parsed = parseSelection(key);
+  if (parsed.kind === 'extension') {
+    extensions.invoke({ owner: parsed.owner, id: parsed.id, surface: 'task-menu' }, task);
+    return;
+  }
+  if (key === 'move') taskToMove.value = task;
+};
+
+const onExtensionAction = (action) => {
+  const panel = extensions.panel.value;
+  const task = contextMenu.value.task;
+  if (!panel || !task) return;
+  extensions.invoke({ owner: panel.owner, id: panel.id, surface: 'task-menu' }, { ...task, action });
+};
 
 const getWorkspaceName = (workspaceId) => workspaceStore.getWorkspace(workspaceId)?.name || '...';
 
@@ -407,11 +535,16 @@ const fetchNext = async () => {
   }
 };
 
+// Its own flag, not `loading`: that one swaps the whole list for a spinner, so
+// a load more used to blank every row already on screen until the page landed.
 const loadMore = async () => {
-  if (loading.value) return;
-  loading.value = true;
-  await fetchNext();
-  loading.value = false;
+  if (loading.value || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    await fetchNext();
+  } finally {
+    loadingMore.value = false;
+  }
 };
 
 const getBackendParams = (filter) => {
