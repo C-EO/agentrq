@@ -238,6 +238,10 @@ const (
 	ClaimHourly  = "latency_hourly"
 	ClaimDaily   = "latency_daily"
 	ClaimMonthly = "latency_monthly"
+	// ClaimBackfill is claimed once per deployment, under BackfillKey, by the
+	// instance that backfills the tasks closed before latency was recorded.
+	ClaimBackfill = "latency_backfill"
+	BackfillKey   = "v1"
 
 	HourKeyFormat = "2006-01-02T15"
 	DayKeyFormat  = "2006-01-02"

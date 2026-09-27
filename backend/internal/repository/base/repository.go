@@ -145,6 +145,7 @@ type Repository interface {
 	AggregateMonthlyTaskLatency(ctx context.Context, periodStart, periodEnd int64) error
 	ListTaskLatencies(ctx context.Context, workspaceID, userID, start, end int64) ([]model.TaskLatency, error)
 	ListTaskLatencyRollups(ctx context.Context, g tasklatency.Granularity, workspaceID, userID, start, end int64) ([]entity.TaskLatencyRollup, error)
+	BackfillTaskLatency(ctx context.Context, hourCut, dayCut int64) (int, error)
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)

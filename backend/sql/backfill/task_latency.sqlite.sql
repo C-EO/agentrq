@@ -7,6 +7,10 @@
 -- rollups over every complete hour/day, and the claims that tell the stats API
 -- the rollups are there. Safe to re-run: task rows written by the server are
 -- kept; rollup rows are recomputed from task_latencies.
+--
+-- The server runs the same backfill by itself, once, on the first boot of the
+-- version that records latency (latencyaggregator, claim latency_backfill/v1).
+-- This file is the fallback if that run failed, as logged at boot.
 
 -- 1. One row per closed task, from its whole history — the arithmetic of
 --    TaskTimingOf: each state lasts until the next transition.

@@ -341,3 +341,133 @@ func TestTaskLatency_ReadFailures(t *testing.T) {
 		t.Errorf("latest: got %v", err)
 	}
 }
+
+func seedHistory(t *testing.T, db *gorm.DB, taskID int64, start time.Time, steps ...any) {
+	t.Helper()
+	at, prev := start, model.TaskStateNone
+	for i := 0; i < len(steps); i += 2 {
+		at = at.Add(steps[i].(time.Duration))
+		to := steps[i+1].(model.TaskState)
+		if err := db.Create(&model.TaskStateTransition{UserID: 1, WorkspaceID: 10 + taskID%2, TaskID: taskID, FromState: prev, ToState: to, CreatedAt: at}).Error; err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		prev = to
+	}
+}
+
+func dumpRollups(t *testing.T, db *gorm.DB) map[string][]entity.TaskLatencyRollup {
+	t.Helper()
+	out := map[string][]entity.TaskLatencyRollup{}
+	for _, table := range []string{hourlyTaskLatencies, dailyTaskLatencies, monthlyTaskLatencies} {
+		var rows []entity.TaskLatencyRollup
+		if err := db.Table(table).Order("period_start, user_id, workspace_id, metric").Scan(&rows).Error; err != nil {
+			t.Fatalf("dump %s: %v", table, err)
+		}
+		out[table] = rows
+	}
+	return out
+}
+
+// The backfill adds the tasks closed before latency was recorded, keeps the
+// ones already recorded, and leaves the rollups exactly as the aggregator
+// would have built them.
+func TestBackfillTaskLatency(t *testing.T) {
+	db := latencyDB(t)
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+	defer func(n int) { backfillBatch = n }(backfillBatch)
+	backfillBatch = 2 // several batches of tasks and of rows
+
+	day := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	seedHistory(t, db, 1, day, time.Duration(0), model.TaskStateNotStarted, time.Minute, model.TaskStateOngoing,
+		time.Hour, model.TaskStateBlocked, 10*time.Minute, model.TaskStateOngoing, 5*time.Minute, model.TaskStateCompleted)
+	seedHistory(t, db, 2, day, time.Duration(0), model.TaskStateOngoing) // still open
+	seedHistory(t, db, 3, day.AddDate(0, 0, 3), time.Duration(0), model.TaskStateNotStarted, 2*time.Hour, model.TaskStateRejected)
+	seedHistory(t, db, 4, day.AddDate(0, 0, 5), time.Duration(0), model.TaskStateOngoing, 3*time.Minute, model.TaskStateNeedsInput,
+		7*time.Minute, model.TaskStateOngoing, time.Minute, model.TaskStateCompleted)
+	seedHistory(t, db, 5, day.AddDate(0, 0, 6), time.Duration(0), model.TaskStateOngoing, time.Minute, model.TaskStateCompleted)
+	// Recorded by the server already: kept as it is, not recomputed.
+	kept := model.TaskLatency{TaskID: 5, UserID: 1, WorkspaceID: 11, ClosedAt: day.AddDate(0, 0, 6).Unix() + 60, WorkedSeconds: 999}
+	seedLatencies(t, db, kept)
+	// Past the day cut but before the hour cut: in the hourly rollup only.
+	seedHistory(t, db, 7, day.AddDate(0, 0, 15), time.Duration(0), model.TaskStateOngoing, time.Minute, model.TaskStateCompleted)
+	// Closed after the cut: recorded, but in no rollup yet.
+	seedHistory(t, db, 6, day.AddDate(0, 0, 30), time.Duration(0), model.TaskStateOngoing, time.Minute, model.TaskStateCompleted)
+
+	hourCut := day.AddDate(0, 0, 20).Unix()
+	dayCut := day.AddDate(0, 0, 10).Unix()
+	added, err := repo.BackfillTaskLatency(ctx, hourCut, dayCut)
+	if err != nil || added != 5 {
+		t.Fatalf("added %d, %v; want 5 (tasks 1, 3, 4, 6, 7)", added, err)
+	}
+	if l, _ := latencyOf(t, db, 5); l != kept {
+		t.Fatalf("a recorded task was rewritten: %+v", l)
+	}
+	if _, ok := latencyOf(t, db, 2); ok {
+		t.Fatal("an open task has no latency")
+	}
+	l1, _ := latencyOf(t, db, 1)
+	if l1.WorkedSeconds != 65*60 || l1.BlockedSeconds != 10*60 || *l1.StartToCloseSeconds != 75*60 || l1.WorkspaceID != 11 {
+		t.Fatalf("task 1 = %+v", l1)
+	}
+	if l3, _ := latencyOf(t, db, 3); l3.StartToCloseSeconds != nil {
+		t.Fatalf("task 3 never started: %+v", l3)
+	}
+	if l4, _ := latencyOf(t, db, 4); l4.NeedsInputSeconds != 7*60 {
+		t.Fatalf("task 4 = %+v", l4)
+	}
+	backfilled := dumpRollups(t, db)
+	if len(backfilled[hourlyTaskLatencies]) == 0 || len(backfilled[monthlyTaskLatencies]) == 0 {
+		t.Fatalf("no rollups: %+v", backfilled)
+	}
+
+	// The same rollups, built the aggregator's way.
+	for _, table := range []string{hourlyTaskLatencies, dailyTaskLatencies, monthlyTaskLatencies} {
+		db.Exec("DELETE FROM " + table)
+	}
+	for h := day.Truncate(24 * time.Hour); h.Unix() < hourCut; h = h.Add(time.Hour) {
+		_ = repo.AggregateHourlyTaskLatency(ctx, h.Unix(), h.Add(time.Hour).Unix())
+	}
+	for d := day.Truncate(24 * time.Hour); d.Unix() < dayCut; d = d.AddDate(0, 0, 1) {
+		_ = repo.AggregateDailyTaskLatency(ctx, d.Unix(), d.AddDate(0, 0, 1).Unix())
+	}
+	for _, m := range []time.Time{time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)} {
+		end := min(m.AddDate(0, 1, 0).Unix(), dayCut)
+		_ = repo.AggregateMonthlyTaskLatency(ctx, m.Unix(), end)
+	}
+	aggregated := dumpRollups(t, db)
+	for table, rows := range aggregated {
+		if len(rows) != len(backfilled[table]) {
+			t.Fatalf("%s: %d rows backfilled, %d aggregated", table, len(backfilled[table]), len(rows))
+		}
+		for i := range rows {
+			if rows[i] != backfilled[table][i] {
+				t.Fatalf("%s row %d: backfilled %+v, aggregated %+v", table, i, backfilled[table][i], rows[i])
+			}
+		}
+	}
+
+	// A second run adds nothing and changes nothing.
+	if added, err := repo.BackfillTaskLatency(ctx, hourCut, dayCut); err != nil || added != 0 {
+		t.Fatalf("second run added %d, %v", added, err)
+	}
+}
+
+func TestBackfillTaskLatency_Failures(t *testing.T) {
+	for _, tc := range []struct{ name, kind, table string }{
+		{"list tasks", "row", "task_state_transitions"},
+		{"read histories", "query", "task_state_transitions"},
+		{"write latencies", "create", "task_latencies"},
+		{"read latencies", "query", "task_latencies"},
+		{"write rollups", "create", hourlyTaskLatencies},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := latencyDB(t)
+			seedHistory(t, db, 1, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), time.Duration(0), model.TaskStateOngoing, time.Minute, model.TaskStateCompleted)
+			failOn(t, db, tc.kind, tc.table)
+			if _, err := New(&mockDB{db: db}).BackfillTaskLatency(context.Background(), time.Now().Unix(), time.Now().Unix()); !errors.Is(err, errInjected) {
+				t.Fatalf("got %v, want the injected failure", err)
+			}
+		})
+	}
+}

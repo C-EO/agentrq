@@ -25,9 +25,13 @@ func unix(y int, m time.Month, d, h int) int64 {
 }
 
 // The poller ticks until its context ends; at a quiet minute a tick does
-// nothing, which the mock (with no expectations) enforces.
+// nothing, which the mock enforces. The backfill starts beside it and, its
+// claim lost as on any restart after the first, does nothing either.
 func TestStartStop(t *testing.T) {
-	a, _ := newAggregator(t)
+	a, repo := newAggregator(t)
+	claimed := make(chan struct{})
+	repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimBackfill, tasklatency.BackfillKey).
+		DoAndReturn(func(context.Context, string, string) (bool, error) { close(claimed); return false, nil })
 	a.every = time.Millisecond
 	ticked := make(chan struct{}, 1)
 	a.now = func() time.Time {
@@ -40,8 +44,37 @@ func TestStartStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.Start(ctx)
 	<-ticked
+	<-claimed
 	cancel()
 	time.Sleep(5 * time.Millisecond)
+}
+
+func TestBackfill(t *testing.T) {
+	a, repo := newAggregator(t)
+	a.now = func() time.Time { return time.Date(2026, 9, 27, 21, 17, 4, 0, time.UTC) }
+	gomock.InOrder(
+		repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimBackfill, "v1").Return(true, nil),
+		repo.EXPECT().BackfillTaskLatency(gomock.Any(), unix(2026, 9, 27, 21), unix(2026, 9, 27, 0)).Return(12, nil),
+		repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimHourly, "2026-09-27T20").Return(true, nil),
+		repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimDaily, "2026-09-26").Return(false, nil),
+		repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimMonthly, "2026-09-27").Return(false, context.DeadlineExceeded),
+	)
+	a.backfill(context.Background())
+}
+
+// Every boot after the first loses the claim and never backfills again; a
+// claim error does nothing either, and a failed backfill claims no period.
+func TestBackfill_OnlyOnce(t *testing.T) {
+	a, repo := newAggregator(t)
+	repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimBackfill, "v1").Return(false, nil)
+	a.backfill(context.Background())
+
+	repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimBackfill, "v1").Return(false, context.DeadlineExceeded)
+	a.backfill(context.Background())
+
+	repo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), tasklatency.ClaimBackfill, "v1").Return(true, nil)
+	repo.EXPECT().BackfillTaskLatency(gomock.Any(), gomock.Any(), gomock.Any()).Return(3, context.DeadlineExceeded)
+	a.backfill(context.Background())
 }
 
 // Outside the three run times nothing touches the repository.

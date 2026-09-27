@@ -34,6 +34,7 @@ func New(repo base.Repository) Service {
 }
 
 func (a *aggregator) Start(ctx context.Context) {
+	go a.backfill(ctx)
 	ticker := time.NewTicker(a.every)
 	go func() {
 		for {
@@ -83,4 +84,39 @@ func (a *aggregator) run(ctx context.Context, claimType, key string, start, end 
 	if err := aggregate(ctx, start.Unix(), end.Unix()); err != nil {
 		zlog.Error().Err(err).Str("type", claimType).Time("period_start", start).Msg("latencyaggregator: aggregation failed")
 	}
+}
+
+// backfill runs once per deployment, in the background: the first instance to
+// claim it builds the latency of every task closed before it was recorded and
+// the rollups over every complete period, then claims those periods so the
+// stats read them. The claim is kept even if the run fails, so a failure is
+// never retried at every boot; the SQL in backend/sql/backfill is the fallback.
+func (a *aggregator) backfill(ctx context.Context) {
+	claimed, err := a.repo.ClaimTelemetryAggregation(ctx, tasklatency.ClaimBackfill, tasklatency.BackfillKey)
+	if err != nil {
+		zlog.Error().Err(err).Msg("latencyaggregator: failed to claim the backfill")
+		return
+	}
+	if !claimed {
+		return
+	}
+	now := a.now().UTC()
+	hourCut := now.Truncate(time.Hour)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	added, err := a.repo.BackfillTaskLatency(ctx, hourCut.Unix(), today.Unix())
+	if err != nil {
+		zlog.Error().Err(err).Int("tasks", added).Msg("latencyaggregator: backfill failed; run backend/sql/backfill by hand")
+		return
+	}
+	for _, c := range []struct{ typ, key string }{
+		{tasklatency.ClaimHourly, hourCut.Add(-time.Hour).Format(tasklatency.HourKeyFormat)},
+		{tasklatency.ClaimDaily, today.AddDate(0, 0, -1).Format(tasklatency.DayKeyFormat)},
+		{tasklatency.ClaimMonthly, today.Format(tasklatency.DayKeyFormat)},
+	} {
+		// Already claimed means the aggregator got there first, which is fine.
+		if _, err := a.repo.ClaimTelemetryAggregation(ctx, c.typ, c.key); err != nil {
+			zlog.Error().Err(err).Str("type", c.typ).Msg("latencyaggregator: failed to claim a backfilled period")
+		}
+	}
+	zlog.Info().Int("tasks", added).Msg("latencyaggregator: backfill complete")
 }

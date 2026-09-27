@@ -71,3 +71,6 @@ makes them self-evidently true. A few happen entirely in the browser and are
   `recordTaskStateTransition` so no path can close a task without it. A read
   takes rollups up to the newest claim and the task rows after it; reading only
   the rollups loses today, and reading both past the claim counts a task twice.
+  Older tasks are backfilled once, in a goroutine at boot, behind the claim
+  `latency_backfill`/`v1`. Keep the claim even when the run fails, or every
+  restart redoes it; `backend/sql/backfill` is the manual fallback.
