@@ -17,5 +17,17 @@
 </template>
 
 <script setup>
+import { watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { useViewport } from '../composables/useViewport';
 import KanbanBoardView from './KanbanBoardView.vue';
+
+const router = useRouter();
+const { isMobile } = useViewport();
+
+// Desktop and large screens only, like the workspace board: a narrow viewport
+// that lands here (a direct link, a resize) gets the task list instead.
+watch(isMobile, (mobile) => {
+  if (mobile) router.replace('/tasks/active');
+}, { immediate: true });
 </script>

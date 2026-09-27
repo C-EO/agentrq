@@ -10,21 +10,15 @@
       <LoadingState label="Loading board..." />
     </div>
 
-    <!-- Across every workspace the board is also on a phone, where four
-         columns do not fit: they keep a readable width and scroll sideways. -->
-    <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0"
-         :class="isGlobal ? 'overflow-x-auto custom-scrollbar' : ''">
+    <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0">
       <!-- Columns are frameless: the header and the cards are enough to read one
            as a column, and four nested borders inside the page's own container
            read as a table. While a card is in flight the column still has to
            say which one would receive it, so the drop target is a tinted
            background rather than a border that only exists mid-drag. -->
       <div v-for="col in columns" :key="col.id"
-           class="flex-1 flex flex-col min-h-0 rounded-xl transition-colors"
-           :class="[
-             isGlobal ? 'min-w-[15rem] md:min-w-0' : 'min-w-0',
-             dragOverColId === col.id ? 'bg-gray-100/80 dark:bg-zinc-800/40' : 'bg-transparent'
-           ]"
+           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl transition-colors"
+           :class="dragOverColId === col.id ? 'bg-gray-100/80 dark:bg-zinc-800/40' : 'bg-transparent'"
            @dragover="onColumnDragOver($event, col.id)"
            @drop="onDrop($event, col.id)">
 

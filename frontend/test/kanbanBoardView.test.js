@@ -16,9 +16,10 @@ import { createPinia } from 'pinia'
 // The board under a workspace has `id` in the route; on /kanban it has none.
 const route = { params: { id: 'ws1' }, query: {} }
 const push = vi.fn()
+const replace = vi.fn()
 vi.mock('vue-router', () => ({
   useRoute: () => route,
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace }),
 }))
 
 const events = ref([])
@@ -345,9 +346,23 @@ describe('KanbanBoardView across every workspace', () => {
   })
 
   it('is what the Kanban page draws, under its heading', async () => {
+    replace.mockClear()
     const { el, card } = await mount({ component: KanbanView, workspaces })
     expect(el.querySelector('h1').textContent.trim()).toBe('Kanban')
     expect(chip(card('Task a1')).textContent.trim()).toBe('alpha')
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('sends a phone-width screen to the task list, as the workspace board does', async () => {
+    replace.mockClear()
+    const width = window.innerWidth
+    window.innerWidth = 390
+    try {
+      await mount({ component: KanbanView, workspaces })
+    } finally {
+      window.innerWidth = width
+    }
+    expect(replace).toHaveBeenCalledWith('/tasks/active')
   })
 })
 
