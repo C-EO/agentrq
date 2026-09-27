@@ -77,6 +77,9 @@
               </p>
             </div>
 
+            <!-- Mission templates, across both columns -->
+            <MissionTemplatePicker v-model="form.description" class="lg:col-span-2" />
+
             <!-- Mission -->
             <div class="flex flex-col">
               <div class="flex items-baseline justify-between gap-2 mb-1.5">
@@ -141,6 +144,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { createWorkspace } from '../api';
+import MissionTemplatePicker from '../components/MissionTemplatePicker.vue';
 import { useToasts } from '../composables/useToasts';
 import { useFormat } from '../composables/useFormat';
 import { usePlatformStore } from '../stores/platformStore';

@@ -31,6 +31,7 @@ import WorkspaceView from '../src/views/WorkspaceView.vue';
 import { usePlatformStore } from '../src/stores/platformStore';
 import { useToasts } from '../src/composables/useToasts';
 import { DEFAULT_SELF_LEARNING_LOOP_NOTE, DEFAULT_WORKSPACE_MISSION } from '../src/utils/workspaceForm';
+import { MISSION_CATEGORIES } from '../src/utils/missionTemplates';
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
@@ -183,6 +184,42 @@ describe('the create-workspace page', () => {
     button('Restore default').click();
     await settle();
     expect($('#workspaceSelfLearningNote').value).toBe(DEFAULT_SELF_LEARNING_LOOP_NOTE);
+  });
+
+  it('pre-fills the mission from a category and speciality, and the text stays editable', async () => {
+    await mount();
+    const coding = MISSION_CATEGORIES.find((c) => c.id === 'coding');
+    for (const c of MISSION_CATEGORIES) expect(button(c.label)).toBeDefined();
+    expect(button('General').getAttribute('aria-pressed')).toBe('true');
+    expect(button('iOS')).toBeUndefined();
+
+    button('Coding').click();
+    await settle();
+    expect(button('Sales')).toBeUndefined();
+    button('iOS').click();
+    await settle();
+    expect($('#workspaceMission').value).toBe(coding.subcategories.find((t) => t.id === 'ios').mission);
+    expect(button('iOS').getAttribute('aria-pressed')).toBe('true');
+    expect(button('Undo')).toBeUndefined();
+
+    await type('#workspaceName', 'app');
+    await type('#workspaceMission', 'My own words.');
+    expect(button('iOS').getAttribute('aria-pressed')).toBe('false');
+    $('button[title="Back to all categories"]').click();
+    await settle();
+    expect(button('iOS')).toBeUndefined();
+    expect(button('General').getAttribute('aria-pressed')).toBe('false');
+    button('General').click();
+    await settle();
+    expect(button('General').getAttribute('aria-pressed')).toBe('true');
+    expect($('#workspaceMission').value).toBe(DEFAULT_WORKSPACE_MISSION);
+    button('Undo').click();
+    await settle();
+    expect($('#workspaceMission').value).toBe('My own words.');
+
+    $('form').dispatchEvent(new Event('submit'));
+    await settle();
+    expect(createWorkspace.mock.calls[0][1]).toBe('My own words.');
   });
 
   it('returns to the overview on Cancel and on the close button', async () => {
