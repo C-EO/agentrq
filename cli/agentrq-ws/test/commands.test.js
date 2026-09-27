@@ -557,6 +557,14 @@ test('site-tools lists the shared websites', async () => {
   assert.deepEqual(client.calls, [{ name: 'listSiteTools', args: {} }])
 })
 
+test('site-tool asks for one tool of one site', async () => {
+  const client = stubClient()
+  await invoke('site-tool', { positionals: ['https://github.com', 'search'], client })
+  assert.deepEqual(client.calls, [{ name: 'getSiteToolDefinition', args: { site: 'https://github.com', tool: 'search' } }])
+  await assert.rejects(() => invoke('site-tool', {}), /<site>/)
+  await assert.rejects(() => invoke('site-tool', { positionals: ['https://github.com'] }), /<tool>/)
+})
+
 test('call-site-tool sends the site, tool, task and parsed arguments', async () => {
   const client = stubClient()
   await invoke('call-site-tool', {
@@ -613,6 +621,7 @@ test('the CLI covers every tool the workspace server offers', () => {
     'deleteSkill',
     'elicit',
     'listSiteTools',
+    'getSiteToolDefinition',
     'callSiteTool',
   ])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')

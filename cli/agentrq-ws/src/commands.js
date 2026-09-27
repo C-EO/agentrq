@@ -394,6 +394,16 @@ export const COMMANDS = [
     },
   },
   {
+    path: ['site-tool'],
+    summary: "Show a shared website's tool, with its input schema",
+    usage: 'agentrq-ws site-tool <site> <tool>',
+    async run(ctx) {
+      const site = requirePositional(ctx.positionals, 0, 'site')
+      const tool = requirePositional(ctx.positionals, 1, 'tool')
+      return ctx.client.callTool('getSiteToolDefinition', { site, tool })
+    },
+  },
+  {
     path: ['call-site-tool'],
     summary: "Run a shared website's tool in the human's Chrome",
     usage: "agentrq-ws call-site-tool <site> <tool> --task <taskId> [--args '{\"k\":\"v\"}'|@file|-]",

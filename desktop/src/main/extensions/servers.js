@@ -66,6 +66,7 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'deleteSkill',
   'elicit',
   'listSiteTools',
+  'getSiteToolDefinition',
   'callSiteTool',
 ])
 

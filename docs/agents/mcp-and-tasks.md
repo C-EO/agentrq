@@ -9,12 +9,12 @@
 ## A tool on the server is a tool in four other places
 
 The `mcp.AddTool(mcpSrv, …)` block in `server.go` is the source of truth for
-what a workspace offers — 15 tools as of 2026-09-23. Every other list of them
+what a workspace offers — 18 tools as of 2026-09-27. Every other list of them
 in this repository is a copy, and the copies are what go stale.
 
 **`cli/agentrq-ws` is the one that is easiest to forget**, because it is a
 separate npm package and nothing in the backend mentions it. It is a
-command-line client over exactly these tools — 18 commands for the 15 — so
+command-line client over exactly these tools — 21 commands for the 18 — so
 **adding, renaming or removing a tool on the server is a change to the CLI
 too**: `COMMANDS` in `cli/agentrq-ws/src/commands.js`, the command table in its
 `README.md`, and the sentence there that spells the tool count out in words. A
