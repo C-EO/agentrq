@@ -14,7 +14,7 @@
         <div class="w-full md:w-48 shrink-0">
           <nav class="flex flex-col gap-1 sticky top-0">
             <button v-for="tab in navItems" :key="tab.id"
-                    @click="activeTab = tab.id"
+                    @click="selectTab(tab.id)"
                     :class="[activeTab === tab.id ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900 shadow-lg shadow-black/5' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800']"
                     class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left">
               <div class="w-4 h-4 flex items-center justify-center shrink-0">
@@ -31,7 +31,7 @@
             <template v-if="extensionTabs.tabs.value.length > 0">
               <div class="my-4 border-t border-gray-100 dark:border-zinc-800"></div>
               <button v-for="tab in extensionTabs.tabs.value" :key="tab.id" type="button"
-                      @click="activeTab = tab.id"
+                      @click="selectTab(tab.id)"
                       :class="[activeTab === tab.id ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900 shadow-lg shadow-black/5' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800']"
                       class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left">
                 <div class="w-4 h-4 flex items-center justify-center shrink-0">
@@ -44,7 +44,7 @@
             </template>
 
             <div class="my-4 border-t border-gray-100 dark:border-zinc-800"></div>
-            <button @click="activeTab = 'danger'"
+            <button @click="selectTab('danger')"
                     :class="[activeTab === 'danger' ? 'bg-red-600 text-white shadow-lg shadow-red-500/20' : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10']"
                     class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -59,7 +59,7 @@
         <div class="flex-1 min-w-0">
           <div class="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-sm shadow-sm overflow-hidden min-h-[500px]">
             <form @submit.prevent="save" class="h-full flex flex-col min-w-0">
-              <div class="p-8 flex-1 min-w-0">
+              <div class="p-4 sm:p-8 flex-1 min-w-0">
                 
                 <!-- General Settings -->
                 <div v-if="activeTab === 'general'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -666,8 +666,10 @@
                   </div>
                 </div>
 
-                <!-- Skills: playbooks agents load, with their own panel. -->
-                <WorkspaceSkillsPanel v-if="activeTab === 'skills'" :workspace-id="workspaceId" />
+                <!-- Skills: playbooks agents load, with their own panel, and one
+                     skill's page in its place when the route names one. -->
+                <WorkspaceSkillPage v-if="activeTab === 'skills' && skillName" :workspace-id="workspaceId" :name="skillName" />
+                <WorkspaceSkillsPanel v-else-if="activeTab === 'skills'" :workspace-id="workspaceId" />
 
                 <!-- Slack Integration -->
                 <div v-if="activeTab === 'slack'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -930,6 +932,7 @@ import {
 } from '../composables/useDirectoryPicker';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
+import WorkspaceSkillPage from '../components/WorkspaceSkillPage.vue';
 import WorkspaceSkillsPanel from '../components/WorkspaceSkillsPanel.vue';
 import StartAgentPanel from '../components/StartAgentPanel.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -974,6 +977,16 @@ const loading = ref(true);
 const saving = ref(false);
 const workspaceStore = useWorkspaceStore();
 const activeTab = ref('general');
+// The skill whose page is open, on /settings/skills/<name>. It belongs to the
+// Skills tab, so any tab picked from it, Skills included, leaves the page.
+const skillName = computed(() => route.params.name || '');
+function selectTab(id) {
+  if (skillName.value) router.push({ path: `/workspaces/${workspaceId.value}/settings`, query: { tab: id } });
+  activeTab.value = id;
+}
+watch(skillName, (name) => {
+  if (name) activeTab.value = 'skills';
+}, { immediate: true });
 const showActionBar = computed(() =>
   shouldShowSettingsActionBar(activeTab.value, workspace.value)
 );

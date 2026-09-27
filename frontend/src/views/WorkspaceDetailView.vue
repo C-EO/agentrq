@@ -281,7 +281,7 @@ const selectedTaskId = computed(() => route.params.taskId);
 
 // Full-width sub-views replace the task list/detail split pane.
 const sectionLabel = computed(() => {
-  if (route.path.endsWith('/settings')) return 'Settings';
+  if (route.path.endsWith('/settings') || route.path.includes('/settings/skills/')) return 'Settings';
   if (route.path.endsWith('/analytics')) return 'Analytics';
   if (route.path.endsWith('/board')) return 'Board';
   return '';

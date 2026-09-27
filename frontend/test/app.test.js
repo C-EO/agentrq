@@ -33,6 +33,7 @@ describe('routes', () => {
       '/workspaces/:id/board',
       '/workspaces/:id/analytics',
       '/workspaces/:id/settings',
+      '/workspaces/:id/settings/skills/:name',
       '/workspaces/:id/tasks/:taskId',
       '/workspaces/:id/tasks/:taskId/instances',
       '/workspaces/:id/tasks/new',
