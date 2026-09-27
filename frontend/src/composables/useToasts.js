@@ -7,20 +7,30 @@ import { ref } from 'vue';
 const toasts = ref([]);
 
 // An error shows up to four lines and takes longer to read, so it stays longer.
+// A stream toast carries a task, a status and a sentence, so it gets a little
+// longer than a plain one.
 const DURATION = 4000;
+const EVENT_DURATION = 6000;
 const ERROR_DURATION = 20000;
+
+// A burst of status changes must not bury the screen; the oldest go first.
+const MAX_VISIBLE = 4;
 
 export function useToasts() {
   // `link`, when given, is `{ taskId, workspaceId }` — where clicking the
   // toast (not its close button) should navigate. Falsy ids mean no link.
-  const addToast = (message, type = 'info', title = null, duration = null, link = null) => {
-    if (duration === null) duration = type === 'error' ? ERROR_DURATION : DURATION;
+  //
+  // `card`, when given, is what a stream toast adds: `kind` (which status icon
+  // and pill to show), `eyebrow` (the workspace it happened in) and, for a
+  // status change, `from`/`to`.
+  const addToast = (message, type = 'info', title = null, duration = null, link = null, card = null) => {
+    if (duration === null) duration = type === 'error' ? ERROR_DURATION : card ? EVENT_DURATION : DURATION;
     const id = Date.now() + Math.random();
     // A zero duration means the toast waits to be dismissed; the progress bar
     // is a countdown, so it has nothing to show.
-    const toast = { id, message, type, title, duration, persistent: duration <= 0, link };
+    const toast = { id, message, type, title, duration, persistent: duration <= 0, link, ...card };
 
-    toasts.value.push(toast);
+    toasts.value = [...toasts.value, toast].slice(-MAX_VISIBLE);
 
     if (duration > 0) {
       setTimeout(() => {
@@ -39,12 +49,23 @@ export function useToasts() {
   const notifySuccess = (message, title = null, link = null) => addToast(message, 'success', title, null, link);
   const notifyInfo = (message, title = null, link = null) => addToast(message, 'info', title, null, link);
 
+  // A toast decided by useStreamToasts, shown as a task card.
+  const notifyEvent = ({ tone, kind, title, message, from, to, taskId, workspaceId }, eyebrow = '') => addToast(
+    message,
+    tone,
+    title || null,
+    null,
+    taskId && workspaceId ? { taskId, workspaceId } : null,
+    { kind, eyebrow, from, to },
+  );
+
   return {
     toasts,
     addToast,
     removeToast,
     notifyError,
     notifySuccess,
-    notifyInfo
+    notifyInfo,
+    notifyEvent
   };
 }

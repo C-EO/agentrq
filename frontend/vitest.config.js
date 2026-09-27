@@ -44,6 +44,7 @@ export default defineConfig({
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
         'src/composables/useStreamToasts.js',
+        'src/composables/useToasts.js',
         'src/composables/useDrawerFrame.js',
         'src/composables/useTaskGroups.js',
         'src/composables/useKanbanOrder.js',
