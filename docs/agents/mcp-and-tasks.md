@@ -137,3 +137,12 @@ attached reaches nobody, silently. Recording the push instead — which is what
 that never arrived at all. The `/clear` is the half that must not repeat, and
 `clearContextFor` remembers it per task, only once it has actually gone out.
 
+
+## Status history is written by the repository
+
+`task_state_transitions` gets a row from `CreateTask`, `CreateTaskWithMessages`
+and `UpdateTask`, in the same transaction as the task — so change a status only
+through those, never with a column `Update`, or the change leaves no history.
+`needsinput` (code 7) is a state of the history only, synced from pending
+questions in `CreateMessage`/`UpdateMessageMetadata`; never make it a task
+status, since the poller and every count read the status.

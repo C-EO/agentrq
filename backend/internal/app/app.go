@@ -220,6 +220,7 @@ func New(cfg Config) (*App, error) {
 		&model.Workflow{},
 		&model.WorkflowStep{},
 		&model.ToolCall{},
+		&model.TaskStateTransition{},
 		&model.Memory{},
 		&model.Skill{},
 		&model.SkillFile{},
@@ -424,16 +425,8 @@ func New(cfg Config) (*App, error) {
 				}
 				m.Status = status
 
-				msgID := ids.NextID()
-				_ = repo.CreateMessage(ctx, model.Message{
-					ID:        msgID,
-					CreatedAt: time.Now(),
-					TaskID:    taskID,
-					UserID:    monoflake.IDFromBase62(workspaceOwner).Int64(),
-					Sender:    "agent",
-					Text:      fmt.Sprintf("Status updated to: %s", status),
-				})
-
+				// No "Status updated to" message in the thread: the change is
+				// recorded as a state transition and shown in the task's timeline.
 				updated, err := repo.UpdateTask(ctx, m)
 				if err == nil {
 					if updated.Status == "completed" || updated.Status == "done" {
@@ -459,19 +452,6 @@ func New(cfg Config) (*App, error) {
 							UserID:       uid,
 							ResourceType: entity.ResourceTask,
 							ResourceID:   updated.ID,
-							Actor:        entity.ActorAgent,
-							Origin:       entity.OriginMCP,
-						},
-					})
-					// Emit message event for the status update text
-					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-						PubSubID: entity.PubSubTopicCRUD,
-						Event: entity.CRUDEvent{
-							Action:       entity.ActionMessageCreate,
-							WorkspaceID:  workspaceID,
-							UserID:       uid,
-							ResourceType: entity.ResourceMessage,
-							ResourceID:   msgID,
 							Actor:        entity.ActorAgent,
 							Origin:       entity.OriginMCP,
 						},
@@ -522,14 +502,6 @@ func New(cfg Config) (*App, error) {
 				if err == nil && m.Status == "notstarted" {
 					m.Status = "ongoing"
 					_, _ = repo.UpdateTask(ctx, m)
-					_ = repo.CreateMessage(ctx, model.Message{
-						ID:        ids.NextID(),
-						CreatedAt: time.Now(),
-						TaskID:    taskID,
-						UserID:    uid,
-						Sender:    "agent",
-						Text:      "Status updated to: ongoing",
-					})
 				}
 
 				msgID := ids.NextID()

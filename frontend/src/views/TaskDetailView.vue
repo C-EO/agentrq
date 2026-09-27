@@ -130,6 +130,12 @@
             </div>
           </div>
           
+          <!-- Status timeline: every state the task has been in, and for how long -->
+          <div v-if="stateTransitions.length" class="mb-1">
+            <TaskTimeline class="hidden md:flex" :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
+            <TaskTimeline class="md:hidden" compact :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
+          </div>
+
           <!-- Attachments -->
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
             <div v-for="(att, i) in task.attachments" :key="i"
@@ -873,11 +879,12 @@ import { agentIsWorking, workingPlaceholder } from '../composables/useAgentTurn'
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
-import { taskDotClass } from '../composables/useTaskStatusStyle';
+import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary } from '../composables/useElicitAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
+import TaskTimeline from '../components/TaskTimeline.vue';
 import {
   SHORTCUTS,
   formatShortcut,
@@ -907,6 +914,8 @@ const workspaceStore = useWorkspaceStore();
 const localWorkspace = ref(null);
 const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
 const task = ref(null);
+// The task's status history, oldest first, from the single-task GET only.
+const stateTransitions = ref([]);
 const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
@@ -1338,6 +1347,7 @@ async function load() {
     // the one thing where showing something stale is worse than showing
     // nothing, so nothing local survives this line.
     task.value = tRes.task;
+    stateTransitions.value = tRes.stateTransitions || [];
     cacheTask(sharedCache(), tRes.task);
     connect();
     nextTick(() => {
@@ -1373,6 +1383,7 @@ watch(() => route.params.taskId, (newTaskId, oldTaskId) => {
 
   if (newTaskId && newTaskId !== task.value?.id) {
     disconnect();
+    stateTransitions.value = [];
     load();
   }
 });
@@ -1649,6 +1660,19 @@ function formatDateTime(dateStr) {
     minute: '2-digit'
   });
 }
+
+// A status change, from whichever side made it, is a new transition: fetch
+// the history again rather than guess the row the server wrote.
+watch(() => task.value?.status, async (status, previous) => {
+  if (!previous || status === previous) return;
+  const forTask = taskId.value;
+  try {
+    const res = await getTask(workspaceId.value, forTask);
+    if (taskId.value === forTask) stateTransitions.value = res.stateTransitions || [];
+  } catch {
+    // The timeline keeps what it had; the next change tries again.
+  }
+});
 
 // Global SSE listener to update local task state
 watch(events, (evts) => {

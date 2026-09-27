@@ -294,7 +294,28 @@ type (
 	}
 
 	GetTaskResponse struct {
-		Task Task
+		Task             Task
+		StateTransitions []TaskStateTransition
+		Timing           TaskTiming
+	}
+
+	// TaskStateTransition is one change of a task's status. FromState is ""
+	// on the row written when the task was created.
+	TaskStateTransition struct {
+		FromState string
+		ToState   string
+		CreatedAt time.Time
+	}
+
+	// TaskTiming is what a task's state transitions add up to. A state the
+	// task is still in counts up to the moment it was asked.
+	TaskTiming struct {
+		StartedAt           *time.Time // first time it went ongoing
+		ClosedAt            *time.Time // when it became completed or rejected, if it still is
+		StartToCloseSeconds *int64
+		BlockedSeconds      int64 // time spent blocked, waiting on the human
+		NeedsInputSeconds   int64 // time a question to the human was pending
+		WorkedSeconds       int64 // time spent ongoing
 	}
 
 	ListTasksRequest struct {
