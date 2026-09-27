@@ -14,11 +14,6 @@
         :class="[toast.type, { clickable: hasLink(toast) }]"
         @click="openLink(toast)"
       >
-        <span class="toast-icon" aria-hidden="true">
-          <svg v-if="toast.type === 'success'" viewBox="0 0 16 16"><path d="M4.5 8.5l2.2 2.2L11.5 6" /></svg>
-          <svg v-else-if="toast.type === 'error'" viewBox="0 0 16 16"><path d="M8 4.5v4.2M8 11.3v.2" /></svg>
-          <svg v-else viewBox="0 0 16 16"><path d="M8 7.3v4.2M8 4.5v.2" /></svg>
-        </span>
         <div class="toast-content">
           <div v-if="toast.title" class="toast-title">{{ toast.title }}</div>
           <!-- Two lines at most, four for an error; the whole message is on hover. -->
@@ -84,7 +79,7 @@ function openLink(toast) {
   position: relative;
   overflow: hidden;
   width: 380px;
-  padding: 14px 14px 16px;
+  padding: 14px 14px 16px 20px;
   background: #fafafa;
   color: #18181b;
   border: 1px solid #e4e4e7;
@@ -121,37 +116,21 @@ function openLink(toast) {
   border-color: #71717a;
 }
 
-.toast-icon {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+/* The bar down the left edge, as on a task card: red error, green success. */
+.toast::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 12px;
+  bottom: 12px;
+  width: 4px;
   border-radius: 9999px;
-  display: grid;
-  place-items: center;
-  background: #27272a;
-  color: #fafafa;
+  background: #d4d4d8;
 }
 
-.toast-icon svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.dark .toast-icon {
-  background: #e4e4e7;
-  color: #27272a;
-}
-
-.toast.success .toast-icon { background: #16a34a; color: #fff; }
-.toast.error .toast-icon { background: #dc2626; color: #fff; }
-.dark .toast.success .toast-icon { background: #22c55e; color: #052e16; }
-.dark .toast.error .toast-icon { background: #f87171; color: #450a0a; }
+.dark .toast::before { background: #52525b; }
+.toast.success::before { background: #22c55e; }
+.toast.error::before { background: #ef4444; }
 
 .toast-content {
   flex: 1;
