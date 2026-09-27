@@ -50,6 +50,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
+	"github.com/agentrq/agentrq/backend/internal/service/latencyaggregator"
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	svclimit "github.com/agentrq/agentrq/backend/internal/service/ratelimit"
@@ -205,35 +206,7 @@ func New(cfg Config) (*App, error) {
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_events_name_user_id").Error
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_workflows_name_user_id").Error
 
-	if err := db.Conn(context.Background()).AutoMigrate(
-		&model.Workspace{},
-		&model.Task{},
-		&model.Message{},
-		&model.Telemetry{},
-		&model.MCPClient{},
-		&model.User{},
-		&model.SlackWorkspaceLink{},
-		&model.SlackTaskThread{},
-		&model.PushSubscription{},
-		&model.Event{},
-		&model.EventTrigger{},
-		&model.Workflow{},
-		&model.WorkflowStep{},
-		&model.ToolCall{},
-		&model.TaskStateTransition{},
-		&model.Memory{},
-		&model.Skill{},
-		&model.SkillFile{},
-		&model.SkillShare{},
-		&model.SiteShare{},
-		&model.Machine{},
-		&model.EnrolmentCode{},
-		&model.Session{},
-		&model.HourlyTelemetry{},
-		&model.DailyTelemetry{},
-		&model.MonthlyTelemetry{},
-		&model.TelemetryAggregation{},
-	); err != nil {
+	if err := db.Conn(context.Background()).AutoMigrate(migratedModels()...); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
@@ -360,6 +333,7 @@ func New(cfg Config) (*App, error) {
 	// ── Telemetry aggregator ─────────────────────────────────────────────────
 	telemetryAggSvc := telemetryaggregator.New(repo)
 	telemetryAggSvc.Start(context.Background())
+	latencyaggregator.New(repo).Start(context.Background())
 
 	// ── Auth ──────────────────────────────────────────────────────────
 	authSvc := auth.NewGoogle(cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, fmt.Sprintf("%s/api/v1/auth/google/callback", cfg.App.BaseURL))
@@ -1416,4 +1390,41 @@ func publicFilesFirst(mux, fiber http.Handler) http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// migratedModels is every table AutoMigrate keeps in step with its model.
+func migratedModels() []any {
+	return []any{
+		&model.Workspace{},
+		&model.Task{},
+		&model.Message{},
+		&model.Telemetry{},
+		&model.MCPClient{},
+		&model.User{},
+		&model.SlackWorkspaceLink{},
+		&model.SlackTaskThread{},
+		&model.PushSubscription{},
+		&model.Event{},
+		&model.EventTrigger{},
+		&model.Workflow{},
+		&model.WorkflowStep{},
+		&model.ToolCall{},
+		&model.TaskStateTransition{},
+		&model.Memory{},
+		&model.Skill{},
+		&model.SkillFile{},
+		&model.SkillShare{},
+		&model.SiteShare{},
+		&model.Machine{},
+		&model.EnrolmentCode{},
+		&model.Session{},
+		&model.HourlyTelemetry{},
+		&model.DailyTelemetry{},
+		&model.MonthlyTelemetry{},
+		&model.TelemetryAggregation{},
+		&model.TaskLatency{},
+		&model.HourlyTaskLatency{},
+		&model.DailyTaskLatency{},
+		&model.MonthlyTaskLatency{},
+	}
 }

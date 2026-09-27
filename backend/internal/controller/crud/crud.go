@@ -110,6 +110,7 @@ type WorkspaceController interface {
 	UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error
 	GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	GetDetailedUserStats(ctx context.Context, req entity.GetUserStatsRequest) (*entity.GetDetailedUserStatsResponse, error)
+	GetTaskLatencyStats(ctx context.Context, req entity.GetTaskLatencyStatsRequest) (*entity.GetTaskLatencyStatsResponse, error)
 	SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error)
 }
 

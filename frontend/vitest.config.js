@@ -50,6 +50,7 @@ export default defineConfig({
         'src/composables/useKanbanOrder.js',
         'src/composables/useTaskStatusStyle.js',
         'src/composables/useTaskTimeline.js',
+        'src/composables/useTaskLatency.js',
         'src/composables/useAttachmentDownload.js',
         'src/composables/useAgentTelemetry.js',
         'src/composables/useAgentModelPicker.js',

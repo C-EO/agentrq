@@ -635,6 +635,29 @@ export async function fetchUserStats(range = '7d', from = 0, to = 0) {
   return res.json();
 }
 
+function taskLatencyParams(range, from, to, aggregate) {
+  const params = new URLSearchParams({ range, aggregate });
+  if (from) params.append('from', from);
+  if (to) params.append('to', to);
+  return params.toString();
+}
+
+// How long a workspace's closed tasks took over a range — start to close,
+// worked, blocked and needing input, in seconds — per bucket and in total, as
+// the p50, min or max.
+export async function fetchWorkspaceTaskLatency(id, range = '7d', from = 0, to = 0, aggregate = 'p50') {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/stats/latency?${taskLatencyParams(range, from, to, aggregate)}`);
+  if (!res.ok) throw new Error('Failed to fetch task latency');
+  return res.json();
+}
+
+// fetchWorkspaceTaskLatency across every workspace the signed-in user owns.
+export async function fetchUserTaskLatency(range = '7d', from = 0, to = 0, aggregate = 'p50') {
+  const res = await apiFetch(`${API_BASE_URL}/stats/latency?${taskLatencyParams(range, from, to, aggregate)}`);
+  if (!res.ok) throw new Error('Failed to fetch account task latency');
+  return res.json();
+}
+
 export async function setWorkspaceSlackChannel(id, channelId, channelName) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
     method: 'PUT',

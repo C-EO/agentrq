@@ -514,6 +514,56 @@ type (
 		Count       int64
 	}
 
+	// TaskLatencyRollup is one row of a task latency rollup table, whichever
+	// granularity it is. See model.HourlyTaskLatency.
+	TaskLatencyRollup struct {
+		PeriodStart int64
+		UserID      int64
+		WorkspaceID int64
+		Metric      uint8
+		Count       int64
+		Sum         int64
+		Min         int64
+		Max         int64
+		Histogram   string
+	}
+
+	// GetTaskLatencyStatsRequest asks for one workspace's task latency, or
+	// the whole account's when WorkspaceID is 0.
+	GetTaskLatencyStatsRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Range       string
+		From        int64
+		To          int64
+		Aggregate   string
+	}
+
+	// TaskLatencyValue is one metric's aggregate over a bucket or the whole
+	// period. Seconds is nil when no closed task had a value: a gap, not zero.
+	TaskLatencyValue struct {
+		Seconds *int64
+		Count   int64
+	}
+
+	TaskLatencyPoint struct {
+		PeriodStart  int64
+		Closed       int64
+		StartToClose TaskLatencyValue
+		Worked       TaskLatencyValue
+		Blocked      TaskLatencyValue
+		NeedsInput   TaskLatencyValue
+	}
+
+	GetTaskLatencyStatsResponse struct {
+		Granularity string
+		Aggregate   string
+		RangeStart  int64
+		RangeEnd    int64
+		Points      []TaskLatencyPoint
+		Summary     TaskLatencyPoint
+	}
+
 	GetWorkspaceTaskCountsRequest struct {
 		WorkspaceID int64
 		UserID      string

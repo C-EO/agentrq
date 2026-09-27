@@ -60,8 +60,14 @@ makes them self-evidently true. A few happen entirely in the browser and are
   daily — never the raw table twice. Monthly re-runs **every day**, not once
   at month end, so the current month's row stays current; its upsert key is
   therefore the day it ran, not the month, or the daily-shaped key would
-  collide with daily's own claim row. A `telemetry_aggregations` row is
-  claimed (`ON CONFLICT DO NOTHING`) before each run so two backend instances
-  polling the same schedule don't double-count a period — skip the claim and
-  a duplicate run doubles every number downstream of it silently.
-
+  collide with daily's own claim row. It sums **the month yesterday was in**:
+  taking today's month sums nothing on the 1st and loses every month's last
+  day. A `telemetry_aggregations` row is claimed (`ON CONFLICT DO NOTHING`)
+  before each run so two backend instances polling the same schedule don't
+  double-count a period — skip the claim and a duplicate run doubles every
+  number downstream of it silently.
+- **Task latency** (`service/latencyaggregator`, `service/tasklatency`) rolls up
+  the same way, from `task_latencies` — one row per closed task, written in
+  `recordTaskStateTransition` so no path can close a task without it. A read
+  takes rollups up to the newest claim and the task rows after it; reading only
+  the rollups loses today, and reading both past the claim counts a task twice.

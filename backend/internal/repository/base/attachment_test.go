@@ -26,7 +26,7 @@ func attachmentDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tk := range []model.Task{

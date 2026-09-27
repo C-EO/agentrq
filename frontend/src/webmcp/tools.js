@@ -233,6 +233,38 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ range = '7d', from = 0, to = 0 }) => api.fetchUserStats(range, from, to),
     }),
     tool({
+      name: 'getWorkspaceTaskLatency',
+      description:
+        'How long a workspace\'s tasks closed in a time range took, in seconds: start to close, worked, ' +
+        'blocked and needing input, per hour, day or month and in total, as the p50, min or max. ' +
+        'A bucket with no closed task has seconds null.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        range: str('Range such as "7d" or "30d". Defaults to "7d".'),
+        from: int('Optional start as a Unix timestamp.'),
+        to: int('Optional end as a Unix timestamp.'),
+        aggregate: str('"p50" (the default), "min" or "max".'),
+      },
+      required: ['workspaceId'],
+      readOnly: true,
+      run: ({ workspaceId, range = '7d', from = 0, to = 0, aggregate = 'p50' }) =>
+        api.fetchWorkspaceTaskLatency(workspaceId, range, from, to, aggregate),
+    }),
+    tool({
+      name: 'getAccountTaskLatency',
+      description:
+        'getWorkspaceTaskLatency across every workspace the user owns.',
+      properties: {
+        range: str('Range such as "7d" or "30d". Defaults to "7d".'),
+        from: int('Optional start as a Unix timestamp.'),
+        to: int('Optional end as a Unix timestamp.'),
+        aggregate: str('"p50" (the default), "min" or "max".'),
+      },
+      readOnly: true,
+      run: ({ range = '7d', from = 0, to = 0, aggregate = 'p50' }) =>
+        api.fetchUserTaskLatency(range, from, to, aggregate),
+    }),
+    tool({
       name: 'listWorkspaceMemories',
       description:
         'What the agents working in a workspace have written down for each other: name, size and when ' +

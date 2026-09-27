@@ -629,6 +629,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	// one, and hanging them off the collection would read as "stats about the
 	// list of workspaces".
 	h.router.Get("/stats", h.getUserStats())
+	h.router.Get("/stats/latency", h.getTaskLatencyStats(false))
 
 	r := h.router.Group("/workspaces")
 	r.Post("", h.createWorkspace())
@@ -640,6 +641,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Post("/:id/archive", h.archiveWorkspace())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
 	r.Get("/:id/stats", h.getWorkspaceStats())
+	r.Get("/:id/stats/latency", h.getTaskLatencyStats(true))
 	r.Get("/:id/memories", h.listWorkspaceMemories())
 	r.Get("/:id/memories/:name", h.getWorkspaceMemory())
 	h.registerSkillRoutes(r)

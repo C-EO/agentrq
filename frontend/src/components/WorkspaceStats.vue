@@ -20,7 +20,17 @@
     @update:custom-from="onCustomFrom"
     @update:custom-to="onCustomTo"
     @apply="apply"
-  />
+  >
+    <template #latency>
+      <TaskLatencyPanel
+        :fetch-latency="fetchLatency"
+        :active-range="activeRange"
+        :custom-from="customFrom"
+        :custom-to="customTo"
+        :scope="workspaceId"
+      />
+    </template>
+  </StatsPanels>
 </template>
 
 <script setup>
@@ -30,8 +40,9 @@
  * `useStatsRange`, and all either adds is which endpoint to call.
  */
 import { computed, onMounted, watch } from 'vue';
-import { fetchWorkspaceStats } from '../api';
+import { fetchWorkspaceStats, fetchWorkspaceTaskLatency } from '../api';
 import StatsPanels from './StatsPanels.vue';
+import TaskLatencyPanel from './TaskLatencyPanel.vue';
 import { useStatsRange, statsPalette } from '../composables/useStatsRange';
 import { useThemeStore } from '../stores/themeStore';
 
@@ -58,6 +69,9 @@ const {
 } = useStatsRange({
   fetchStats: (range, from, to) => fetchWorkspaceStats(props.workspaceId, range, from, to),
 });
+
+const fetchLatency = (range, from, to, aggregate) =>
+  fetchWorkspaceTaskLatency(props.workspaceId, range, from, to, aggregate);
 
 // Setting either end of a custom range loads as soon as both are present, so
 // the common case needs no extra click; the tick button re-runs a range that is

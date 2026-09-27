@@ -23,14 +23,23 @@ func (r *repository) ListTaskStateTransitions(ctx context.Context, taskID int64)
 	return rows, err
 }
 
+// recordTaskStateTransition is the only writer of a task's history. A move
+// into a closed state also records the task's latency, here rather than in
+// the callers, so no path can close a task without it.
 func recordTaskStateTransition(tx *gorm.DB, t model.Task, from, to model.TaskState) error {
-	return tx.Create(&model.TaskStateTransition{
+	if err := tx.Create(&model.TaskStateTransition{
 		UserID:      t.UserID,
 		WorkspaceID: t.WorkspaceID,
 		TaskID:      t.ID,
 		FromState:   from,
 		ToState:     to,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	if !isClosedTaskState(to) {
+		return nil
+	}
+	return recordTaskLatency(tx, t)
 }
 
 // currentTaskState is the state the task's history last moved it to, or, for a

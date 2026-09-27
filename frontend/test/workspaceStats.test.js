@@ -229,6 +229,11 @@ describe('WorkspaceStats', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
 
+    vi.spyOn(api, 'fetchWorkspaceTaskLatency').mockResolvedValue({
+      granularity: 'day',
+      points: [{ periodStart: 1790380800, closed: 1, worked: { seconds: 600, count: 1 } }],
+      summary: { closed: 1, worked: { seconds: 600, count: 1 } },
+    });
     vi.spyOn(api, 'fetchWorkspaceStats').mockResolvedValue({
       summary: {
         tasksCompleted: 42,
@@ -272,6 +277,9 @@ describe('WorkspaceStats', () => {
     expect(container.textContent).toContain('Message Activity Heatmap');
     expect(container.textContent).toContain('Task Completion Velocity');
     expect(container.textContent).toContain('Communication Volume');
+    // The latency panel sits on the same page, for the same workspace.
+    expect(container.textContent).toContain('Task Latency');
+    expect(api.fetchWorkspaceTaskLatency).toHaveBeenCalledWith('ws-123', '7d', 0, 0, 'p50');
 
     app.unmount();
   });
