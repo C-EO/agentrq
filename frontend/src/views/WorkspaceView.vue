@@ -59,7 +59,7 @@
               </div>
               <div class="space-y-2">
                 <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400">Mission / Description</label>
-                <textarea v-model="form.description" rows="3" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
+                <textarea v-model="form.description" rows="7" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
               </div>
               <div class="space-y-2">
                 <label for="newWorkingDirectory" class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
@@ -79,9 +79,9 @@
               <div class="space-y-2">
                 <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
                   Self Learning Loop Note
-                  <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Optional guidelines for agent learning</span>
+                  <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Guidelines appended to every agent task</span>
                 </label>
-                <textarea v-model="form.selfLearningLoopNote" rows="4" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="Upon completing the task, evaluate your execution path..."></textarea>
+                <textarea v-model="form.selfLearningLoopNote" rows="10" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="Upon completing the task, evaluate your execution path..."></textarea>
               </div>
               <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-zinc-800">
                 <button type="button" @click="showCreate = false" class="px-6 py-2.5 rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-[10px] font-black hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all shadow-sm">Cancel</button>
@@ -312,6 +312,7 @@ import {
   directoryPickerState,
   workingDirectoryPlaceholder as directoryPlaceholderFor,
 } from '../composables/useDirectoryPicker';
+import { emptyWorkspaceForm } from '../utils/workspaceForm';
 import LoadingState from '../components/LoadingState.vue';
 import AccountStats from '../components/AccountStats.vue';
 
@@ -375,7 +376,7 @@ const iconError = ref('');
 const createFileInput = ref(null);
 const error = ref(null);
 
-const form = ref({ name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' });
+const form = ref(emptyWorkspaceForm());
 const globalStats = ref({
   totalTasks: 0,
   pendingTasks: 0,
@@ -441,7 +442,7 @@ watch(() => form.value.name, (newVal) => {
 
 watch(showCreate, (val) => {
   if (!val) {
-    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' };
+    form.value = emptyWorkspaceForm();
     iconError.value = '';
   }
 });
@@ -480,7 +481,7 @@ async function submit() {
     const newId = res.workspace?.id || res.id;
     
     showCreate.value = false;
-    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' };
+    form.value = emptyWorkspaceForm();
     iconError.value = ''; 
     
     if (newId) {
