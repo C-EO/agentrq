@@ -188,23 +188,31 @@ describe('the create-workspace page', () => {
 
   it('pre-fills the mission from a category and speciality, and the text stays editable', async () => {
     await mount();
-    expect(button('Backend')).toBeUndefined();
+    const coding = MISSION_CATEGORIES.find((c) => c.id === 'coding');
+    for (const c of MISSION_CATEGORIES) expect(button(c.label)).toBeDefined();
+    expect(button('General').getAttribute('aria-pressed')).toBe('true');
+    expect(button('iOS')).toBeUndefined();
 
     button('Coding').click();
     await settle();
-    expect(button('Coding').getAttribute('aria-pressed')).toBe('true');
+    expect(button('Sales')).toBeUndefined();
     button('iOS').click();
     await settle();
-    const ios = MISSION_CATEGORIES.find((c) => c.id === 'coding').subcategories.find((s) => s.id === 'ios');
-    expect($('#workspaceMission').value).toBe(ios.mission);
+    expect($('#workspaceMission').value).toBe(coding.subcategories.find((t) => t.id === 'ios').mission);
     expect(button('iOS').getAttribute('aria-pressed')).toBe('true');
     expect(button('Undo')).toBeUndefined();
 
     await type('#workspaceName', 'app');
     await type('#workspaceMission', 'My own words.');
     expect(button('iOS').getAttribute('aria-pressed')).toBe('false');
-    button('Android').click();
+    $('button[title="Back to all categories"]').click();
     await settle();
+    expect(button('iOS')).toBeUndefined();
+    expect(button('General').getAttribute('aria-pressed')).toBe('false');
+    button('General').click();
+    await settle();
+    expect(button('General').getAttribute('aria-pressed')).toBe('true');
+    expect($('#workspaceMission').value).toBe(DEFAULT_WORKSPACE_MISSION);
     button('Undo').click();
     await settle();
     expect($('#workspaceMission').value).toBe('My own words.');

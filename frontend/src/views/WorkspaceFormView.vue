@@ -77,6 +77,9 @@
               </p>
             </div>
 
+            <!-- Mission templates, across both columns -->
+            <MissionTemplatePicker v-model="form.description" class="lg:col-span-2" />
+
             <!-- Mission -->
             <div class="flex flex-col">
               <div class="flex items-baseline justify-between gap-2 mb-1.5">
@@ -86,7 +89,6 @@
                   Restore default
                 </button>
               </div>
-              <MissionTemplatePicker v-model="form.description" class="mb-2" />
               <textarea id="workspaceMission" v-model="form.description" rows="12" aria-describedby="workspaceMissionHelp"
                         :class="[FIELD, 'flex-1 leading-relaxed resize-y min-h-[200px] custom-scrollbar']"
                         placeholder="What are we building? Describe the mission of this workspace..."></textarea>

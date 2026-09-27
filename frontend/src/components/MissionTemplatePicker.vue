@@ -4,30 +4,40 @@
   SPDX-License-Identifier: AGPL-3.0-only
 -->
 
-<!-- Optional category chips above a mission field: a category opens its
-     specialities, and a speciality pre-fills the mission, which stays editable. -->
+<!-- Optional mission templates in one row: the categories, or once one is
+     chosen, its specialities with a way back. A speciality pre-fills the
+     mission, which stays editable. -->
 <template>
-  <div class="space-y-2" data-mission-picker>
-    <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Mission category">
-      <span class="w-full sm:w-auto text-[11px] font-medium text-gray-500 dark:text-zinc-400 sm:mr-1">Start from</span>
-      <button v-for="category in categories" :key="category.id" type="button"
-              :aria-pressed="activeCategoryId === category.id"
-              @click="toggleCategory(category.id)"
-              :class="[CHIP, activeCategoryId === category.id ? CHIP_ON : CHIP_OFF]">
-        {{ category.label }}
-      </button>
+  <div data-mission-picker>
+    <div class="flex items-baseline justify-between gap-2 mb-2">
+      <span class="text-xs font-bold text-gray-800 dark:text-zinc-200">
+        Start from a template
+        <span class="ml-1 text-[11px] font-medium text-gray-400 dark:text-zinc-500">Optional</span>
+      </span>
       <button v-if="undoText !== null" type="button" @click="undo"
-              class="ml-auto text-[11px] font-semibold text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 underline-offset-2 hover:underline">
+              class="text-[11px] font-semibold text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 underline-offset-2 hover:underline">
         Undo
       </button>
     </div>
-    <div v-if="activeCategory" class="flex flex-wrap items-center gap-1.5 pl-3 border-l-2 border-gray-200 dark:border-zinc-700"
-         role="group" :aria-label="`${activeCategory.label} speciality`">
-      <button v-for="sub in activeCategory.subcategories" :key="sub.id" type="button"
-              :aria-pressed="selected?.subcategoryId === sub.id && selected?.categoryId === activeCategory.id"
+    <div v-if="openCategory" class="flex flex-wrap gap-1.5" role="group" :aria-label="`${openCategory.label} templates`">
+      <button type="button" @click="back" :title="'Back to all categories'"
+              class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+        {{ openCategory.label }}
+      </button>
+      <button v-for="sub in openCategory.subcategories" :key="sub.id" type="button"
+              :aria-pressed="isSelected(openCategory, sub)"
               @click="pick(sub)"
-              :class="[CHIP, selected?.subcategoryId === sub.id && selected?.categoryId === activeCategory.id ? CHIP_ON : CHIP_OFF]">
+              :class="[CHIP, isSelected(openCategory, sub) ? CHIP_ON : CHIP_OFF]">
         {{ sub.label }}
+      </button>
+    </div>
+    <div v-else class="flex flex-wrap gap-1.5" role="group" aria-label="Template categories">
+      <button v-for="category in categories" :key="category.id" type="button"
+              :aria-pressed="holdsSelection(category)"
+              @click="chooseCategory(category)"
+              :class="[CHIP, holdsSelection(category) ? CHIP_ON : CHIP_OFF]">
+        {{ category.label }}
       </button>
     </div>
   </div>
@@ -43,6 +53,6 @@ const CHIP_OFF =
   'hover:border-gray-400 dark:hover:border-zinc-500';
 
 const mission = defineModel({ type: String, default: '' });
-const { categories, activeCategoryId, activeCategory, selected, undoText, toggleCategory, pick, undo } =
+const { categories, openCategory, isSelected, holdsSelection, undoText, chooseCategory, back, pick, undo } =
   useMissionPicker(mission);
 </script>

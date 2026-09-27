@@ -11,6 +11,14 @@ import { DEFAULT_WORKSPACE_MISSION, WORKSPACE_WORKING_RULES } from './workspaceF
  */
 const CATALOGUE = [
   {
+    id: 'general',
+    label: 'General',
+    subcategories: [
+      // The form's own default, so a new workspace starts with General chosen.
+      { id: 'general', label: 'General Purpose', mission: DEFAULT_WORKSPACE_MISSION },
+    ],
+  },
+  {
     id: 'coding',
     label: 'Coding',
     subcategories: [
@@ -31,6 +39,16 @@ const CATALOGUE = [
         focus: [
           'Build accessible, responsive screens that work on phones and desktops, in light and dark themes.',
           'Reuse the existing components and styles before adding new ones.',
+          'Share a screenshot of every visible change.',
+        ],
+      },
+      {
+        id: 'full-stack',
+        label: 'Full Stack',
+        role: 'full-stack development',
+        focus: [
+          'Change the API, the data and the screens together, so no layer is left behind.',
+          'Cover every change with tests on both sides, and run them before calling it done.',
           'Share a screenshot of every visible change.',
         ],
       },
@@ -149,6 +167,124 @@ const CATALOGUE = [
     ],
   },
   {
+    id: 'research',
+    label: 'Research',
+    subcategories: [
+      {
+        id: 'researcher',
+        label: 'Researcher',
+        role: 'research',
+        focus: [
+          'Gather sources, and cite one for every claim.',
+          'Separate what is known from what is assumed, and say how sure you are.',
+          'End with a short summary and the open questions.',
+        ],
+      },
+      {
+        id: 'finance-analyst',
+        label: 'Finance Analyst',
+        role: 'financial analysis',
+        focus: [
+          'Build models and reports from data the human can check, and show the working.',
+          'State every assumption, and how the result changes when it does.',
+          'This is analysis, not advice: never move money or trade.',
+        ],
+      },
+      {
+        id: 'data-analyst',
+        label: 'Data Analyst',
+        role: 'data analysis',
+        focus: [
+          'Check the data for gaps and errors before drawing conclusions.',
+          'Answer with a chart or table and one plain sentence on what it shows.',
+          'Keep queries and scripts so every number can be reproduced.',
+        ],
+      },
+      {
+        id: 'market-research',
+        label: 'Market Research',
+        role: 'market research',
+        focus: [
+          'Size the market and map the competitors, with sources.',
+          'Summarise what customers say they need, in their own words.',
+          'End with the opportunities and risks you found.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'legal',
+    label: 'Legal',
+    subcategories: [
+      {
+        id: 'contracts',
+        label: 'Contract Review',
+        role: 'reviewing and drafting contracts',
+        focus: [
+          'Summarise each contract\'s obligations, deadlines, fees and termination terms.',
+          'Flag unusual or one-sided clauses, and suggest wording.',
+          'This is not legal advice: a qualified lawyer reviews before anything is signed or sent.',
+        ],
+      },
+      {
+        id: 'legal-research',
+        label: 'Legal Research',
+        role: 'legal research',
+        focus: [
+          'Find the laws, regulations and cases that apply, and cite each one.',
+          'Say which jurisdiction and date every answer holds for.',
+          'This is not legal advice: a qualified lawyer reviews the conclusions.',
+        ],
+      },
+      {
+        id: 'compliance',
+        label: 'Compliance',
+        role: 'compliance',
+        focus: [
+          'Map the rules that apply (privacy, consumer, industry) to what the business does.',
+          'Keep a checklist of gaps, with owners and deadlines.',
+          'This is not legal advice: a qualified lawyer signs off on it.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hr',
+    label: 'HR',
+    subcategories: [
+      {
+        id: 'recruiter',
+        label: 'Recruiter',
+        role: 'recruiting',
+        focus: [
+          'Write job descriptions that say plainly what the role is and needs.',
+          'Source and screen candidates against the role\'s criteria, and note why each fits.',
+          'Contact no candidate and make no decision without the human.',
+        ],
+      },
+      {
+        id: 'onboarding',
+        label: 'Onboarding',
+        role: 'onboarding new hires',
+        focus: [
+          'Prepare checklists, accounts and first-week plans ahead of each start date.',
+          'Keep onboarding documents current, with one owner each.',
+          'Collect feedback from new hires, and suggest what to change.',
+        ],
+      },
+      {
+        id: 'people-ops',
+        label: 'People Ops',
+        role: 'people operations',
+        focus: [
+          'Keep policies, handbooks and records organised and up to date.',
+          'Track leave, reviews and renewals, and remind people ahead of deadlines.',
+          'Treat personal data as confidential, and share it with no one without the human.',
+        ],
+      },
+    ],
+  },
+  {
     id: 'ops',
     label: 'Ops',
     subcategories: [
@@ -187,8 +323,9 @@ const CATALOGUE = [
 ];
 
 function missionFor(category, sub) {
+  if (sub.mission) return sub.mission;
   const focus = sub.focus.map((line) => `- ${line}`).join('\n');
-  return `This workspace is for ${sub.role} (${category.label}). Describe the project, its goal, and anything an agent should know before it starts.
+  return `This workspace is for ${sub.role} (${category.label}).
 
 **Focus**
 ${focus}
@@ -198,7 +335,8 @@ ${WORKSPACE_WORKING_RULES}`;
 
 /**
  * The categories offered above a mission field, each with its specialities
- * and the mission text choosing one pre-fills.
+ * and the mission text choosing one pre-fills. All of them are shown at once,
+ * one row per category, so a mission is always a single click away.
  */
 export const MISSION_CATEGORIES = CATALOGUE.map((category) => ({
   id: category.id,

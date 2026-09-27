@@ -28,13 +28,11 @@ export const WORKSPACE_WORKING_RULES = `**Working rules**
 - Before marking a task completed, summarise what you changed and why.`;
 
 /**
- * The mission a new workspace's form starts with: a prompt to say what the
- * workspace is for, and the working rules most workspaces want anyway. Only
- * the form offers it; a workspace created elsewhere without one keeps none.
+ * The mission a new workspace's form starts with: the working rules most
+ * workspaces want anyway, which is also the General template. Only the form
+ * offers it; a workspace created elsewhere without one keeps none.
  */
-export const DEFAULT_WORKSPACE_MISSION = `Describe what this workspace is for: the project, its goal, and anything an agent should know before it starts.
-
-${WORKSPACE_WORKING_RULES}`;
+export const DEFAULT_WORKSPACE_MISSION = WORKSPACE_WORKING_RULES;
 
 /** A blank create-workspace form, with the default mission and note filled in to edit. */
 export function emptyWorkspaceForm() {

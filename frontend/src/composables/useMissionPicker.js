@@ -6,31 +6,44 @@ import { ref, computed, watch } from 'vue';
 import { MISSION_CATEGORIES, findMissionTemplate, isUntouchedMission } from '../utils/missionTemplates';
 
 /**
- * The state behind the category chips above a mission field. Picking a
- * speciality writes its template into the field; when that overwrites text the
- * person wrote, the old text is kept for one undo, since the app has no
- * confirmation dialog to ask first.
+ * The state behind the template chips above a mission field: one row of
+ * categories, which a category replaces with its specialities until the
+ * person goes back. Picking a speciality writes its template into the field;
+ * when that overwrites text the person wrote, the old text is kept for one
+ * undo, since the app has no confirmation dialog to ask first.
  *
  * @param {import('vue').Ref<string>} mission the mission text, read and written
  */
+// The category to open on for a mission: the one holding its template, unless
+// that category is a single chip, which never opens.
+function categoryToOpen(text) {
+  const id = findMissionTemplate(text)?.categoryId;
+  return MISSION_CATEGORIES.find((c) => c.id === id && c.subcategories.length > 1)?.id ?? null;
+}
+
 export function useMissionPicker(mission) {
-  const activeCategoryId = ref(findMissionTemplate(mission.value)?.categoryId ?? null);
+  const openCategoryId = ref(categoryToOpen(mission.value));
   const undoText = ref(null);
   let applied = null;
 
-  const activeCategory = computed(() => MISSION_CATEGORIES.find((c) => c.id === activeCategoryId.value) ?? null);
+  const openCategory = computed(() => MISSION_CATEGORIES.find((c) => c.id === openCategoryId.value) ?? null);
   const selected = computed(() => findMissionTemplate(mission.value));
 
   watch(mission, (text) => {
-    // A settings form loads its mission after mount: open the category of a
-    // template it holds, unless the person already chose one.
-    if (activeCategoryId.value === null) activeCategoryId.value = findMissionTemplate(text)?.categoryId ?? null;
+    // A settings form loads its mission after mount: open on the template it
+    // holds, unless the person already opened a category.
+    if (openCategoryId.value === null) openCategoryId.value = categoryToOpen(text);
     // Typing after a pick makes the new text theirs; the undo would lose it.
     if (text !== applied) undoText.value = null;
   });
 
-  function toggleCategory(id) {
-    activeCategoryId.value = activeCategoryId.value === id ? null : id;
+  function isSelected(category, sub) {
+    return selected.value?.categoryId === category.id && selected.value?.subcategoryId === sub.id;
+  }
+
+  /** Whether the category holds the mission's template, to mark it in the category row. */
+  function holdsSelection(category) {
+    return selected.value?.categoryId === category.id;
   }
 
   function pick(sub) {
@@ -39,6 +52,17 @@ export function useMissionPicker(mission) {
     applied = sub.mission;
     mission.value = sub.mission;
     undoText.value = isUntouchedMission(previous) ? null : previous;
+  }
+
+  // A category with a single speciality has nothing to choose between, so it
+  // is picked at once and the row stays as it is.
+  function chooseCategory(category) {
+    if (category.subcategories.length === 1) pick(category.subcategories[0]);
+    else openCategoryId.value = category.id;
+  }
+
+  function back() {
+    openCategoryId.value = null;
   }
 
   function undo() {
@@ -50,11 +74,13 @@ export function useMissionPicker(mission) {
 
   return {
     categories: MISSION_CATEGORIES,
-    activeCategoryId,
-    activeCategory,
+    openCategory,
     selected,
+    isSelected,
+    holdsSelection,
     undoText,
-    toggleCategory,
+    chooseCategory,
+    back,
     pick,
     undo,
   };

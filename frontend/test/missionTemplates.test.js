@@ -17,14 +17,18 @@ const category = (id) => MISSION_CATEGORIES.find((c) => c.id === id);
 const sub = (catId, id) => category(catId).subcategories.find((s) => s.id === id);
 
 describe('MISSION_CATEGORIES', () => {
-  it('offers sales, coding, marketing and ops', () => {
-    expect(MISSION_CATEGORIES.map((c) => c.label).sort()).toEqual(['Coding', 'Marketing', 'Ops', 'Sales']);
+  it('offers general, coding, sales, marketing, research, legal, HR and ops, general first', () => {
+    expect(MISSION_CATEGORIES.map((c) => c.label)).toEqual(['General', 'Coding', 'Sales', 'Marketing', 'Research', 'Legal', 'HR', 'Ops']);
   });
 
-  it('breaks coding and marketing into the specialities asked for', () => {
+  it('breaks categories into the specialities asked for', () => {
     expect(category('coding').subcategories.map((s) => s.label)).toEqual(
-      expect.arrayContaining(['Backend', 'Frontend', 'iOS', 'Android', 'Testing'])
+      expect.arrayContaining(['Backend', 'Frontend', 'Full Stack', 'iOS', 'Android', 'Testing'])
     );
+    expect(category('research').subcategories.map((s) => s.label)).toEqual(
+      expect.arrayContaining(['Researcher', 'Finance Analyst'])
+    );
+    expect(category('hr').subcategories.map((s) => s.label)).toContain('Recruiter');
     expect(category('marketing').subcategories.map((s) => s.label)).toEqual(
       expect.arrayContaining(['Social Media', 'YouTube'])
     );
@@ -33,12 +37,22 @@ describe('MISSION_CATEGORIES', () => {
   it('gives every speciality a distinct mission that names it and ends with the working rules', () => {
     const missions = MISSION_CATEGORIES.flatMap((c) => c.subcategories.map((s) => s.mission));
     expect(new Set(missions).size).toBe(missions.length);
-    expect(sub('coding', 'ios').mission).toContain('iOS app development (Coding)');
-    for (const m of missions) {
+    expect(sub('coding', 'ios').mission.split('\n')[0]).toBe('This workspace is for iOS app development (Coding).');
+    for (const m of missions.filter((m) => m !== DEFAULT_WORKSPACE_MISSION)) {
       expect(m.startsWith('This workspace is for ')).toBe(true);
       expect(m).toContain('**Focus**\n- ');
       expect(m.endsWith(WORKSPACE_WORKING_RULES)).toBe(true);
     }
+  });
+
+  it('makes the form\'s default mission the General template', () => {
+    expect(category('general').subcategories).toHaveLength(1);
+    expect(sub('general', 'general').mission).toBe(DEFAULT_WORKSPACE_MISSION);
+    expect(findMissionTemplate(DEFAULT_WORKSPACE_MISSION)).toEqual({ categoryId: 'general', subcategoryId: 'general' });
+  });
+
+  it('keeps legal templates from passing for legal advice', () => {
+    for (const s of category('legal').subcategories) expect(s.mission).toContain('This is not legal advice');
   });
 
   it('keeps ids unique within each category', () => {
@@ -78,41 +92,63 @@ describe('findMissionTemplate', () => {
 });
 
 describe('useMissionPicker', () => {
-  it('starts closed on the default mission, and toggles a category open and shut', () => {
-    const picker = useMissionPicker(ref(DEFAULT_WORKSPACE_MISSION));
-    expect(picker.categories).toBe(MISSION_CATEGORIES);
-    expect(picker.activeCategory.value).toBeNull();
-    expect(picker.selected.value).toBeNull();
-
-    picker.toggleCategory('ops');
-    expect(picker.activeCategory.value.label).toBe('Ops');
-    picker.toggleCategory('sales');
-    expect(picker.activeCategoryId.value).toBe('sales');
-    picker.toggleCategory('sales');
-    expect(picker.activeCategory.value).toBeNull();
-  });
-
-  it('opens on the category of a template the mission already is', () => {
+  it('offers every category, and marks the template the mission already is', () => {
     const picker = useMissionPicker(ref(sub('coding', 'android').mission));
-    expect(picker.activeCategoryId.value).toBe('coding');
+    expect(picker.categories).toBe(MISSION_CATEGORIES);
     expect(picker.selected.value).toEqual({ categoryId: 'coding', subcategoryId: 'android' });
+    expect(picker.isSelected(category('coding'), sub('coding', 'android'))).toBe(true);
+    expect(picker.isSelected(category('coding'), sub('coding', 'ios'))).toBe(false);
+    expect(picker.holdsSelection(category('coding'))).toBe(true);
+    expect(picker.holdsSelection(category('sales'))).toBe(false);
   });
 
-  it('opens on a template loaded after it started, but not over a category chosen by hand', async () => {
+  it('starts on the category row with General chosen for the default mission, and opens on another template', () => {
+    const fresh = useMissionPicker(ref(DEFAULT_WORKSPACE_MISSION));
+    expect(fresh.openCategory.value).toBeNull();
+    expect(fresh.holdsSelection(category('general'))).toBe(true);
+    expect(useMissionPicker(ref(sub('coding', 'android').mission)).openCategory.value.id).toBe('coding');
+  });
+
+  it('never opens a category with a single template, even on its mission', () => {
+    const picker = useMissionPicker(ref(sub('general', 'general').mission));
+    expect(picker.openCategory.value).toBeNull();
+    expect(picker.holdsSelection(category('general'))).toBe(true);
+  });
+
+  it('opens a category to its specialities and goes back', () => {
+    const mission = ref('');
+    const picker = useMissionPicker(mission);
+    picker.chooseCategory(category('research'));
+    expect(picker.openCategory.value.label).toBe('Research');
+    expect(mission.value).toBe('');
+    picker.back();
+    expect(picker.openCategory.value).toBeNull();
+  });
+
+  it('picks a single-template category at once, staying on the category row', async () => {
+    const mission = ref('');
+    const picker = useMissionPicker(mission);
+    picker.chooseCategory(category('general'));
+    await nextTick();
+    expect(mission.value).toBe(sub('general', 'general').mission);
+    expect(picker.openCategory.value).toBeNull();
+  });
+
+  it('opens on a template loaded after it started, but not over a category opened by hand', async () => {
     const mission = ref('');
     const picker = useMissionPicker(mission);
     mission.value = 'still loading';
     await nextTick();
-    expect(picker.activeCategoryId.value).toBeNull();
+    expect(picker.openCategory.value).toBeNull();
 
     mission.value = sub('ops', 'support').mission;
     await nextTick();
-    expect(picker.activeCategoryId.value).toBe('ops');
+    expect(picker.openCategory.value.id).toBe('ops');
 
-    picker.toggleCategory('sales');
+    picker.chooseCategory(category('sales'));
     mission.value = sub('coding', 'backend').mission;
     await nextTick();
-    expect(picker.activeCategoryId.value).toBe('sales');
+    expect(picker.openCategory.value.id).toBe('sales');
   });
 
   it('replaces an untouched mission with no undo', async () => {
@@ -129,7 +165,7 @@ describe('useMissionPicker', () => {
     expect(picker.undoText.value).toBeNull();
   });
 
-  it('does nothing when the speciality picked is already the mission', async () => {
+  it('does nothing when the template picked is already the mission', async () => {
     const mission = ref('Mine.');
     const picker = useMissionPicker(mission);
     picker.pick(sub('sales', 'outreach'));

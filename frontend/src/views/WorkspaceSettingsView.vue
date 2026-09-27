@@ -70,7 +70,7 @@
                     </div>
                     <div class="space-y-2">
                       <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Mission Description</label>
-                      <MissionTemplatePicker v-model="form.description" class="ml-1" />
+                      <MissionTemplatePicker v-model="form.description" class="ml-1 pb-1" />
                       <textarea v-model="form.description" rows="8" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="What are we building together?"></textarea>
                     </div>
                     <div class="space-y-2">
