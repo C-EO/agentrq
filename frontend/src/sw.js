@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { addPlugins, precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
 import { registerRoute } from 'workbox-routing'
 import { CacheFirst, NetworkFirst } from 'workbox-strategies'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
@@ -17,6 +17,7 @@ import {
   touchCacheEntry,
   withinSizeCap,
 } from './composables/useAttachmentCache'
+import { precacheProgressPlugin, precacheTotal } from './composables/usePwaUpdateProgress'
 
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
@@ -32,7 +33,23 @@ self.addEventListener('message', event => {
   }
 })
 
-precacheAndRoute(self.__WB_MANIFEST)
+// Named once: the build injects the manifest at its only mention, and refuses a second.
+const manifest = self.__WB_MANIFEST
+
+// Tells open pages how far the download of a new version has got, for the
+// update banner's progress bar. Only an update: a first install has no page
+// running an older version to tell.
+addPlugins([
+  precacheProgressPlugin({
+    total: precacheTotal(manifest),
+    report: async (message) => {
+      if (!self.registration.active) return
+      const pages = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      for (const page of pages) page.postMessage(message)
+    },
+  }),
+])
+precacheAndRoute(manifest)
 cleanupOutdatedCaches()
 
 const ATTACHMENT_CACHE = 'attachment-cache'

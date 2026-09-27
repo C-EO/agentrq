@@ -19,8 +19,8 @@
          buttons are drawn on top of the sidebar. -->
     <div v-if="isMacDesktop" class="app-drag fixed top-0 inset-x-0 h-10 z-[150]" aria-hidden="true"></div>
 
-    <!-- PWA Update Banner. On desktop it stays up once "Update now" is
-         clicked, and becomes the progress bar for the install. -->
+    <!-- PWA Update Banner. It is the progress bar while a new version
+         downloads, and stays up once "Update now" is clicked until it lands. -->
     <Transition name="slide-down">
       <div v-if="updateProgress || (needRefresh && !isUpdating)"
            :class="[
@@ -491,6 +491,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
+import { withUpdateProgress } from './composables/usePwaUpdateProgress'
 import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
@@ -538,9 +539,9 @@ import { useExtensionShortcuts } from './composables/useExtensionShortcuts'
 import ExtensionViewPanel from './components/ExtensionViewPanel.vue'
 
 const appVersion = __APP_VERSION__
-const registeredSW = useRegisterSW()
+// Desktop progress comes from the Electron updater, the web's from the service worker.
+const registeredSW = withUpdateProgress(useRegisterSW())
 const { needRefresh, updateServiceWorker } = registeredSW
-// Desktop only: the web build reloads the moment it updates, so has nothing to show.
 const updateProgress = registeredSW.progress ?? ref(null)
 const dismissUpdateProgress = () => registeredSW.dismissProgress?.()
 
