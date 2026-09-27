@@ -86,6 +86,7 @@
                   Restore default
                 </button>
               </div>
+              <MissionTemplatePicker v-model="form.description" class="mb-2" />
               <textarea id="workspaceMission" v-model="form.description" rows="12" aria-describedby="workspaceMissionHelp"
                         :class="[FIELD, 'flex-1 leading-relaxed resize-y min-h-[200px] custom-scrollbar']"
                         placeholder="What are we building? Describe the mission of this workspace..."></textarea>
@@ -141,6 +142,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { createWorkspace } from '../api';
+import MissionTemplatePicker from '../components/MissionTemplatePicker.vue';
 import { useToasts } from '../composables/useToasts';
 import { useFormat } from '../composables/useFormat';
 import { usePlatformStore } from '../stores/platformStore';

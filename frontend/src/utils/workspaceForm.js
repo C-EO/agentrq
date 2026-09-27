@@ -19,16 +19,22 @@ export const DEFAULT_SELF_LEARNING_LOOP_NOTE = `Just before marking the task as 
 - Write the rule, not the story: a line or two, linked from the memory index. If nothing was learned, save nothing.`;
 
 /**
+ * The working rules every suggested mission ends with, the default one and
+ * each category's template alike.
+ */
+export const WORKSPACE_WORKING_RULES = `**Working rules**
+- Keep the human up to date at every milestone: they only see what you send through AgentRQ.
+- When you are blocked, or a decision is the human's to make, ask rather than guess.
+- Before marking a task completed, summarise what you changed and why.`;
+
+/**
  * The mission a new workspace's form starts with: a prompt to say what the
  * workspace is for, and the working rules most workspaces want anyway. Only
  * the form offers it; a workspace created elsewhere without one keeps none.
  */
 export const DEFAULT_WORKSPACE_MISSION = `Describe what this workspace is for: the project, its goal, and anything an agent should know before it starts.
 
-**Working rules**
-- Keep the human up to date at every milestone: they only see what you send through AgentRQ.
-- When you are blocked, or a decision is the human's to make, ask rather than guess.
-- Before marking a task completed, summarise what you changed and why.`;
+${WORKSPACE_WORKING_RULES}`;
 
 /** A blank create-workspace form, with the default mission and note filled in to edit. */
 export function emptyWorkspaceForm() {

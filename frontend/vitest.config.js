@@ -113,6 +113,8 @@ export default defineConfig({
         'src/composables/useAutoTitle.js',
         'src/utils/markdown.js',
         'src/utils/workspaceForm.js',
+        'src/utils/missionTemplates.js',
+        'src/composables/useMissionPicker.js',
         'src/webmcp/*.js',
       ],
       reporter: ['text', 'lcov'],

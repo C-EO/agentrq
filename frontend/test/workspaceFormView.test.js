@@ -31,6 +31,7 @@ import WorkspaceView from '../src/views/WorkspaceView.vue';
 import { usePlatformStore } from '../src/stores/platformStore';
 import { useToasts } from '../src/composables/useToasts';
 import { DEFAULT_SELF_LEARNING_LOOP_NOTE, DEFAULT_WORKSPACE_MISSION } from '../src/utils/workspaceForm';
+import { MISSION_CATEGORIES } from '../src/utils/missionTemplates';
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
@@ -183,6 +184,34 @@ describe('the create-workspace page', () => {
     button('Restore default').click();
     await settle();
     expect($('#workspaceSelfLearningNote').value).toBe(DEFAULT_SELF_LEARNING_LOOP_NOTE);
+  });
+
+  it('pre-fills the mission from a category and speciality, and the text stays editable', async () => {
+    await mount();
+    expect(button('Backend')).toBeUndefined();
+
+    button('Coding').click();
+    await settle();
+    expect(button('Coding').getAttribute('aria-pressed')).toBe('true');
+    button('iOS').click();
+    await settle();
+    const ios = MISSION_CATEGORIES.find((c) => c.id === 'coding').subcategories.find((s) => s.id === 'ios');
+    expect($('#workspaceMission').value).toBe(ios.mission);
+    expect(button('iOS').getAttribute('aria-pressed')).toBe('true');
+    expect(button('Undo')).toBeUndefined();
+
+    await type('#workspaceName', 'app');
+    await type('#workspaceMission', 'My own words.');
+    expect(button('iOS').getAttribute('aria-pressed')).toBe('false');
+    button('Android').click();
+    await settle();
+    button('Undo').click();
+    await settle();
+    expect($('#workspaceMission').value).toBe('My own words.');
+
+    $('form').dispatchEvent(new Event('submit'));
+    await settle();
+    expect(createWorkspace.mock.calls[0][1]).toBe('My own words.');
   });
 
   it('returns to the overview on Cancel and on the close button', async () => {
