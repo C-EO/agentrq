@@ -479,7 +479,13 @@ const reorderTask = async (groupTasks, task, direction) => {
   }
 };
 
+// Every task event starts a refresh, and one piece of activity is a burst of
+// them, so refreshes overlap. Only the latest may write the list: an older one
+// answering late appended its first page to the newer one's, once per event.
+let generation = 0;
+
 const fetchInitial = async () => {
+  const gen = (generation += 1);
   loading.value = true;
   tasks.value = [];
   offset.value = 0;
@@ -489,6 +495,7 @@ const fetchInitial = async () => {
   // workspace list. Reading the cache needs no server round trip, so putting one
   // in front of it would defeat the point.
   const cached = await readAllCachedTasks(sharedCache(), { limit });
+  if (gen !== generation) return;
   if (shouldPaintCache(tasks.value, cached)) {
     tasks.value = cached;
     loading.value = false;
@@ -514,8 +521,10 @@ const fetchNext = async () => {
   params.limit = limit;
   params.offset = offset.value;
   
+  const gen = generation;
   try {
     const res = await fetchGlobalTasks(params);
+    if (gen !== generation) return;
     const newTasks = res.tasks || [];
     
     if (newTasks.length < limit) {
@@ -525,7 +534,7 @@ const fetchNext = async () => {
     // The first page replaces whatever is on screen — which may be the cached
     // rows painted a moment ago — and later pages append to it. Appending the
     // first page would show every cached task twice.
-    tasks.value = offset.value === 0 ? newTasks : [...tasks.value, ...newTasks];
+    tasks.value = params.offset === 0 ? newTasks : [...tasks.value, ...newTasks];
     offset.value += newTasks.length;
     // Write-through: the server just told us about these, so the local copy is
     // brought up to date with the same answer the view is rendering.
