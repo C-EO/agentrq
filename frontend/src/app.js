@@ -24,6 +24,8 @@ import { usePlatformStore } from './stores/platformStore'
 
 export const routes = [
   { path: '/', component: () => import('./views/WorkspaceView.vue') },
+  // Ranked above /workspaces/:id by the router, since a static segment wins.
+  { path: '/workspaces/new', component: () => import('./views/WorkspaceFormView.vue') },
   {
     path: '/tasks/:filter',
     component: () => import('./views/TaskListView.vue'),

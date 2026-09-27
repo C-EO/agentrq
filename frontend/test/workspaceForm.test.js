@@ -14,7 +14,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DEFAULT_SELF_LEARNING_LOOP_NOTE, DEFAULT_WORKSPACE_MISSION, emptyWorkspaceForm } from '../src/utils/workspaceForm';
+import {
+  DEFAULT_SELF_LEARNING_LOOP_NOTE,
+  DEFAULT_WORKSPACE_MISSION,
+  canCreateWorkspace,
+  emptyWorkspaceForm,
+} from '../src/utils/workspaceForm';
 
 function serverNote() {
   const src = readFileSync(resolve(__dirname, '../../backend/internal/controller/crud/workspace.go'), 'utf-8');
@@ -46,5 +51,17 @@ describe('emptyWorkspaceForm', () => {
     first.selfLearningLoopNote = 'edited';
     expect(emptyWorkspaceForm().description).toBe(DEFAULT_WORKSPACE_MISSION);
     expect(emptyWorkspaceForm().selfLearningLoopNote).toBe(DEFAULT_SELF_LEARNING_LOOP_NOTE);
+  });
+});
+
+describe('canCreateWorkspace', () => {
+  it('needs a name that is more than whitespace', () => {
+    expect(canCreateWorkspace({ name: 'billing' })).toBe(true);
+    expect(canCreateWorkspace({ name: '   ' })).toBe(false);
+    expect(canCreateWorkspace(emptyWorkspaceForm())).toBe(false);
+  });
+
+  it('is false for no form at all', () => {
+    expect(canCreateWorkspace(undefined)).toBe(false);
   });
 });

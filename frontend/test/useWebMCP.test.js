@@ -180,6 +180,7 @@ describe('the navigate tool\'s map of the interface', () => {
   // tells agents about it.
   const DESCRIBED = [
     '/',
+    '/workspaces/new',
     '/tasks/pending',
     '/tasks/active/ws1/t1',
     '/tasks/scheduled/ws1/t1/instances',
