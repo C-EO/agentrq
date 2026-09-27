@@ -33,7 +33,7 @@
         <div class="flex-1 overflow-y-auto custom-scrollbar px-2 pb-3 space-y-2 min-h-0">
           <template v-for="t in buckets[col.id]" :key="t.id">
             <!-- Insertion indicator -->
-            <div v-if="dragOverColId === col.id && dragOverBeforeId === t.id" class="h-0.5 rounded-full bg-gray-900 dark:bg-white mx-1"></div>
+            <div v-if="dragOverColId === col.id && dragOverBeforeId === t.id && col.sortBy !== 'recent'" class="h-0.5 rounded-full bg-gray-900 dark:bg-white mx-1"></div>
 
             <!-- Cards carry the Active feed's layout: status dot, who it is on,
                  when it arrived, then up to two lines of title. A column is
@@ -90,7 +90,7 @@
           </template>
 
           <!-- Trailing insertion indicator (drop at end of column) -->
-          <div v-if="dragOverColId === col.id && dragOverBeforeId === null" class="h-0.5 rounded-full bg-gray-900 dark:bg-white mx-1"></div>
+          <div v-if="dragOverColId === col.id && dragOverBeforeId === null && col.sortBy !== 'recent'" class="h-0.5 rounded-full bg-gray-900 dark:bg-white mx-1"></div>
 
           <!-- Empty state -->
           <div v-if="buckets[col.id].length === 0"
@@ -148,6 +148,7 @@ import ContextMenu from '../components/ContextMenu.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
+import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
 
 const route = useRoute();
 const router = useRouter();
@@ -213,15 +214,16 @@ const handleAction = async (task, action) => {
 
 // Each column buckets one or more task statuses. Dropping a card into a column
 // from a different column sets its status to the column's `dropStatus`; dropping
-// a card already in the column just reorders it (preserving its exact status, so
-// completed/rejected cards keep their identity within the Done column).
+// a card already in the column just reorders it. Done is the exception: it is
+// sorted newest first, not by hand (see useKanbanOrder), so a drop within it
+// does nothing and completed/rejected cards keep their exact status.
 // 'cron' tasks (scheduled templates) are intentionally excluded — their status
 // is immutable and they are not part of the kanban workflow.
 const columns = [
   { id: 'notstarted', title: 'Not Started', statuses: ['notstarted'], dropStatus: 'notstarted', dot: 'bg-gray-400 dark:bg-zinc-500' },
   { id: 'ongoing', title: 'Ongoing', statuses: ['ongoing'], dropStatus: 'ongoing', dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' },
   { id: 'blocked', title: 'Blocked', statuses: ['blocked'], dropStatus: 'blocked', dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' },
-  { id: 'done', title: 'Done', statuses: ['completed', 'rejected'], dropStatus: 'completed', dot: 'bg-green-500' },
+  { id: 'done', title: 'Done', statuses: ['completed', 'rejected'], dropStatus: 'completed', sortBy: 'recent', dot: 'bg-green-500' },
 ];
 
 const columnById = Object.fromEntries(columns.map(c => [c.id, c]));
@@ -253,19 +255,9 @@ function formatTime(dateStr) {
   return 'Just now';
 }
 
-function getOrder(t) {
-  if (t.sortOrder) return t.sortOrder;
-  if (!t.createdAt) return Date.now() / 1000.0;
-  return new Date(t.createdAt).getTime() / 1000.0;
-}
-
 const buckets = computed(() => {
   const out = {};
-  for (const c of columns) {
-    out[c.id] = tasks.value
-      .filter(t => c.statuses.includes(t.status))
-      .sort((a, b) => getOrder(a) - getOrder(b));
-  }
+  for (const c of columns) out[c.id] = sortColumn(c, tasks.value);
   return out;
 });
 
@@ -389,6 +381,22 @@ async function onDrop(e, colId) {
   // within a multi-status column (Done) preserves the card's exact status.
   const newStatus = col.statuses.includes(task.status) ? task.status : col.dropStatus;
 
+  if (col.sortBy === 'recent') {
+    if (task.status === newStatus) return;
+    const snapshot = { status: task.status, updatedAt: task.updatedAt };
+    upsert({ id: task.id, status: newStatus, updatedAt: new Date().toISOString() }); // optimistic: newest first
+    try {
+      // The server's timestamp replaces this clock's, or a live update stamped
+      // earlier than it would be ignored as stale.
+      const res = await updateTaskStatus(workspaceId.value, id, newStatus);
+      if (res?.task) upsert(res.task);
+    } catch (err) {
+      upsert({ id: task.id, ...snapshot }); // revert
+      notifyError('Move failed: ' + ((err && err.message) || 'failed to move task'));
+    }
+    return;
+  }
+
   // Neighbours in the target column, excluding the dragged task itself.
   const neighbours = buckets.value[colId].filter(t => String(t.id) !== String(id));
   let pos = beforeId == null ? neighbours.length : neighbours.findIndex(t => String(t.id) === String(beforeId));
@@ -396,11 +404,7 @@ async function onDrop(e, colId) {
   const prev = neighbours[pos - 1];
   const next = neighbours[pos];
 
-  let newOrder;
-  if (!prev && !next) newOrder = Date.now() / 1000.0;
-  else if (!prev) newOrder = getOrder(next) - 1;
-  else if (!next) newOrder = getOrder(prev) + 1;
-  else newOrder = (getOrder(prev) + getOrder(next)) / 2;
+  const newOrder = orderBetween(prev, next);
 
   // No-op: same column, same status, dropped in its current slot.
   if (fromColId === colId && task.status === newStatus && getOrder(task) === newOrder) return;

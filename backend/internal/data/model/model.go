@@ -54,9 +54,11 @@ type (
 		Messages    []Message  `gorm:"foreignKey:TaskID"`
 		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
 
-		CronSchedule     string  `gorm:"type:varchar(64)"`
-		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
-		SortOrder        float64 `gorm:"type:real;default:0"`
+		CronSchedule string `gorm:"type:varchar(64)"`
+		ParentID     int64  `gorm:"index:idx_tasks_parent_id"`
+		// Never `type:real`: on Postgres that is a 4-byte float, which rounds a
+		// Unix-seconds order to 128 s and puts a dragged card back where it was.
+		SortOrder        float64 `gorm:"default:0"`
 		AllowAllCommands bool    `gorm:"default:false"`
 		// ClearContext asks the agent to start this task on a clean slate: the
 		// backend sends /clear down the session's terminal before it pushes the
