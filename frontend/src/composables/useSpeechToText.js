@@ -2,7 +2,8 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { ref, onUnmounted, watch } from 'vue';
+import { ref, onUnmounted, watch, nextTick } from 'vue';
+import { insertAtCursor } from '../utils/insertAtCursor';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
@@ -17,10 +18,12 @@ let hasShownMobileToast = false;
  *
  * Uses the same model as whisperweb.dev (onnx-community/whisper-base).
  *
- * @param {import('vue').Ref<string>} targetRef - Reactive string ref to append transcribed text to
+ * @param {import('vue').Ref<string>} targetRef - Reactive string ref the transcribed text goes into
  * @param {string|import('vue').ComputedRef<string>} workspaceId - Workspace identifier for settings lookup
+ * @param {import('vue').Ref<HTMLTextAreaElement|null>} [inputRef] - The field bound to targetRef; the text
+ *   lands at its cursor, and is appended without it
  */
-export function useSpeechToText(targetRef, workspaceId) {
+export function useSpeechToText(targetRef, workspaceId, inputRef) {
   const isRecording = ref(false);
   const isTranscribing = ref(false);
   const isModelLoading = ref(false);
@@ -101,10 +104,14 @@ export function useSpeechToText(targetRef, workspaceId) {
             isTranscribing.value = false;
             isModelLoading.value = false;
             if (text) {
-              // Append transcribed text to the target ref, adding a space if needed
-              const current = targetRef.value || '';
-              const separator = current && !current.endsWith(' ') && !current.endsWith('\n') ? ' ' : '';
-              targetRef.value = current + separator + text;
+              // Read when the text arrives, not when recording started, so
+              // anything typed while it was transcribing moves the cursor too.
+              const el = inputRef?.value;
+              const { value, caret } = insertAtCursor(targetRef.value, text, el);
+              targetRef.value = value;
+              // Vue's update puts the cursor at the end; put it back after the
+              // inserted text so the next dictation or keystroke follows on.
+              if (el) nextTick(() => el.setSelectionRange(caret, caret));
             }
             break;
 

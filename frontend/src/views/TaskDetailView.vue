@@ -973,6 +973,7 @@ const {
 const editingQueuedId = ref(null);
 const editingQueuedText = ref('');
 
+const textareaRef = ref(null);
 const {
   isRecording: sttRecording,
   isTranscribing: sttTranscribing,
@@ -981,7 +982,7 @@ const {
   error: sttError,
   isSupported: sttSupported,
   toggleRecording: sttToggle,
-} = useSpeechToText(replyText, workspaceId);
+} = useSpeechToText(replyText, workspaceId, textareaRef);
 const scrollContainer = ref(null);
 
 const isDragging = ref(false);
@@ -1615,8 +1616,6 @@ function cancelPendingSend() {
     textareaRef.value?.focus();
   });
 }
-
-const textareaRef = ref(null);
 
 function adjustTextareaHeight() {
   const el = textareaRef.value;
