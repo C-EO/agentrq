@@ -13,9 +13,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, h, ref } from 'vue'
 import { createPinia } from 'pinia'
 
+// The board under a workspace has `id` in the route; on /kanban it has none.
+const route = { params: { id: 'ws1' }, query: {} }
+const push = vi.fn()
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'ws1' }, query: {} }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => route,
+  useRouter: () => ({ push }),
 }))
 
 const events = ref([])
@@ -27,32 +30,47 @@ vi.mock('../src/composables/useCachedTasks', () => ({
   cacheTasks: () => {},
   sharedCache: () => null,
 }))
+const readAllCachedTasks = vi.fn(() => Promise.resolve([]))
 vi.mock('../src/composables/useCachedReads', () => ({
   readCachedTasks: () => Promise.resolve([]),
+  readAllCachedTasks: (...args) => readAllCachedTasks(...args),
   shouldPaintCache: () => false,
 }))
 
 let byStatus = {}
 const updateTaskStatus = vi.fn()
 const updateTaskOrder = vi.fn(() => Promise.resolve({}))
+const fetchTasks = vi.fn((_ws, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
+const fetchGlobalTasks = vi.fn(({ status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
+const moveTask = vi.fn(() => Promise.resolve({}))
+let workspaceList = []
+const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
-  fetchTasks: (_ws, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }),
+  fetchTasks: (...args) => fetchTasks(...args),
+  fetchGlobalTasks: (...args) => fetchGlobalTasks(...args),
+  fetchWorkspaces: (...args) => fetchWorkspaces(...args),
+  moveTask: (...args) => moveTask(...args),
   updateTaskStatus: (...args) => updateTaskStatus(...args),
   updateTaskOrder: (...args) => updateTaskOrder(...args),
 }))
 
 const { default: KanbanBoardView } = await import('../src/views/KanbanBoardView.vue')
+const { default: KanbanView } = await import('../src/views/KanbanView.vue')
+const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
 
 let app
-async function mount() {
+async function mount({ component = KanbanBoardView, workspaces } = {}) {
   const el = document.createElement('div')
   document.body.appendChild(el)
-  app = createApp({ render: () => h(KanbanBoardView) })
-  app.use(createPinia())
+  app = createApp({ render: () => h(component) })
+  const pinia = createPinia()
+  app.use(pinia)
+  // Copied: the store writes into the array it is given, and a later case must not see it.
+  if (workspaces) useWorkspaceStore(pinia).workspaces = workspaces.map((w) => ({ ...w }))
   app.directive('click-outside', {})
   app.mount(el)
   await settle()
@@ -79,7 +97,7 @@ async function mount() {
     fire(before ? card(before) : column(into), 'drop')
     await settle()
   }
-  return { el, inColumn, drag }
+  return { el, inColumn, drag, card, fire }
 }
 
 const task = (id, status, extra = {}) => ({
@@ -102,8 +120,16 @@ describe('KanbanBoardView', () => {
     document.body.innerHTML = ''
     localStorage.clear()
     events.value = []
+    route.params = { id: 'ws1' }
+    push.mockClear()
     updateTaskStatus.mockReset()
     updateTaskOrder.mockClear()
+    fetchTasks.mockClear()
+    fetchGlobalTasks.mockClear()
+    fetchWorkspaces.mockClear()
+    moveTask.mockClear()
+    readAllCachedTasks.mockClear()
+    workspaceList = []
     byStatus = {
       notstarted: [
         task('n1', 'notstarted', { sortOrder: 100 }),
@@ -165,5 +191,204 @@ describe('KanbanBoardView', () => {
     expect(updateTaskOrder).not.toHaveBeenCalled()
     expect(updateTaskStatus).not.toHaveBeenCalled()
     expect(order('Task d3', el)).toBeLessThan(order('Task d1', el))
+  })
+
+  it('names no workspace on a card when the board is one workspace’s', async () => {
+    const { el } = await mount()
+    expect(el.querySelector('[data-test="card-workspace"]')).toBeNull()
+    expect(fetchGlobalTasks).not.toHaveBeenCalled()
+  })
+})
+
+describe('KanbanBoardView across every workspace', () => {
+  const workspaces = [
+    { id: 'ws1', name: 'alpha', agentConnected: true },
+    { id: 'ws2', name: 'beta', agentConnected: false },
+    { id: 'ws3', name: 'gamma', agentConnected: false, archivedAt: '2026-09-01T00:00:00Z' },
+  ]
+
+  beforeEach(() => {
+    if (app) app.unmount()
+    document.body.innerHTML = ''
+    localStorage.clear()
+    events.value = []
+    route.params = {}
+    push.mockClear()
+    updateTaskStatus.mockReset()
+    updateTaskOrder.mockClear()
+    fetchTasks.mockClear()
+    fetchGlobalTasks.mockClear()
+    fetchWorkspaces.mockClear()
+    moveTask.mockClear()
+    readAllCachedTasks.mockClear()
+    workspaceList = workspaces
+    byStatus = {
+      notstarted: [
+        task('a1', 'notstarted', { workspaceId: 'ws1', sortOrder: 100 }),
+        task('b1', 'notstarted', { workspaceId: 'ws2', sortOrder: 200 }),
+        task('b2', 'notstarted', { workspaceId: 'ws2', sortOrder: 300 }),
+        task('g1', 'notstarted', { workspaceId: 'ws3', sortOrder: 400 }),
+      ],
+    }
+  })
+
+  const chip = (card) => card.querySelector('[data-test="card-workspace"]')
+
+  it('lists every workspace’s tasks, from the account-wide list and cache', async () => {
+    const { card } = await mount({ workspaces })
+    expect(fetchTasks).not.toHaveBeenCalled()
+    expect(fetchGlobalTasks).toHaveBeenCalledWith({ status: 'notstarted', limit: 10, offset: 0 })
+    expect(readAllCachedTasks).toHaveBeenCalled()
+    expect(card('Task a1')).toBeTruthy()
+    expect(card('Task b1')).toBeTruthy()
+  })
+
+  it('names each card’s workspace, with whether its agent is live', async () => {
+    const { card } = await mount({ workspaces })
+    const live = chip(card('Task a1'))
+    expect(live.textContent.trim()).toBe('alpha')
+    expect(live.querySelector('[title]').getAttribute('title')).toBe('Agent Online')
+    expect(live.querySelector('[title]').className).toContain('bg-green-500')
+
+    const idle = chip(card('Task b1'))
+    expect(idle.textContent.trim()).toBe('beta')
+    expect(idle.querySelector('[title]').getAttribute('title')).toBe('Agent Offline')
+  })
+
+  it('turns a card’s dot green when its workspace’s agent connects', async () => {
+    const { card } = await mount({ workspaces })
+    useWorkspaceStore().updateAgentStatus('ws2', true)
+    await settle()
+    expect(chip(card('Task b1')).querySelector('[title]').getAttribute('title')).toBe('Agent Online')
+  })
+
+  it('fetches the workspace list when nothing has yet', async () => {
+    const { card } = await mount()
+    expect(fetchWorkspaces).toHaveBeenCalled()
+    expect(chip(card('Task a1')).textContent.trim()).toBe('alpha')
+  })
+
+  it('names a workspace it does not know as ...', async () => {
+    byStatus.notstarted.push(task('x1', 'notstarted', { workspaceId: 'gone', sortOrder: 500 }))
+    const { card } = await mount({ workspaces })
+    expect(chip(card('Task x1')).textContent.trim()).toBe('...')
+  })
+
+  it('saves a drag in the workspace the card belongs to', async () => {
+    const { drag } = await mount({ workspaces })
+    await drag('Task b2', { before: 'Task a1' })
+    expect(updateTaskOrder).toHaveBeenCalledWith('ws2', 'b2', 99)
+  })
+
+  it('saves a move into another column in the card’s workspace', async () => {
+    updateTaskStatus.mockResolvedValue({})
+    const { drag } = await mount({ workspaces })
+    await drag('Task b1', { into: 'Ongoing' })
+    expect(updateTaskStatus).toHaveBeenCalledWith('ws2', 'b1', 'ongoing')
+    expect(updateTaskOrder).toHaveBeenCalledWith('ws2', 'b1', expect.any(Number))
+  })
+
+  it('does not let a card from an archived workspace be dragged', async () => {
+    const { card } = await mount({ workspaces })
+    expect(card('Task g1').getAttribute('draggable')).toBe('false')
+    expect(card('Task a1').getAttribute('draggable')).toBe('true')
+  })
+
+  it('ignores a drag started on a card from an archived workspace', async () => {
+    const { card, fire, drag } = await mount({ workspaces })
+    fire(card('Task g1'), 'dragstart')
+    await settle()
+    expect(card('Task g1').className).not.toContain('opacity-40')
+    await drag('Task g1', { before: 'Task a1' })
+    expect(updateTaskOrder).not.toHaveBeenCalled()
+  })
+
+  it('offers Allow and Deny only where that card’s agent is live', async () => {
+    const asks = { assignee: 'human', createdBy: 'agent' }
+    byStatus.notstarted = [
+      task('a9', 'notstarted', { workspaceId: 'ws1', sortOrder: 1, ...asks }),
+      task('b9', 'notstarted', { workspaceId: 'ws2', sortOrder: 2, ...asks }),
+    ]
+    const { card } = await mount({ workspaces })
+    const hasAllow = (c) => [...c.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Allow')
+    expect(hasAllow(card('Task a9'))).toBe(true)
+    expect(hasAllow(card('Task b9'))).toBe(false)
+  })
+
+  it('opens a card in its own workspace', async () => {
+    const { card } = await mount({ workspaces })
+    card('Task b1').click()
+    expect(push).toHaveBeenCalledWith({ path: '/workspaces/ws2/tasks/b1', query: {} })
+  })
+
+  it('keeps a moved card on the board, under its new workspace', async () => {
+    const { el, card } = await mount({ workspaces })
+    card('Task b1').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Move Task').click()
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'alpha').click()
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Move').click()
+    await settle()
+
+    expect(moveTask).toHaveBeenCalledWith('ws2', 'b1', 'ws1')
+    expect(chip(card('Task b1')).textContent.trim()).toBe('alpha')
+    expect(el.contains(card('Task b1'))).toBe(true)
+  })
+
+  it('takes live updates from every workspace', async () => {
+    const { card } = await mount({ workspaces })
+    events.value = [{ type: 'task.created', payload: task('n9', 'notstarted', { workspaceId: 'ws2', sortOrder: 900 }) }]
+    await settle()
+    expect(chip(card('Task n9')).textContent.trim()).toBe('beta')
+  })
+
+  it('is what the Kanban page draws, under its heading', async () => {
+    const { el, card } = await mount({ component: KanbanView, workspaces })
+    expect(el.querySelector('h1').textContent.trim()).toBe('Kanban')
+    expect(chip(card('Task a1')).textContent.trim()).toBe('alpha')
+  })
+})
+
+describe('KanbanBoardView under one workspace', () => {
+  beforeEach(() => {
+    if (app) app.unmount()
+    document.body.innerHTML = ''
+    events.value = []
+    route.params = { id: 'ws1' }
+    byStatus = { notstarted: [task('a1', 'notstarted', { sortOrder: 100 })] }
+  })
+
+  it('saves a card that carries no workspace in the one it is shown under', async () => {
+    byStatus.notstarted.push({ ...task('a2', 'notstarted', { sortOrder: 200 }), workspaceId: undefined })
+    const { drag } = await mount()
+    await drag('Task a2', { before: 'Task a1' })
+    expect(updateTaskOrder).toHaveBeenCalledWith('ws1', 'a2', 99)
+  })
+
+  it('ignores a live update from another workspace, or one with no task', async () => {
+    const { card } = await mount()
+    events.value = [
+      { type: 'task.updated' },
+      { type: 'task.created', payload: task('z1', 'notstarted', { workspaceId: 'ws2' }) },
+    ]
+    await settle()
+    expect(card('Task z1')).toBeUndefined()
+  })
+
+  it('drops a moved card from the board', async () => {
+    const workspaces = [{ id: 'ws1', name: 'alpha' }, { id: 'ws2', name: 'beta' }]
+    const { card } = await mount({ workspaces })
+    card('Task a1').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Move Task').click()
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'beta').click()
+    await settle()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Move').click()
+    await settle()
+    expect(moveTask).toHaveBeenCalledWith('ws1', 'a1', 'ws2')
+    expect(card('Task a1')).toBeUndefined()
   })
 })

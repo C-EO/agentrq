@@ -10,15 +10,21 @@
       <LoadingState label="Loading board..." />
     </div>
 
-    <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0">
+    <!-- Across every workspace the board is also on a phone, where four
+         columns do not fit: they keep a readable width and scroll sideways. -->
+    <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0"
+         :class="isGlobal ? 'overflow-x-auto custom-scrollbar' : ''">
       <!-- Columns are frameless: the header and the cards are enough to read one
            as a column, and four nested borders inside the page's own container
            read as a table. While a card is in flight the column still has to
            say which one would receive it, so the drop target is a tinted
            background rather than a border that only exists mid-drag. -->
       <div v-for="col in columns" :key="col.id"
-           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl transition-colors"
-           :class="dragOverColId === col.id ? 'bg-gray-100/80 dark:bg-zinc-800/40' : 'bg-transparent'"
+           class="flex-1 flex flex-col min-h-0 rounded-xl transition-colors"
+           :class="[
+             isGlobal ? 'min-w-[15rem] md:min-w-0' : 'min-w-0',
+             dragOverColId === col.id ? 'bg-gray-100/80 dark:bg-zinc-800/40' : 'bg-transparent'
+           ]"
            @dragover="onColumnDragOver($event, col.id)"
            @drop="onDrop($event, col.id)">
 
@@ -40,7 +46,7 @@
                  narrower than that feed, so the title wraps instead of being
                  truncated — a one-line card here showed little more than the
                  first few words of most task titles. -->
-            <div :draggable="!isArchived"
+            <div :draggable="!isArchived(t)"
                  @dragstart="onDragStart($event, t, col.id)"
                  @dragend="onDragEnd"
                  @dragover="onCardDragOver($event, col.id, t)"
@@ -48,7 +54,7 @@
                  @contextmenu.prevent.stop="openContextMenu($event, t)"
                  :class="[
                    'group relative p-3 pl-4 rounded-xl bg-gray-100 dark:bg-zinc-800 transition-all',
-                   !isArchived ? 'cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-zinc-700' : 'cursor-pointer',
+                   !isArchived(t) ? 'cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-zinc-700' : 'cursor-pointer',
                    draggingId === t.id ? 'opacity-40' : ''
                  ]">
               <!-- The card's only edge: no border, so the shape comes from the
@@ -64,6 +70,14 @@
                     <svg v-if="t.assignee === 'agent'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
                     <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                   </span>
+                  <!-- Across every workspace a card says whose it is, with the
+                       same agent dot the sidebar draws beside that workspace. -->
+                  <span v-if="isGlobal" data-test="card-workspace" class="flex items-center gap-1.5 min-w-0 text-[10px] font-medium text-gray-500 dark:text-zinc-400">
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0"
+                          :class="isAgentConnected(t) ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
+                          :title="isAgentConnected(t) ? 'Agent Online' : 'Agent Offline'"></span>
+                    <span class="truncate">{{ workspaceName(t) }}</span>
+                  </span>
                 </div>
                 <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums shrink-0">
                   {{ formatTime(t.createdAt) }}
@@ -77,7 +91,7 @@
               
               <!-- Quick actions for Pending -->
               <div v-if="isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
-                <div class="flex flex-wrap gap-2" v-if="isAgentConnected">
+                <div class="flex flex-wrap gap-2" v-if="isAgentConnected(t)">
                   <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
                     Allow
                   </button>
@@ -111,7 +125,7 @@
     <MoveTaskModal
       :show="showMoveModal"
       :taskTitle="taskToMoveTitle"
-      :currentWorkspaceId="workspaceId"
+      :currentWorkspaceId="taskToMoveWorkspaceId"
       @close="closeMoveModal"
       @confirm="onMoveConfirm"
     />
@@ -135,7 +149,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssignee, sendPermissionVerdict } from '../api';
+import { fetchTasks, fetchGlobalTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssignee, sendPermissionVerdict } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -146,7 +160,7 @@ import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
-import { readCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
+import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
 import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
 
@@ -155,10 +169,16 @@ const router = useRouter();
 const { notifyError, notifySuccess } = useToasts();
 const workspaceStore = useWorkspaceStore();
 
+// Under a workspace the board is that workspace's; on its own page (/kanban)
+// there is no workspace in the route and it holds every workspace's tasks.
+// Either way a card is acted on in the workspace it belongs to.
 const workspaceId = computed(() => route.params.id);
-const isArchived = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.archivedAt);
+const isGlobal = computed(() => !workspaceId.value);
+const workspaceOf = (t) => t.workspaceId || workspaceId.value;
 
-const isAgentConnected = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.agentConnected);
+const isArchived = (t) => !!workspaceStore.getWorkspace(workspaceOf(t))?.archivedAt;
+const isAgentConnected = (t) => workspaceStore.isAgentConnected(workspaceOf(t));
+const workspaceName = (t) => workspaceStore.getWorkspace(workspaceOf(t))?.name || '...';
 
 
 function requiresAllowDeny(t) {
@@ -282,7 +302,9 @@ function removeTask(id) {
  * arrive, so this is a first frame rather than a source the fetches merge into.
  */
 async function paintFromCache() {
-  const cached = await readCachedTasks(sharedCache(), workspaceId.value);
+  const cached = isGlobal.value
+    ? await readAllCachedTasks(sharedCache())
+    : await readCachedTasks(sharedCache(), workspaceId.value);
   if (shouldPaintCache(tasks.value, cached)) tasks.value = cached;
 }
 
@@ -290,7 +312,8 @@ async function loadColumn(colId, isLoadMore = false) {
   try {
     const col = columnById[colId];
     const offset = isLoadMore ? offsets.value[colId] : 0;
-    const res = await fetchTasks(workspaceId.value, { status: col.statuses.join(','), limit: PAGE_SIZE, offset });
+    const query = { status: col.statuses.join(','), limit: PAGE_SIZE, offset };
+    const res = isGlobal.value ? await fetchGlobalTasks(query) : await fetchTasks(workspaceId.value, query);
     // Write-through, same as the other lists: what the server just returned is
     // what the local copy should hold.
     cacheTasks(sharedCache(), res.tasks || []);
@@ -324,7 +347,7 @@ const dragOverColId = ref(null);
 const dragOverBeforeId = ref(undefined); // task id to insert before, or null = end of column
 
 function onDragStart(e, task, colId) {
-  if (isArchived.value) return;
+  if (isArchived(task)) return;
   draggingId.value = task.id;
   dragFromColId.value = colId;
   e.dataTransfer.effectAllowed = 'move';
@@ -388,7 +411,7 @@ async function onDrop(e, colId) {
     try {
       // The server's timestamp replaces this clock's, or a live update stamped
       // earlier than it would be ignored as stale.
-      const res = await updateTaskStatus(workspaceId.value, id, newStatus);
+      const res = await updateTaskStatus(workspaceOf(task), id, newStatus);
       if (res?.task) upsert(res.task);
     } catch (err) {
       upsert({ id: task.id, ...snapshot }); // revert
@@ -414,9 +437,9 @@ async function onDrop(e, colId) {
 
   try {
     if (task.status !== newStatus) {
-      await updateTaskStatus(workspaceId.value, id, newStatus);
+      await updateTaskStatus(workspaceOf(task), id, newStatus);
     }
-    await updateTaskOrder(workspaceId.value, id, newOrder);
+    await updateTaskOrder(workspaceOf(task), id, newOrder);
   } catch (err) {
     upsert({ id: task.id, status: snapshot.status, sortOrder: snapshot.sortOrder }); // revert
     const msg = (err && err.message) || 'failed to move task';
@@ -426,7 +449,7 @@ async function onDrop(e, colId) {
 
 function openTask(t) {
   if (draggingId.value) return;
-  router.push({ path: `/workspaces/${workspaceId.value}/tasks/${t.id}`, query: route.query });
+  router.push({ path: `/workspaces/${workspaceOf(t)}/tasks/${t.id}`, query: route.query });
 }
 
 // ---- Context menu / move task ----
@@ -453,6 +476,7 @@ watch(
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');
+const taskToMoveWorkspaceId = ref(null);
 
 /** Which right-click the rows on screen belong to. */
 let contextMenuRequest = 0;
@@ -508,6 +532,7 @@ function onContextMenuSelect(key) {
   if (key === 'move') {
     taskToMoveId.value = task.id;
     taskToMoveTitle.value = task.title;
+    taskToMoveWorkspaceId.value = workspaceOf(task);
     showMoveModal.value = true;
   }
 }
@@ -516,14 +541,18 @@ function closeMoveModal() {
   showMoveModal.value = false;
   taskToMoveId.value = null;
   taskToMoveTitle.value = '';
+  taskToMoveWorkspaceId.value = null;
 }
 
 async function onMoveConfirm(destinationWorkspaceId) {
   const taskId = taskToMoveId.value;
   if (!taskId) return;
   try {
-    await moveTask(workspaceId.value, taskId, destinationWorkspaceId);
-    removeTask(taskId);
+    await moveTask(taskToMoveWorkspaceId.value, taskId, destinationWorkspaceId);
+    // A moved task leaves a workspace's board, but is still on the board of
+    // every workspace, now under its new one.
+    if (isGlobal.value) upsert({ id: taskId, workspaceId: destinationWorkspaceId });
+    else removeTask(taskId);
     notifySuccess('Task moved');
   } catch (err) {
     notifyError('Move Error: ' + err.message);
@@ -544,7 +573,8 @@ watch(() => events.value.length, (newLen, oldLen) => {
     }
     if (['task.created', 'task.updated', 'status.updated', 'respond.ack'].includes(ev.type)) {
       const t = ev.payload;
-      if (!t || (t.workspaceId && String(t.workspaceId) !== String(workspaceId.value))) return;
+      if (!t) return;
+      if (!isGlobal.value && t.workspaceId && String(t.workspaceId) !== String(workspaceId.value)) return;
       const existing = tasks.value.find(x => String(x.id) === String(t.id));
       if (existing && existing.updatedAt && t.updatedAt &&
           new Date(existing.updatedAt).getTime() > new Date(t.updatedAt).getTime()) return;
@@ -553,7 +583,10 @@ watch(() => events.value.length, (newLen, oldLen) => {
   });
 });
 
-onMounted(() => {
+onMounted(async () => {
+  // The cards name their workspace, so the list has to be there to name it.
+  // The shell fetches it too; this only matters on a first load straight here.
+  if (isGlobal.value && workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
   loadAll();
   connect();
 });
