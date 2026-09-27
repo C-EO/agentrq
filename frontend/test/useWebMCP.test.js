@@ -188,6 +188,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/workspaces/ws1/board',
     '/workspaces/ws1/analytics',
     '/workspaces/ws1/settings?tab=skills',
+    '/workspaces/ws1/settings/skills/tdd',
     '/workspaces/ws1/tasks/t1',
     '/workspaces/ws1/tasks/t1/instances',
     '/workspaces/ws1/tasks/t1/edit',

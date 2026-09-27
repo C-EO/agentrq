@@ -6,10 +6,10 @@
  * A workspace's skills, as the settings screen shows them.
  *
  * A skill is a SKILL.md and the files it points to. The list shows only the
- * skills themselves — a skill's other files are reached by following its own
- * references, the way an agent reaches them — so most of what is worth testing
- * here is how a reference turns into a file: which spellings count, where a
- * relative path lands, and which inline code is really a file name.
+ * skills themselves; a skill's page lists its files, and also opens them by
+ * following references, so most of what is worth testing here is how a
+ * reference turns into a file: which spellings count, where a relative path
+ * lands, and which inline code is really a file name.
  */
 
 import { formatMemorySize } from './useMemories';
@@ -162,6 +162,39 @@ export function orderSkillFiles(files = []) {
   });
 }
 
+/**
+ * A skill's files as the rows of a tree: `{ kind: 'dir', path, name, depth }`
+ * or `{ kind: 'file', path, name, depth, sizeBytes }`. At each level SKILL.md
+ * comes first, then folders, then files, each by name. The contents of a
+ * folder in `collapsed` (a Set of folder paths) are left out.
+ */
+export function skillFileTree(files = [], collapsed = new Set()) {
+  const root = { dirs: new Map(), files: [] };
+  for (const f of files) {
+    const parts = String(f.path).split('/');
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push({ ...f, name: parts.at(-1) });
+  }
+  const rows = [];
+  const walk = (node, prefix, depth) => {
+    const file = (f) => rows.push({ kind: 'file', path: f.path, name: f.name, depth, sizeBytes: f.sizeBytes });
+    const files = [...node.files].sort((x, y) => x.name.localeCompare(y.name));
+    files.filter((f) => f.path === SKILL_FILE).forEach(file);
+    for (const name of [...node.dirs.keys()].sort((x, y) => x.localeCompare(y))) {
+      const path = prefix + name;
+      rows.push({ kind: 'dir', path, name, depth });
+      if (!collapsed.has(path)) walk(node.dirs.get(name), `${path}/`, depth + 1);
+    }
+    files.filter((f) => f.path !== SKILL_FILE).forEach(file);
+  };
+  walk(root, '', 0);
+  return rows;
+}
+
 /** A size in the units a person reads — the same as a memory's. */
 export const formatSkillSize = formatMemorySize;
 
@@ -180,6 +213,22 @@ export function skillSource(skill) {
   if (skill?.sourceType !== 'github' || !skill.sourceRepo) return 'manual';
   const at = skill.sourceCommit ? skill.sourceCommit.slice(0, 7) : skill.sourceRef;
   return at ? `GitHub ${skill.sourceRepo}@${at}` : `GitHub ${skill.sourceRepo}`;
+}
+
+/** The page that shows one skill of a workspace, in place of the Skills tab. */
+export function skillPagePath(workspaceId, name) {
+  return `/workspaces/${encodeURIComponent(workspaceId)}/settings/skills/${encodeURIComponent(name)}`;
+}
+
+/** The Skills tab of a workspace's settings, where a skill's page leads back to. */
+export function skillsTabPath(workspaceId) {
+  return `/workspaces/${encodeURIComponent(workspaceId)}/settings?tab=skills`;
+}
+
+/** "1 file", "3 files". */
+export function skillFileCount(n) {
+  const count = Number(n) || 0;
+  return `${count} ${count === 1 ? 'file' : 'files'}`;
 }
 
 /** The segments of the path being read, for the breadcrumb. */

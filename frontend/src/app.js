@@ -41,6 +41,8 @@ export const routes = [
       { path: 'board', component: () => import('./views/KanbanBoardView.vue') },
       { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
       { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
+      // One skill, drawn by the settings screen in place of its Skills tab.
+      { path: 'settings/skills/:name', component: () => import('./views/WorkspaceSettingsView.vue') },
       { path: 'tasks/:taskId', component: () => import('./views/TaskDetailView.vue') },
       { path: 'tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
     ]

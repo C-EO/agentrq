@@ -88,20 +88,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Move the user to a page of AgentRQ. Pass the in-app path (no origin), ' +
-        'optionally with a ?query; IDs are base62, from getCurrentPage or the list tools. Pages:\n' +
+        'Take the user to an AgentRQ page. Pass the in-app path (no origin), ' +
+        'optionally ?query; IDs are base62, from getCurrentPage or list tools. Pages:\n' +
         '- "/" every workspace, "/workspaces/new" to create one.\n' +
         '- "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(waiting on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
+        '(awaiting the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
         'open a task beside it, then "/instances" for a scheduled task\'s runs.\n' +
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
-        '"/analytics", "/settings", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
+        '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack or danger.\n' +
         '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>".\n' +
         '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (a terminal).\n' +
-        '- "/extensions", "/extensions/<name>/<pageId>" (desktop app only).\n' +
-        'Any other path is refused. Returns the page reached.',
+        '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
+        'Other paths are refused. Returns the page reached.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {

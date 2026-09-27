@@ -22,12 +22,16 @@ import {
   resolveWithin,
   skillBody,
   skillBreadcrumb,
+  skillFileCount,
+  skillFileTree,
   skillFullness,
   skillLinkFromEvent,
   skillLinkTarget,
+  skillPagePath,
   skillSource,
   skillUri,
   skillsState,
+  skillsTabPath,
 } from '../src/composables/useSkills';
 
 describe('skill URIs', () => {
@@ -163,6 +167,49 @@ describe('ordering, size and source', () => {
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: '0123456789abcdef', sourceRef: 'main' })).toBe('GitHub obra/superpowers@0123456');
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers', sourceRef: 'main' })).toBe('GitHub obra/superpowers@main');
     expect(skillSource({ sourceType: 'github', sourceRepo: 'obra/superpowers' })).toBe('GitHub obra/superpowers');
+  });
+
+  it('lays files out as a tree: SKILL.md, then folders, then files, and leaves out a collapsed folder\'s contents', () => {
+    const files = [
+      { path: 'z.md', sizeBytes: 1 },
+      { path: 'references/b.md', sizeBytes: 2 },
+      { path: 'SKILL.md', sizeBytes: 3 },
+      { path: 'references/deep/c.md', sizeBytes: 4 },
+      { path: 'a.md', sizeBytes: 5 },
+      { path: 'references/a.md', sizeBytes: 6 },
+      { path: 'assets/SKILL.md', sizeBytes: 7 },
+    ];
+    const rows = (collapsed) => skillFileTree(files, collapsed).map((r) => `${'  '.repeat(r.depth)}${r.kind === 'dir' ? `${r.name}/` : r.name}`);
+    expect(rows()).toEqual([
+      'SKILL.md',
+      'assets/',
+      '  SKILL.md',
+      'references/',
+      '  deep/',
+      '    c.md',
+      '  a.md',
+      '  b.md',
+      'a.md',
+      'z.md',
+    ]);
+    expect(rows(new Set(['references']))).toEqual(['SKILL.md', 'assets/', '  SKILL.md', 'references/', 'a.md', 'z.md']);
+    expect(rows(new Set(['references/deep']))).toContain('  deep/');
+    expect(rows(new Set(['references/deep']))).not.toContain('    c.md');
+    expect(skillFileTree(files).find((r) => r.name === 'c.md')).toEqual({ kind: 'file', path: 'references/deep/c.md', name: 'c.md', depth: 2, sizeBytes: 4 });
+    expect(skillFileTree(files).find((r) => r.name === 'deep')).toEqual({ kind: 'dir', path: 'references/deep', name: 'deep', depth: 1 });
+    expect(skillFileTree()).toEqual([]);
+  });
+
+  it('counts files', () => {
+    expect(skillFileCount(1)).toBe('1 file');
+    expect(skillFileCount(3)).toBe('3 files');
+    expect(skillFileCount(undefined)).toBe('0 files');
+  });
+
+  it('links a skill\'s page and the tab it is listed on', () => {
+    expect(skillPagePath('ws1', 'tdd')).toBe('/workspaces/ws1/settings/skills/tdd');
+    expect(skillPagePath('ws 1', 'a/b')).toBe('/workspaces/ws%201/settings/skills/a%2Fb');
+    expect(skillsTabPath('ws1')).toBe('/workspaces/ws1/settings?tab=skills');
   });
 
   it('breaks a path into a breadcrumb', () => {

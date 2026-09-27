@@ -3,16 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The Skills tab, mounted. The rules of references are tested in
- * `skills.test.js`; this is the wiring that makes them the whole way in: only
- * skills are listed, a skill's other files open by following references from
- * the file on screen, Back retraces them, and an import reports what it left
+ * The Skills tab, mounted: a grid of cards, each leading to the skill's own
+ * page (`skillDetailView.test.js`), and an import that reports what it left
  * out. The coverage gate ignores `.vue`, so none of this is counted there.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createApp, h, nextTick } from 'vue';
 import { createPinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
 
 const FILES = {
   'systematic-debugging': [
@@ -68,6 +67,7 @@ async function mount() {
   document.body.append(el);
   const app = createApp({ render: () => h(WorkspaceSkillsPanel, { workspaceId: 'ws1' }) });
   app.use(createPinia());
+  app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { render: () => null } }] }));
   app.mount(el);
   apps.push(app);
   await settle();
@@ -79,8 +79,6 @@ const click = async (node) => {
   node.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await settle();
 };
-const openFirst = async (el) => click(el.querySelector('[data-test="skill-row"] > button'));
-const skillLink = (el, uri) => el.querySelector(`[data-skill-link="${uri}"]`);
 
 beforeEach(() => {
   while (apps.length) apps.pop().unmount();
@@ -89,65 +87,42 @@ beforeEach(() => {
 });
 
 describe('the Skills tab', () => {
-  it('lists the skills and none of their other files', async () => {
+  it('lays the skills out as cards, each leading to its own page', async () => {
     const el = await mount();
-    const rows = el.querySelectorAll('[data-test="skill-row"]');
-    expect(rows).toHaveLength(2);
-    expect(text(rows[0])).toContain('review');
-    expect(text(rows[0])).toContain('Shared from Platform');
-    expect(text(rows[1])).toContain('systematic-debugging');
-    expect(text(rows[1])).toContain('Modified locally');
-    expect(text(rows[1])).toContain('GitHub obra/superpowers@abcdef1');
+    expect(el.querySelector('[data-test="skill-grid"]').className).toContain('xl:grid-cols-3');
+    const cards = el.querySelectorAll('[data-test="skill-card"]');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].querySelector('[data-test="skill-card-name"]').textContent).toBe('review');
+    expect(text(cards[0])).toContain('Shared from Platform');
+    expect(cards[0].getAttribute('href')).toBe('/workspaces/ws1/settings/skills/review');
+    expect(cards[1].querySelector('[data-test="skill-card-name"]').textContent).toBe('systematic-debugging');
+    expect(text(cards[1])).toContain('Use when debugging.');
+    expect(text(cards[1])).toContain('Modified');
+    expect(cards[1].getAttribute('href')).toBe('/workspaces/ws1/settings/skills/systematic-debugging');
+    // Nothing is read until a card is opened.
+    expect(api.getWorkspaceSkill).not.toHaveBeenCalled();
     expect(text(el)).not.toContain('root-cause-tracing');
   });
 
-  it('opens a file named in inline code, follows links from it, and goes back', async () => {
+  it('names where a plain skill came from', async () => {
+    api.searchWorkspaceSkills.mockResolvedValueOnce({
+      skills: [{ name: 'tdd', description: 'Use when testing.', totalBytes: 10, sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: 'abcdef1234' }],
+    });
     const el = await mount();
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('systematic-debugging/SKILL.md');
-    expect(text(el)).toContain('8% of the 96 KB limit');
-    // Plain code that is no file stays plain.
-    expect(el.querySelector('[data-test="skill-body"]').innerHTML).toContain('<code>npm test</code>');
-
-    await click(skillLink(el, 'skill://systematic-debugging/root-cause-tracing.md').querySelector('code'));
-    expect(api.getWorkspaceSkillFile).toHaveBeenLastCalledWith('ws1', 'systematic-debugging', 'root-cause-tracing.md');
-    expect(text(el)).toContain('Trace it.');
-
-    await click(skillLink(el, 'skill://systematic-debugging/scripts/find-polluter.sh'));
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('systematic-debugging/scripts/find-polluter.sh');
-    expect(text(el)).toContain('echo find');
-
-    await click(el.querySelector('[data-test="skill-back"]'));
-    expect(text(el)).toContain('Trace it.');
-    await click(el.querySelector('[data-test="skill-back"]'));
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('systematic-debugging/SKILL.md');
-    expect(el.querySelector('[data-test="skill-back"]')).toBeNull();
+    expect(text(el.querySelector('[data-test="skill-card"]'))).toContain('GitHub obra/superpowers@abcdef1');
   });
 
-  it('switches skills from a skill:// link, and says so when a file is not there', async () => {
-    const el = await mount();
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
+  it('says there are none, and says so differently when the list failed', async () => {
+    api.searchWorkspaceSkills.mockResolvedValueOnce({});
+    let el = await mount();
+    expect(text(el)).toContain('No skills yet.');
 
-    await click(skillLink(el, 'skill://systematic-debugging/gone.md'));
-    expect(text(el.querySelector('[data-test="skill-missing"]'))).toContain('There is no gone.md in the skill systematic-debugging.');
-    await click(el.querySelector('[data-test="skill-back"]'));
-
-    await click(skillLink(el, 'skill://systematic-debugging/root-cause-tracing.md'));
-    await click(skillLink(el, 'skill://review/SKILL.md'));
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('review/SKILL.md');
-    await click(el.querySelector('[data-test="skill-back"]'));
-    await click(el.querySelector('[data-test="skill-back"]'));
-    // A skill:// link to a skill this workspace cannot see reads as missing.
-    CONTENT['systematic-debugging/SKILL.md'] += ' And [elsewhere](skill://nowhere).';
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
-    await click(skillLink(el, 'skill://nowhere/SKILL.md'));
-    expect(text(el.querySelector('[data-test="skill-missing"]'))).toContain('There is no skill called nowhere');
-    await click(el.querySelector('[data-test="skill-back"]'));
-    await click(skillLink(el, 'skill://systematic-debugging/root-cause-tracing.md'));
-    await click(skillLink(el, 'skill://review/SKILL.md'));
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('review/SKILL.md');
-    expect(text(el)).toContain('Review body');
+    api.searchWorkspaceSkills.mockRejectedValueOnce(new Error('boom'));
+    el = await mount();
+    expect(text(el)).toContain("Could not load this workspace's skills.");
+    const retry = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Try again');
+    await click(retry);
+    expect(el.querySelectorAll('[data-test="skill-card"]')).toHaveLength(2);
   });
 
   it('imports and reports what it left out', async () => {
@@ -234,54 +209,5 @@ describe('the Skills tab', () => {
     const cancel = [...el.querySelectorAll('[data-test="skill-import-choice"] button')].find((b) => b.textContent.trim() === 'Cancel');
     await click(cancel);
     expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
-  });
-
-  it('offers delete and share only on the workspace\'s own skills', async () => {
-    const el = await mount();
-    await openFirst(el); // review, shared in
-    expect(el.querySelector('[data-test="skill-delete"]')).toBeNull();
-    expect(el.querySelector('[data-test="skill-share"]')).toBeNull();
-    expect(api.fetchWorkspaceSkillShares).not.toHaveBeenCalled();
-
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
-    expect(text(el.querySelector('[data-test="skill-shares"]'))).toContain('Shared with Ops');
-    // Neither this workspace nor one it is already shared with is offered.
-    const options = [...el.querySelectorAll('[data-test="skill-share-target"] option')].map((o) => o.textContent.trim());
-    expect(options).toEqual(['Share with a workspace…', 'Platform']);
-
-    const select = el.querySelector('[data-test="skill-share-target"]');
-    select.value = 'ws2';
-    select.dispatchEvent(new Event('change'));
-    await click(el.querySelector('[data-test="skill-share"]'));
-    expect(api.shareWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging', 'ws2');
-
-    await click(el.querySelector('[data-test="skill-delete"]'));
-    const confirm = [...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]'));
-    await click(confirm);
-    expect(api.deleteWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging');
-  });
-
-  it('shows only the file it was last asked for, whichever answer arrives last', async () => {
-    // The first skill's file answers after the second's.
-    api.getWorkspaceSkillFile.mockImplementationOnce(
-      (_ws, name, path) => new Promise((r) => setTimeout(() => r({ file: { path, content: CONTENT[`${name}/${path}`] } }), 60)),
-    );
-    const el = await mount();
-    const rows = () => el.querySelectorAll('[data-test="skill-row"] > button');
-    rows()[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await nextTick();
-    rows()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 120));
-    expect(text(el.querySelector('[data-test="skill-breadcrumb"]'))).toBe('review/SKILL.md');
-    expect(text(el)).toContain('Review body');
-    expect(text(el)).not.toContain('Debugging');
-  });
-
-  it('says a skill is missing only when the server says so', async () => {
-    const el = await mount();
-    api.getWorkspaceSkill.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('Failed to fetch skill'), { status: 500 })));
-    await click(el.querySelectorAll('[data-test="skill-row"] > button')[1]);
-    expect(el.querySelector('[data-test="skill-missing"]')).toBeNull();
-    expect(text(el)).toContain('Failed to fetch skill');
   });
 });
