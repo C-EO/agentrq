@@ -109,6 +109,7 @@ export default defineConfig({
         'src/composables/useWorkspaceTerminal.js',
         'src/composables/useTerminalView.js',
         'src/composables/usePwaUpdateProgress.js',
+        'src/composables/useAutoTitle.js',
         'src/utils/markdown.js',
         'src/utils/workspaceForm.js',
         'src/webmcp/*.js',

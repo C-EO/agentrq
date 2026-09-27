@@ -79,6 +79,9 @@ export function useAutoTitle(descriptionRef, titleRef, workspaceId) {
       typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId)
     );
 
+    // Asking for a title takes back a title typed earlier, or the answer would
+    // be dropped as overridden. Typing again while it runs still keeps theirs.
+    isOverridden.value = false;
     isGenerating.value = true;
     const w = getWorker();
     currentMessageId.value = Date.now();
