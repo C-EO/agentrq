@@ -29,9 +29,10 @@ export function useToasts() {
     toasts.value = toasts.value.filter(t => t.id !== id);
   };
 
-  const notifyError = (message, title = 'Error', link = null) => addToast(message, 'error', title, 4000, link);
-  const notifySuccess = (message, title = 'Success', link = null) => addToast(message, 'success', title, 4000, link);
-  const notifyInfo = (message, title = 'Notice', link = null) => addToast(message, 'info', title, 4000, link);
+  // No default title: the icon already says error, success or info.
+  const notifyError = (message, title = null, link = null) => addToast(message, 'error', title, 4000, link);
+  const notifySuccess = (message, title = null, link = null) => addToast(message, 'success', title, 4000, link);
+  const notifyInfo = (message, title = null, link = null) => addToast(message, 'info', title, 4000, link);
 
   return {
     toasts,

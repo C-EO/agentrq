@@ -22,7 +22,7 @@
         <div class="toast-content">
           <div v-if="toast.title" class="toast-title">{{ toast.title }}</div>
           <!-- Two lines at most; the whole message is on hover. -->
-          <div class="toast-message" :title="toast.message">{{ toast.message }}</div>
+          <div class="toast-message" :class="{ solo: !toast.title }" :title="toast.message">{{ toast.message }}</div>
           <div v-if="hasLink(toast)" class="toast-link">View task</div>
         </div>
         <button @click.stop="removeToast(toast.id)" class="toast-close" aria-label="Dismiss">
@@ -181,6 +181,13 @@ function openLink(toast) {
 
 .dark .toast-message {
   color: #a1a1aa;
+}
+
+/* Without a title the message is the headline. */
+.toast-message.solo {
+  font-size: 14px;
+  line-height: 20px;
+  color: inherit;
 }
 
 .toast-link {
