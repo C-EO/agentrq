@@ -18,6 +18,20 @@ import (
 	"gorm.io/datatypes"
 )
 
+// defaultWorkspaceSelfLearningLoopNote is the note a workspace created without
+// one starts with. Like the supervisor's, it is the same for every account.
+// The web create form shows a copy (frontend/src/utils/workspaceForm.js), and a
+// frontend test fails when the two differ.
+const defaultWorkspaceSelfLearningLoopNote = `Just before marking the task as completed:
+
+**Self-learning loop**
+- Look back over the task for what a future task would be better off knowing, and save it to this workspace's memory or skills:
+  - A correction from the human (style, format, workflow, "stop doing X"): record the preference, so the next task starts already knowing it.
+  - Something you struggled with and solved, or a more efficient way you found to do it.
+  - A memory or skill you relied on that turned out wrong, incomplete or outdated: fix it now.
+- Update the memory or skill that already covers the topic rather than adding a near-duplicate, and rewrite any older note the new lesson contradicts.
+- Write the rule, not the story: a line or two, linked from the memory index. If nothing was learned, save nothing.`
+
 func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorkspaceRequest) (*entity.CreateWorkspaceResponse, error) {
 	userID := monoflake.IDFromBase62(req.UserID).Int64()
 	if c.limiter != nil && !c.limiter.AllowWorkspace(userID) {
@@ -42,6 +56,11 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
 		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
 		WorkingDirectory:      workingDirectory,
+	}
+	// Only at creation: clearing the note later in settings is how a
+	// workspace opts out, and an update must not bring it back.
+	if strings.TrimSpace(m.SelfLearningLoopNote) == "" {
+		m.SelfLearningLoopNote = defaultWorkspaceSelfLearningLoopNote
 	}
 
 	if req.Workspace.NotificationSettings != nil {

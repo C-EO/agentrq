@@ -64,6 +64,57 @@ func TestCreateWorkspace_ClearContextDefaultsToTrue(t *testing.T) {
 	}
 }
 
+// A workspace created without a note gets the default one, so a new
+// workspace's agents keep a self-learning loop unless somebody opts out.
+func TestCreateWorkspace_EmptyNoteGetsTheDefault(t *testing.T) {
+	e := newTestController(t)
+
+	e.idgen.EXPECT().NextID().Return(int64(100))
+	var captured model.Workspace
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, p model.Workspace) (model.Workspace, error) {
+			captured = p
+			return p, nil
+		},
+	)
+
+	_, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
+		UserID:    testUserIDStr,
+		Workspace: entity.Workspace{Name: "W", SelfLearningLoopNote: "  \n"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if captured.SelfLearningLoopNote != defaultWorkspaceSelfLearningLoopNote {
+		t.Errorf("expected the default note, got %q", captured.SelfLearningLoopNote)
+	}
+}
+
+// A note given at creation is kept as it is.
+func TestCreateWorkspace_GivenNoteIsKept(t *testing.T) {
+	e := newTestController(t)
+
+	e.idgen.EXPECT().NextID().Return(int64(100))
+	var captured model.Workspace
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, p model.Workspace) (model.Workspace, error) {
+			captured = p
+			return p, nil
+		},
+	)
+
+	_, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
+		UserID:    testUserIDStr,
+		Workspace: entity.Workspace{Name: "W", SelfLearningLoopNote: "Be concise."},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if captured.SelfLearningLoopNote != "Be concise." {
+		t.Errorf("expected the given note, got %q", captured.SelfLearningLoopNote)
+	}
+}
+
 func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 

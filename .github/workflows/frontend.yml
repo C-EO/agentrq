@@ -6,10 +6,14 @@ on:
       - main
     paths:
       - 'frontend/**'
+      # The default self-learning note is checked against the server's copy.
+      - 'backend/internal/controller/crud/workspace.go'
       - '.github/workflows/frontend.yml'
   pull_request:
     paths:
       - 'frontend/**'
+      # The default self-learning note is checked against the server's copy.
+      - 'backend/internal/controller/crud/workspace.go'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
 
