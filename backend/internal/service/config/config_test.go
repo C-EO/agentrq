@@ -59,8 +59,8 @@ database:
 		if s.AppShortName() != "agentrq" {
 			t.Errorf("AppShortName mismatch: %s", s.AppShortName())
 		}
-		if s.Version() != "v0.9.1" {
-			t.Errorf("Expected version v0.9.1, got %s", s.Version())
+		if s.Version() != "v0.9.2" {
+			t.Errorf("Expected version v0.9.2, got %s", s.Version())
 		}
 		if s.Env() != "development" {
 			t.Errorf("Env mismatch: %s", s.Env())
