@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createMemoryHistory } from 'vue-router'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 
 import { routes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
@@ -25,6 +25,7 @@ describe('routes', () => {
   it('covers every view the app can reach', () => {
     expect(flatten(routes)).toEqual([
       '/',
+      '/workspaces/new',
       '/tasks/:filter',
       '/tasks/:filter/:workspaceId/:taskId',
       '/tasks/:filter/:workspaceId/:taskId/instances',
@@ -49,6 +50,14 @@ describe('routes', () => {
       '/workflows/:id',
       '/login',
     ])
+  })
+
+  it('opens the create form at /workspaces/new, not a workspace with the id "new"', () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const resolved = router.resolve('/workspaces/new')
+    expect(resolved.matched).toHaveLength(1)
+    expect(resolved.matched[0].path).toBe('/workspaces/new')
+    expect(router.resolve('/workspaces/abc').matched[0].path).toBe('/workspaces/:id')
   })
 
   it('marks only the login route public', () => {

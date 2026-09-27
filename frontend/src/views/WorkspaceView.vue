@@ -39,63 +39,6 @@
       <AccountStats />
     </div>
 
-    <!-- Create workspace form -->
-    <Transition v-if="activeTab === 'workspaces'" name="fade-down">
-      <div v-if="showCreate" class="fixed inset-0 z-[110] flex items-center justify-center p-4 md:relative md:inset-auto md:p-0 md:bg-transparent md:z-10 md:block">
-        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden" @click="showCreate = false"></div>
-        
-        <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm shadow-xl w-full max-w-2xl md:mb-6 shrink-0 z-10 relative flex flex-col max-h-[90vh] md:max-h-none overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/80 flex justify-between items-center">
-            <h2 class="text-[10px] font-black text-gray-800 dark:text-zinc-200">Initialize New Workspace</h2>
-            <button @click="showCreate = false" class="text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-zinc-700">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-          <div class="p-6 overflow-y-auto">
-            <form @submit.prevent="submit" class="grid grid-cols-1 gap-6">
-              <div class="space-y-2">
-                <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400">Workspace Name</label>
-                <input v-model="form.name" @blur="form.name = toKebabCase(form.name)" type="text" required class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-black text-gray-800 dark:text-zinc-200 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm" placeholder="e.g. my-saas-backend" />
-              </div>
-              <div class="space-y-2">
-                <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400">Mission / Description</label>
-                <textarea v-model="form.description" rows="7" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
-              </div>
-              <div class="space-y-2">
-                <label for="newWorkingDirectory" class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
-                  Working Directory
-                  <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Optional absolute path the agent works in</span>
-                </label>
-                <div class="flex items-stretch gap-2">
-                  <input id="newWorkingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
-                         class="min-w-0 flex-1 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm"
-                         :placeholder="workingDirectoryPlaceholder" />
-                  <button v-if="canBrowseDirectories" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
-                          class="shrink-0 px-4 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-zinc-200 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                    {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
-                  </button>
-                </div>
-              </div>
-              <div class="space-y-2">
-                <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
-                  Self Learning Loop Note
-                  <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Guidelines appended to every agent task</span>
-                </label>
-                <textarea v-model="form.selfLearningLoopNote" rows="10" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="Upon completing the task, evaluate your execution path..."></textarea>
-              </div>
-              <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-zinc-800">
-                <button type="button" @click="showCreate = false" class="px-6 py-2.5 rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-[10px] font-black hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all shadow-sm">Cancel</button>
-                <button type="submit" class="bg-gray-900 dark:bg-zinc-100 text-white dark:text-gray-900 px-6 py-2.5 rounded-sm border border-transparent text-[10px] font-black hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-all shadow-md flex items-center gap-2" :disabled="loading">
-                  <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                  {{ loading ? 'Initializing...' : 'Create Workspace' }}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
     <div v-if="error && activeTab === 'workspaces'" class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 px-5 py-3 rounded-sm text-[10px] font-black shadow-sm">
       {{ error }}
     </div>
@@ -134,7 +77,7 @@
               </button>
 
               <!-- Inline New Button -->
-              <button @click="showCreate = true" class="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-sm text-[10px] font-black hover:opacity-80 transition-all flex items-center gap-2 shrink-0 shadow-sm border border-transparent">
+              <button @click="newWorkspace" class="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-sm text-[10px] font-black hover:opacity-80 transition-all flex items-center gap-2 shrink-0 shadow-sm border border-transparent">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                 <span>New</span>
               </button>
@@ -211,13 +154,13 @@
         </div>
 
         <!-- No Workspaces State -->
-        <div v-if="activeWorkspaces.length === 0 && !showCreate && !loadingWorkspaces && !searchQuery" class="py-16 text-center border border-dashed border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-sm">
+        <div v-if="activeWorkspaces.length === 0 && !loadingWorkspaces && !searchQuery" class="py-16 text-center border border-dashed border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-sm">
           <div class="w-16 h-16 bg-gray-50 dark:bg-zinc-800 rounded-sm mx-auto flex items-center justify-center mb-5 border border-gray-100 dark:border-zinc-700">
             <svg class="h-8 w-8 text-gray-300 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
           </div>
           <p class="text-sm font-bold text-gray-700 dark:text-zinc-100">No active workspaces</p>
           <p class="text-xs text-gray-500 dark:text-zinc-400 mt-2 font-bold">Build your first AgentRQ pipeline today.</p>
-          <button @click="showCreate = true" class="mt-6 px-6 py-2.5 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm border border-transparent text-xs font-semibold transition-all shadow-sm inline-flex items-center gap-2">
+          <button @click="newWorkspace" class="mt-6 px-6 py-2.5 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm border border-transparent text-xs font-semibold transition-all shadow-sm inline-flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
             New Workspace
           </button>
@@ -296,23 +239,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { createWorkspace, unarchiveWorkspace, fetchGlobalTasks, fetchGlobalTaskStats } from '../api';
+import { unarchiveWorkspace, fetchGlobalTaskStats } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
-import { usePlatformStore } from '../stores/platformStore';
 import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import { canChooseModel } from '../composables/useAgentModelPicker';
 import AgentModelPicker from '../components/AgentModelPicker.vue';
-import {
-  chooseDirectory,
-  directoryPickerState,
-  workingDirectoryPlaceholder as directoryPlaceholderFor,
-} from '../composables/useDirectoryPicker';
-import { emptyWorkspaceForm } from '../utils/workspaceForm';
 import LoadingState from '../components/LoadingState.vue';
 import AccountStats from '../components/AccountStats.vue';
 
@@ -330,53 +266,19 @@ const TABS = Object.freeze([
 ]);
 const activeTab = ref('workspaces');
 
-const { toKebabCase, liveKebabCase } = useFormat();
+const { toKebabCase } = useFormat();
 const tooltipStore = useTooltipStore();
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
 
-const platformStore = usePlatformStore();
-const isChoosingDirectory = ref(false);
-
-// Offered only when it can actually work: the browser cannot produce an
-// absolute path, and a desktop build whose bridge lacks the chooser would give
-// a button that does nothing when clicked.
-const canBrowseDirectories = computed(
-  () => directoryPickerState({ isDesktop: platformStore.isDesktop, bridge: window.agentrq?.dialog }).available
-);
-
-const workingDirectoryPlaceholder = computed(() => directoryPlaceholderFor(window.agentrq?.platform));
-
-async function chooseWorkingDirectory() {
-  if (isChoosingDirectory.value) return;
-  isChoosingDirectory.value = true;
-  try {
-    const chosen = await chooseDirectory({
-      isDesktop: platformStore.isDesktop,
-      bridge: window.agentrq?.dialog,
-      currentPath: form.value.workingDirectory,
-    });
-    // '' means the dialog was dismissed, which must not wipe what is there.
-    if (chosen) form.value.workingDirectory = chosen;
-  } catch (err) {
-    notifyError(err.message);
-  } finally {
-    isChoosingDirectory.value = false;
-  }
-}
 const workspaceStore = useWorkspaceStore();
 const workspaces = computed(() => workspaceStore.workspaces);
-const showCreate = ref(false);
 const showArchived = ref(false);
 const searchQuery = ref('');
-const loading = ref(false);
 const loadingWorkspaces = ref(true);
-const iconError = ref('');
-const createFileInput = ref(null);
 const error = ref(null);
 
-const form = ref(emptyWorkspaceForm());
 const globalStats = ref({
   totalTasks: 0,
   pendingTasks: 0,
@@ -413,9 +315,6 @@ const filteredArchivedWorkspaces = computed(() => {
 async function loadWorkspaces() {
   try {
     await workspaceStore.fetchWorkspaces();
-    if (workspaces.value.length === 0) {
-      showCreate.value = true;
-    }
     // Also load some global stats
     const stats = await fetchGlobalTaskStats();
     globalStats.value = {
@@ -431,69 +330,9 @@ async function loadWorkspaces() {
   }
 }
 
-watch(() => form.value.name, (newVal) => {
-  if (newVal) {
-    const formatted = liveKebabCase(newVal);
-    if (formatted !== newVal) {
-      form.value.name = formatted;
-    }
-  }
-});
-
-watch(showCreate, (val) => {
-  if (!val) {
-    form.value = emptyWorkspaceForm();
-    iconError.value = '';
-  }
-});
-
-async function handleIconUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  iconError.value = '';
-
-  if (file.size > 64 * 1024) {
-    iconError.value = 'Too large (Max 64KB)';
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = async (event) => {
-    const base64 = event.target.result;
-    const img = new Image();
-    img.src = base64;
-    await img.decode();
-    if (img.width !== img.height) {
-      iconError.value = 'Image must be square';
-      return;
-    }
-    form.value.icon = base64;
-  };
-  reader.readAsDataURL(file);
-}
-
-async function submit() {
-  if (!form.value.name.trim()) return;
-  loading.value = true;
-  error.value = null;
-  try {
-    const res = await createWorkspace(form.value.name, form.value.description, form.value.icon, form.value.selfLearningLoopNote, form.value.workingDirectory);
-    const newId = res.workspace?.id || res.id;
-    
-    showCreate.value = false;
-    form.value = emptyWorkspaceForm();
-    iconError.value = ''; 
-    
-    if (newId) {
-      router.push(`/workspaces/${newId}`);
-    } else {
-      await loadWorkspaces();
-    }
-  } catch (err) {
-    error.value = 'Failed to create workspace: ' + err.message;
-  } finally {
-    loading.value = false;
-  }
+// Creating one is its own page, as creating a task is.
+function newWorkspace() {
+  router.push('/workspaces/new');
 }
 
 async function toggleArchive(p) {
@@ -522,16 +361,3 @@ onMounted(async () => {
   await loadWorkspaces();
 });
 </script>
-
-<style scoped>
-.fade-down-enter-active,
-.fade-down-leave-active {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.fade-down-enter-from,
-.fade-down-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-</style>

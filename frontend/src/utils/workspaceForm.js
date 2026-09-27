@@ -40,3 +40,8 @@ export function emptyWorkspaceForm() {
     workingDirectory: '',
   };
 }
+
+/** Whether the create form can be sent: a workspace needs a name, and nothing else. */
+export function canCreateWorkspace(form) {
+  return Boolean(form?.name?.trim());
+}
