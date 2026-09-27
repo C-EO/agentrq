@@ -595,76 +595,8 @@
                    </div>
                 </div>
 
-                <!-- Memories.
-                     What the workspace's agents have chosen to remember. Read
-                     only: agents write these through the memory tools, and a
-                     human quietly rewriting one under an agent that has already
-                     read it is confusing from both sides. -->
-                <div v-if="activeTab === 'memories'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div class="space-y-1">
-                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Workspace Memory</h3>
-                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium ml-1">
-                      What agents working here have written down for the next one. They read
-                      <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ INDEX_MEMORY }}</code>
-                      first, which indexes the rest. Every agent in this workspace shares them.
-                    </p>
-                  </div>
-
-                  <p v-if="memoriesView === MemoriesState.Loading" class="text-[11px] text-gray-400 dark:text-zinc-500 ml-1">Loading memories…</p>
-
-                  <div v-else-if="memoriesView === MemoriesState.Failed" class="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-sm">
-                    <p class="text-[11px] font-bold text-red-600 dark:text-red-400">Could not load this workspace's memories.</p>
-                    <button type="button" @click="loadMemories" class="mt-2 text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 hover:underline">Try again</button>
-                  </div>
-
-                  <div v-else-if="memoriesView === MemoriesState.Empty" class="p-6 bg-gray-50 dark:bg-zinc-800/50 rounded-sm border border-gray-100 dark:border-zinc-800 text-center">
-                    <p class="text-[11px] font-bold text-gray-700 dark:text-zinc-200">Nothing remembered yet.</p>
-                    <p class="mt-1 text-[11px] text-gray-500 dark:text-zinc-400">
-                      This is how every workspace starts. Agents write here themselves when they learn
-                      something worth keeping — there is nothing to set up.
-                    </p>
-                  </div>
-
-                  <div v-else class="space-y-2">
-                    <div v-for="m in orderedMemories" :key="m.name"
-                         class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm border border-gray-100 dark:border-zinc-800 overflow-hidden">
-                      <button type="button" @click="toggleMemory(m.name)"
-                              class="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                        <span class="flex items-center gap-3 min-w-0">
-                          <svg class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform"
-                               :class="openMemory === m.name ? 'rotate-90' : ''"
-                               fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                          <span class="truncate text-xs font-bold text-gray-800 dark:text-zinc-100 font-mono">{{ m.name }}</span>
-                          <span v-if="m.name === INDEX_MEMORY"
-                                class="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5">Index</span>
-                        </span>
-                        <span class="shrink-0 flex items-center gap-3 text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">
-                          <span>{{ formatMemorySize(m.sizeBytes) }}</span>
-                          <span class="hidden sm:inline">{{ memoryUpdatedAgo(m.updatedAt) }}</span>
-                        </span>
-                      </button>
-
-                      <div v-if="openMemory === m.name" class="border-t border-gray-100 dark:border-zinc-800 p-4 space-y-3">
-                        <div class="flex items-center justify-between gap-3">
-                          <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
-                            {{ memoryFullness(m.sizeBytes) }}% of the 16 KB limit
-                          </span>
-                          <button type="button" @click="showRawMemory = !showRawMemory"
-                                  :class="showRawMemory ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
-                                  class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">Raw</button>
-                        </div>
-                        <p v-if="memoryError" class="text-[11px] font-bold text-red-600 dark:text-red-400">Could not load this memory.</p>
-                        <p v-else-if="memoryLoading" class="text-[11px] text-gray-400 dark:text-zinc-500">Loading…</p>
-                        <div v-else-if="showRawMemory" class="text-[12px] text-gray-800 dark:text-zinc-200 whitespace-pre-wrap break-words font-mono">{{ memoryContent }}</div>
-                        <div v-else class="md-body text-[13px] text-gray-800 dark:text-zinc-200"
-                             @click="onMemoryLinkClick"
-                             v-html="renderMarkdown(memoryContent)"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <!-- Memories: memory.md, following its links in place. -->
+                <WorkspaceMemoryPage v-if="activeTab === 'memories'" :workspace-id="workspaceId" />
 
                 <!-- Skills: playbooks agents load, with their own panel, and one
                      skill's page in its place when the route names one. -->
@@ -910,18 +842,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel, fetchWorkspaceMemories, getWorkspaceMemory } from '../api';
-import { renderMarkdown } from '../utils/markdown';
-import {
-  INDEX_MEMORY,
-  MemoriesState,
-  formatMemorySize,
-  memoriesState,
-  memoryFullness,
-  memoryLinkFromEvent,
-  memoryUpdatedAgo,
-  orderMemories,
-} from '../composables/useMemories';
+import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
 import { usePlatformStore } from '../stores/platformStore';
@@ -932,6 +853,7 @@ import {
 } from '../composables/useDirectoryPicker';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
+import WorkspaceMemoryPage from '../components/WorkspaceMemoryPage.vue';
 import WorkspaceSkillPage from '../components/WorkspaceSkillPage.vue';
 import WorkspaceSkillsPanel from '../components/WorkspaceSkillsPanel.vue';
 import StartAgentPanel from '../components/StartAgentPanel.vue';
@@ -991,86 +913,7 @@ const showActionBar = computed(() =>
   shouldShowSettingsActionBar(activeTab.value, workspace.value)
 );
 
-// ── Memories ────────────────────────────────────────────────────────────────
-// Read-only: agents write these through the memory tools.
-const memories = ref([]);
-const memoriesLoading = ref(false);
-const memoriesError = ref(null);
-const openMemory = ref('');
-const memoryContent = ref('');
-const memoryLoading = ref(false);
-const memoryError = ref(null);
-const showRawMemory = ref(false);
-
-const orderedMemories = computed(() => orderMemories(memories.value));
-const memoriesView = computed(() =>
-  memoriesState({ loading: memoriesLoading.value, error: memoriesError.value, memories: memories.value })
-);
-
-async function loadMemories() {
-  memoriesLoading.value = true;
-  memoriesError.value = null;
-  try {
-    const res = await fetchWorkspaceMemories(workspaceId.value);
-    memories.value = res.memories || [];
-  } catch (err) {
-    // Kept apart from an empty list: "your agents have remembered nothing" and
-    // "we could not ask" look identical on screen and must not read the same.
-    memoriesError.value = err;
-  } finally {
-    memoriesLoading.value = false;
-  }
-}
-
-/**
- * Follow a `memory://` link from inside a memory.
- *
- * The index is built of these, so this is the ordinary way to move between
- * memories. Delegated from the panel rather than bound per link, because the
- * links are inside markdown the app injects as HTML.
- */
-function onMemoryLinkClick(event) {
-  const name = memoryLinkFromEvent(event);
-  if (!name) return;
-  event.preventDefault();
-  // A link to a memory nobody has written is not a failure worth a toast: an
-  // index written ahead of its entries is normal. The row simply is not there.
-  if (!memories.value.some((m) => m.name === name)) {
-    notifyInfo(`Nothing saved under ${name} yet.`);
-    return;
-  }
-  openNamedMemory(name);
-}
-
-async function openNamedMemory(name) {
-  openMemory.value = '';
-  await toggleMemory(name);
-}
-
-async function toggleMemory(name) {
-  if (openMemory.value === name) {
-    openMemory.value = '';
-    return;
-  }
-  openMemory.value = name;
-  memoryContent.value = '';
-  memoryError.value = null;
-  memoryLoading.value = true;
-  try {
-    const res = await getWorkspaceMemory(workspaceId.value, name);
-    // The list is fetched without content, so opening one is a second request.
-    memoryContent.value = res.memory?.content || '';
-  } catch (err) {
-    memoryError.value = err;
-  } finally {
-    memoryLoading.value = false;
-  }
-}
-
-// Fetched when the tab is first opened rather than on mount: most visits to
-// settings are not about memories, and this is a request per workspace.
 watch(activeTab, (tab) => {
-  if (tab === 'memories' && memories.value.length === 0 && !memoriesError.value) loadMemories();
   // Drawn when the tab is opened, and again every time it is reopened. An
   // extension's settings are its own state and can change underneath this
   // screen — another window, its own background work — so a cached panel would
