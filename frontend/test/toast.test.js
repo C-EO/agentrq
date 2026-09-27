@@ -9,7 +9,7 @@
  * this is where clicking one actually goes there.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createApp, h } from 'vue'
 
 const push = vi.fn()
@@ -20,16 +20,26 @@ vi.mock('vue-router', () => ({
 const { default: Toast } = await import('../src/components/Toast.vue')
 const { useToasts } = await import('../src/composables/useToasts')
 
+// Unmounted after each test: a toast's own timer can fire after the file's
+// DOM is torn down, and a still-mounted list re-rendering then throws.
+const mounted = []
+
 async function mount() {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const app = createApp({ render: () => h(Toast) })
   app.mount(el)
+  mounted.push(app)
   await new Promise((resolve) => setTimeout(resolve, 0))
   return el
 }
 
 describe('Toast', () => {
+  afterEach(() => {
+    while (mounted.length) mounted.pop().unmount()
+    useToasts().toasts.value = []
+  })
+
   beforeEach(() => {
     push.mockClear()
     // The toast list is module-level state shared with useStreamToasts'
