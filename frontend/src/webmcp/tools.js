@@ -90,10 +90,10 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Take the user to an AgentRQ page. Pass the in-app path (no origin), ' +
         'optionally ?query; IDs are base62, from getCurrentPage or list tools. Pages:\n' +
-        '- "/" every workspace, "/workspaces/new" to create one.\n' +
-        '- "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
-        '(awaiting the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
-        'open a task beside it, then "/instances" for a scheduled task\'s runs.\n' +
+        '- "/" every workspace, "/workspaces/new" creates one.\n' +
+        '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
+        '(on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
+        'open one beside it, then "/instances" for a scheduled task\'s runs.\n' +
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +

@@ -38,6 +38,7 @@ describe('routes', () => {
       '/workspaces/:id/tasks/:taskId/instances',
       '/workspaces/:id/tasks/new',
       '/workspaces/:id/tasks/:taskId/edit',
+      '/kanban',
       '/events',
       '/events/:id',
       // Desktop-only in practice, but it lives in the one route table like

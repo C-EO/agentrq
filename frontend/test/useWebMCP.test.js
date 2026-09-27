@@ -193,6 +193,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/workspaces/ws1/tasks/t1/instances',
     '/workspaces/ws1/tasks/t1/edit',
     '/workspaces/ws1/tasks/new',
+    '/kanban',
     '/events',
     '/events/e1',
     '/workflows',

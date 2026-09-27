@@ -50,6 +50,9 @@ export const routes = [
   { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
   { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
 
+  // Every workspace's tasks as one board: the workspace board, with no workspace.
+  { path: '/kanban', component: () => import('./views/KanbanView.vue') },
+
   { path: '/events', component: () => import('./views/EventsView.vue') },
   { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
 
