@@ -99,6 +99,24 @@ func TestTelemetryAggregator_Tick_Monthly(t *testing.T) {
 	s.tick(context.Background(), now)
 }
 
+// On the 1st the run must close the previous month, its last day included —
+// taking the current month would sum [1st, 1st), nothing at all.
+func TestTelemetryAggregator_Tick_MonthlyOnTheFirst(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockRepo := mock_repo.NewMockRepository(ctrl)
+	s := New(mockRepo).(*aggregator)
+
+	now := time.Date(2026, 10, 1, 0, 30, 0, 0, time.UTC)
+	prevMonthStart := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	todayStart := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+
+	mockRepo.EXPECT().ClaimTelemetryAggregation(gomock.Any(), aggregationTypeMonthly, now.Format(dayKeyFormat)).Return(true, nil)
+	mockRepo.EXPECT().AggregateMonthlyTelemetry(gomock.Any(), prevMonthStart.Unix(), todayStart.Unix()).Return(nil)
+
+	s.tick(context.Background(), now)
+}
+
 // A repository error on aggregation must not panic and must not be treated
 // as success; there is nothing further to assert without a mock logger, but
 // the call must return.

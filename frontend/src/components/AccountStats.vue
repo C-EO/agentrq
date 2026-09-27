@@ -98,6 +98,15 @@
         </div>
       </div>
     </template>
+
+    <template #latency>
+      <TaskLatencyPanel
+        :fetch-latency="fetchUserTaskLatency"
+        :active-range="activeRange"
+        :custom-from="customFrom"
+        :custom-to="customTo"
+      />
+    </template>
   </StatsPanels>
 </template>
 
@@ -111,8 +120,9 @@
  * `useStatsRange`; all this adds is the endpoint and the breakdown panel.
  */
 import { computed } from 'vue';
-import { fetchUserStats } from '../api';
+import { fetchUserStats, fetchUserTaskLatency } from '../api';
 import StatsPanels from './StatsPanels.vue';
+import TaskLatencyPanel from './TaskLatencyPanel.vue';
 import { useStatsRange, statsPalette } from '../composables/useStatsRange';
 import { workspaceRoute } from '../composables/useWorkspaceSwitcher';
 import { useThemeStore } from '../stores/themeStore';

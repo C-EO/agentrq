@@ -161,7 +161,7 @@ func TestDeleteSkill_MissingIsNotFound(t *testing.T) {
 // skills delete itself is failed directly.
 func TestDeleteWorkspace_FailsWhenSkillsDeleteFails(t *testing.T) {
 	db := skillDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	r := New(&mockDB{db: db})

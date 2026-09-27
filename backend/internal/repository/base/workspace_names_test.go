@@ -21,7 +21,7 @@ func workspaceDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.TaskStateTransition{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()

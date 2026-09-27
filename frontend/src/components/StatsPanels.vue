@@ -92,6 +92,9 @@
          dashboard puts its per-workspace breakdown here. -->
     <slot name="after-summary" />
 
+    <!-- How long the range's closed tasks took; the host supplies the fetch. -->
+    <slot name="latency" />
+
     <!-- Heatmaps Section -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Task Heatmap -->

@@ -20,7 +20,7 @@ func TestTaskDequeueCompositeIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.TaskStateTransition{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

@@ -117,14 +117,17 @@ func (a *aggregator) runDaily(ctx context.Context, now time.Time) {
 	zlog.Info().Time("period_start", periodStart).Msg("telemetryaggregator: daily aggregation complete")
 }
 
-// runMonthly re-aggregates the current, still-open month from
-// daily_telemetries: [month start, today's midnight). It runs every day
+// runMonthly re-aggregates the month yesterday was in from
+// daily_telemetries: [that month's start, today's midnight). It runs every day
 // rather than once at month end, so the row for the month is always current
-// through yesterday; the claim key is the day it ran, not the month, so this
-// daily re-run is never blocked by its own earlier claims.
+// through yesterday — and the run on the 1st closes the previous month with
+// its last day, where taking today's month would sum nothing. The claim key is
+// the day it ran, not the month, so this daily re-run is never blocked by its
+// own earlier claims.
 func (a *aggregator) runMonthly(ctx context.Context, now time.Time) {
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	yesterday := todayStart.AddDate(0, 0, -1)
+	periodStart := time.Date(yesterday.Year(), yesterday.Month(), 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := todayStart
 
 	claimed, err := a.repo.ClaimTelemetryAggregation(ctx, aggregationTypeMonthly, now.Format(dayKeyFormat))

@@ -14,6 +14,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -135,6 +136,16 @@ type Repository interface {
 	AggregateHourlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
 	AggregateDailyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
 	AggregateMonthlyTelemetry(ctx context.Context, periodStart, periodEnd int64) error
+	LatestTelemetryAggregation(ctx context.Context, aggregationType string) (string, bool, error)
+
+	// Task latency — one row per closed task (model.TaskLatency) and its
+	// hourly/daily/monthly rollups, claimed like the telemetry ones.
+	AggregateHourlyTaskLatency(ctx context.Context, periodStart, periodEnd int64) error
+	AggregateDailyTaskLatency(ctx context.Context, periodStart, periodEnd int64) error
+	AggregateMonthlyTaskLatency(ctx context.Context, periodStart, periodEnd int64) error
+	ListTaskLatencies(ctx context.Context, workspaceID, userID, start, end int64) ([]model.TaskLatency, error)
+	ListTaskLatencyRollups(ctx context.Context, g tasklatency.Granularity, workspaceID, userID, start, end int64) ([]entity.TaskLatencyRollup, error)
+	BackfillTaskLatency(ctx context.Context, hourCut, dayCut int64) (int, error)
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
@@ -572,6 +583,11 @@ func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, 
 		if prev.WorkspaceID != t.WorkspaceID {
 			// A moved task takes its history with it.
 			if err := tx.Model(&model.TaskStateTransition{}).
+				Where("task_id = ?", t.ID).
+				Update("workspace_id", t.WorkspaceID).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.TaskLatency{}).
 				Where("task_id = ?", t.ID).
 				Update("workspace_id", t.WorkspaceID).Error; err != nil {
 				return err

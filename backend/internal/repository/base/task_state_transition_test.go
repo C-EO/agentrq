@@ -228,6 +228,10 @@ func failOn(t *testing.T, db *gorm.DB, kind, table string) {
 		err = db.Callback().Update().Before("gorm:update").Register("test:fail-"+table, fail)
 	case "delete":
 		err = db.Callback().Delete().Before("gorm:delete").Register("test:fail-"+table, fail)
+	case "query":
+		err = db.Callback().Query().Before("gorm:query").Register("test:fail-"+table, fail)
+	case "row":
+		err = db.Callback().Row().Before("gorm:row").Register("test:fail-row-"+table, fail)
 	}
 	if err != nil {
 		t.Fatalf("register: %v", err)

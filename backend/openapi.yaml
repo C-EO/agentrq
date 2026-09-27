@@ -394,6 +394,45 @@ paths:
               schema: { $ref: '#/components/schemas/UserStats' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /stats/latency:
+    get:
+      tags: [Workspaces]
+      summary: How long closed tasks took, across every workspace the caller owns
+      description: >
+        The account-wide counterpart of `/workspaces/{id}/stats/latency`.
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
+        - name: from
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: to
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: aggregate
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['p50', 'min', 'max']
+            default: 'p50'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskLatencyStats' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/stats:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -424,6 +463,54 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceStats' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/stats/latency:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      summary: How long the workspace's closed tasks took
+      description: >
+        For the tasks closed (completed or rejected) in the period: start to
+        close, time worked (ongoing), blocked, and needing input, in seconds,
+        per bucket and over the whole period. The bucket is an hour for a
+        period up to two days, a day up to 92 days, and a month beyond, in UTC,
+        and the period is widened to whole buckets. `min` and `max` are exact;
+        `p50` is interpolated from a fixed histogram. A bucket with no closed
+        task has `seconds: null`. A task that closes again after a reopen is
+        counted again, in the bucket of its new close.
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
+        - name: from
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: to
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: aggregate
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['p50', 'min', 'max']
+            default: 'p50'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskLatencyStats' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
   /workspaces/{id}/memories:
@@ -2454,6 +2541,50 @@ components:
                 omitted. A workspace deleted since the events were recorded
                 still appears, with an empty name.
               items: { $ref: '#/components/schemas/WorkspaceStatsBreakdown' }
+
+    TaskLatencyValue:
+      type: object
+      properties:
+        seconds:
+          type: integer
+          format: int64
+          nullable: true
+          description: The aggregate, or null when no closed task had a value.
+        count:
+          type: integer
+          format: int64
+          description: How many closed tasks had a value.
+
+    TaskLatencySummary:
+      type: object
+      properties:
+        closed: { type: integer, format: int64, description: Tasks closed. }
+        startToClose:
+          allOf: [{ $ref: '#/components/schemas/TaskLatencyValue' }]
+          description: From first going ongoing to closing. A task never started has none.
+        worked: { $ref: '#/components/schemas/TaskLatencyValue' }
+        blocked: { $ref: '#/components/schemas/TaskLatencyValue' }
+        needsInput: { $ref: '#/components/schemas/TaskLatencyValue' }
+
+    TaskLatencyPoint:
+      allOf:
+        - type: object
+          properties:
+            periodStart: { type: integer, format: int64, description: The bucket's start, unix seconds UTC. }
+        - $ref: '#/components/schemas/TaskLatencySummary'
+
+    TaskLatencyStats:
+      type: object
+      properties:
+        granularity: { type: string, enum: [hour, day, month] }
+        aggregate: { type: string, enum: [p50, min, max] }
+        rangeStart: { type: integer, format: int64 }
+        rangeEnd: { type: integer, format: int64 }
+        points:
+          type: array
+          description: Every bucket of the period, oldest first, gaps included.
+          items: { $ref: '#/components/schemas/TaskLatencyPoint' }
+        summary: { $ref: '#/components/schemas/TaskLatencySummary' }
 
     WorkspaceStatsBreakdown:
       type: object
