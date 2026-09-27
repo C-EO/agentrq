@@ -81,4 +81,29 @@ describe('Toast', () => {
     expect(push).not.toHaveBeenCalled()
     expect(useToasts().toasts.value).toHaveLength(0)
   })
+  it('offers "View task" only when the toast links to one', async () => {
+    const { addToast } = useToasts()
+    addToast('no link', 'info', 'A')
+    addToast('linked', 'info', 'B', 4000, { taskId: 't1', workspaceId: 'w1' })
+    const el = await mount()
+    const links = [...el.querySelectorAll('.toast')].map((t) => t.querySelector('.toast-link')?.textContent ?? null)
+    expect(links).toEqual([null, 'View task'])
+  })
+
+  it('keeps the whole message on hover, since only two lines show', async () => {
+    const long = 'word '.repeat(80).trim()
+    useToasts().addToast(long, 'error', 'Error')
+    const el = await mount()
+    expect(el.querySelector('.toast-message').getAttribute('title')).toBe(long)
+  })
+
+  it('counts down for as long as the toast stays', async () => {
+    const { addToast } = useToasts()
+    addToast('short', 'success', 'Saved', 2500)
+    addToast('sticky', 'info', 'Wait', 0)
+    const el = await mount()
+    const [short, sticky] = el.querySelectorAll('.toast')
+    expect(short.querySelector('.toast-progress').style.animationDuration).toBe('2500ms')
+    expect(sticky.querySelector('.toast-progress')).toBeNull()
+  })
 })

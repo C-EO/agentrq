@@ -13,7 +13,7 @@ export function useToasts() {
     const id = Date.now() + Math.random();
     // A zero duration means the toast waits to be dismissed; the progress bar
     // is a countdown, so it has nothing to show.
-    const toast = { id, message, type, title, persistent: duration <= 0, link };
+    const toast = { id, message, type, title, duration, persistent: duration <= 0, link };
 
     toasts.value.push(toast);
 
