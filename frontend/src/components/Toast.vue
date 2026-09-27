@@ -103,7 +103,7 @@ function openLink(toast) {
 }
 
 .dark .toast {
-  background: #18181b;
+  background: #27272a;
   color: #f4f4f5;
   border-color: #3f3f46;
   box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
@@ -118,7 +118,7 @@ function openLink(toast) {
 }
 
 .dark .toast.clickable:hover {
-  border-color: #52525b;
+  border-color: #71717a;
 }
 
 .toast-icon {
@@ -145,7 +145,7 @@ function openLink(toast) {
 
 .dark .toast-icon {
   background: #e4e4e7;
-  color: #18181b;
+  color: #27272a;
 }
 
 .toast.success .toast-icon { background: #16a34a; color: #fff; }
@@ -238,7 +238,7 @@ function openLink(toast) {
 
 .dark .toast-close:hover {
   color: #fafafa;
-  background: #27272a;
+  background: #3f3f46;
 }
 
 /* The auto-close countdown, as long as the toast's own duration. */
