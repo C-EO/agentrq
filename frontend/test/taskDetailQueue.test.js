@@ -360,3 +360,49 @@ describe('when the turn ends', () => {
     expect(respondToTask).not.toHaveBeenCalled()
   })
 })
+
+// A message waiting to go is read before it goes, so it reads the way it will
+// once sent: rendered, with the raw text a click away and copyable. Forking
+// is left out, as nothing is on the server yet to fork from.
+describe('reading a queued message', () => {
+  const bubbleOf = (el, text) =>
+    [...el.querySelectorAll('.rounded-br-md')].find((b) => b.textContent.includes(text))
+
+  it('renders its markdown', async () => {
+    const { el, send } = await mount()
+    await send('make it **bold**')
+    expect(bubbleOf(el, 'make it').querySelector('strong')?.textContent).toBe('bold')
+  })
+
+  it('shows the raw text when MD is switched off, and renders it again when on', async () => {
+    const { el, send } = await mount()
+    await send('make it **bold**')
+    const md = () => [...bubbleOf(el, 'make it').querySelectorAll('button')].find((b) => b.textContent.trim() === 'MD')
+
+    md().click()
+    await settle()
+    expect(bubbleOf(el, 'make it').querySelector('strong')).toBeNull()
+    expect(bubbleOf(el, 'make it').textContent).toContain('make it **bold**')
+
+    md().click()
+    await settle()
+    expect(bubbleOf(el, 'make it').querySelector('strong')).not.toBeNull()
+  })
+
+  it('copies the raw text', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { el, send } = await mount()
+    await send('make it **bold**')
+
+    bubbleOf(el, 'make it').querySelector('button[title="Copy raw text"]').click()
+    await settle()
+    expect(writeText).toHaveBeenCalledWith('make it **bold**')
+  })
+
+  it('offers no fork', async () => {
+    const { el, send } = await mount()
+    await send('make it **bold**')
+    expect(bubbleOf(el, 'make it').querySelector('button[title^="Fork"]')).toBeNull()
+  })
+})

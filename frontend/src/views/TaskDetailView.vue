@@ -522,7 +522,9 @@
                  </span>
                  <span v-else class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1.5 shrink-0">
-                   <div v-if="!m._pending && !m._queued" class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                   <!-- MD and copy work on a message not yet sent too; forking
+                        from one does not, as there is nothing on the server to fork. -->
+                   <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
                      <button type="button" @click.stop="toggleMessageRender(m.id)"
                              :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                              class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -531,7 +533,7 @@
                        <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                        <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                      </button>
-                     <button type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                     <button v-if="!m._pending && !m._queued" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
                              class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
                        <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
                      </button>
@@ -547,7 +549,6 @@
                          rows="3"
                          dir="auto"
                          class="w-full sm:min-w-[340px] text-[13px] font-medium leading-relaxed bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white resize-none custom-scrollbar"></textarea>
-               <div v-else-if="m._pending || m._queued" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
