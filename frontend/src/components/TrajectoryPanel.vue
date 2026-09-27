@@ -115,7 +115,7 @@
 
             <!-- Payload (tool only) -->
             <div v-else-if="activeTab === 'payload'">
-              <pre class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ formattedPayload }}</pre>
+              <pre class="text-[10px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-zinc-300 dark:border-transparent p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ formattedPayload }}</pre>
             </div>
 
             <!-- Content (messages only) -->

@@ -256,20 +256,20 @@
                      <div class="min-w-0">
                        <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500">Action</span>
                        <div class="relative mt-0.5">
-                         <pre class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 pr-8 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ permMeta(m).toolName }}</pre>
+                         <pre class="text-[10px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-zinc-300 dark:border-transparent p-3 pr-8 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ permMeta(m).toolName }}</pre>
                          <button type="button" @click.stop="copyMessageText(m.id + '-action', permMeta(m).toolName)"
-                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 hover:bg-black/60 text-zinc-400 hover:text-white transition-colors" title="Copy">
+                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-white/80 hover:bg-gray-200 text-gray-500 hover:text-gray-900 dark:bg-black/40 dark:hover:bg-black/60 dark:text-zinc-400 dark:hover:text-white transition-colors" title="Copy">
                            <svg v-if="!copiedMessages.has(m.id + '-action')" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                           <svg v-else class="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                           <svg v-else class="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                          </button>
                        </div>
                      </div>
                      <div v-if="permMeta(m).inputPreview" class="relative">
-                       <pre class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 pr-8 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ permMeta(m).inputPreview }}</pre>
+                       <pre class="text-[10px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-zinc-300 dark:border-transparent p-3 pr-8 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ permMeta(m).inputPreview }}</pre>
                        <button type="button" @click.stop="copyMessageText(m.id + '-payload', permMeta(m).inputPreview)"
-                               class="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 hover:bg-black/60 text-zinc-400 hover:text-white transition-colors" title="Copy">
+                               class="absolute top-1.5 right-1.5 p-1 rounded bg-white/80 hover:bg-gray-200 text-gray-500 hover:text-gray-900 dark:bg-black/40 dark:hover:bg-black/60 dark:text-zinc-400 dark:hover:text-white transition-colors" title="Copy">
                          <svg v-if="!copiedMessages.has(m.id + '-payload')" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                         <svg v-else class="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                         <svg v-else class="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                        </button>
                      </div>
 
@@ -321,19 +321,19 @@
                      <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed min-w-0"
                           :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700' : 'border-red-200 dark:border-red-500/20'">
                        <div class="relative mb-2">
-                         <pre class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 pr-8 rounded overflow-x-auto whitespace-pre-wrap break-all">{{ permMeta(m).toolName }}</pre>
+                         <pre class="text-[9px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-gray-300 dark:border-transparent p-2 pr-8 rounded overflow-x-auto whitespace-pre-wrap break-all">{{ permMeta(m).toolName }}</pre>
                          <button type="button" @click.stop="copyMessageText(m.id + '-action', permMeta(m).toolName)"
-                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 hover:bg-black/60 text-zinc-400 hover:text-white transition-colors" title="Copy">
+                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-white/80 hover:bg-gray-200 text-gray-500 hover:text-gray-900 dark:bg-black/40 dark:hover:bg-black/60 dark:text-zinc-400 dark:hover:text-white transition-colors" title="Copy">
                            <svg v-if="!copiedMessages.has(m.id + '-action')" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                           <svg v-else class="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                           <svg v-else class="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                          </button>
                        </div>
                        <div v-if="permMeta(m).inputPreview" class="relative mb-2">
-                         <pre class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 pr-8 rounded overflow-x-auto whitespace-pre-wrap break-all">{{ permMeta(m).inputPreview }}</pre>
+                         <pre class="text-[9px] font-mono bg-gray-50 text-gray-800 border border-gray-200 dark:bg-zinc-950 dark:text-gray-300 dark:border-transparent p-2 pr-8 rounded overflow-x-auto whitespace-pre-wrap break-all">{{ permMeta(m).inputPreview }}</pre>
                          <button type="button" @click.stop="copyMessageText(m.id + '-payload', permMeta(m).inputPreview)"
-                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 hover:bg-black/60 text-zinc-400 hover:text-white transition-colors" title="Copy">
+                                 class="absolute top-1.5 right-1.5 p-1 rounded bg-white/80 hover:bg-gray-200 text-gray-500 hover:text-gray-900 dark:bg-black/40 dark:hover:bg-black/60 dark:text-zinc-400 dark:hover:text-white transition-colors" title="Copy">
                            <svg v-if="!copiedMessages.has(m.id + '-payload')" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                           <svg v-else class="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                           <svg v-else class="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                          </button>
                        </div>
                      </div>
