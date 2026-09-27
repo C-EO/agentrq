@@ -6,10 +6,15 @@ import { ref } from 'vue';
 
 const toasts = ref([]);
 
+// An error shows up to four lines and takes longer to read, so it stays longer.
+const DURATION = 4000;
+const ERROR_DURATION = 20000;
+
 export function useToasts() {
   // `link`, when given, is `{ taskId, workspaceId }` — where clicking the
   // toast (not its close button) should navigate. Falsy ids mean no link.
-  const addToast = (message, type = 'info', title = null, duration = 4000, link = null) => {
+  const addToast = (message, type = 'info', title = null, duration = null, link = null) => {
+    if (duration === null) duration = type === 'error' ? ERROR_DURATION : DURATION;
     const id = Date.now() + Math.random();
     // A zero duration means the toast waits to be dismissed; the progress bar
     // is a countdown, so it has nothing to show.
@@ -30,9 +35,9 @@ export function useToasts() {
   };
 
   // No default title: the icon already says error, success or info.
-  const notifyError = (message, title = null, link = null) => addToast(message, 'error', title, 4000, link);
-  const notifySuccess = (message, title = null, link = null) => addToast(message, 'success', title, 4000, link);
-  const notifyInfo = (message, title = null, link = null) => addToast(message, 'info', title, 4000, link);
+  const notifyError = (message, title = null, link = null) => addToast(message, 'error', title, null, link);
+  const notifySuccess = (message, title = null, link = null) => addToast(message, 'success', title, null, link);
+  const notifyInfo = (message, title = null, link = null) => addToast(message, 'info', title, null, link);
 
   return {
     toasts,

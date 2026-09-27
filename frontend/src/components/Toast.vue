@@ -21,7 +21,7 @@
         </span>
         <div class="toast-content">
           <div v-if="toast.title" class="toast-title">{{ toast.title }}</div>
-          <!-- Two lines at most; the whole message is on hover. -->
+          <!-- Two lines at most, four for an error; the whole message is on hover. -->
           <div class="toast-message" :class="{ solo: !toast.title }" :title="toast.message">{{ toast.message }}</div>
           <div v-if="hasLink(toast)" class="toast-link">View task</div>
         </div>
@@ -181,6 +181,11 @@ function openLink(toast) {
 
 .dark .toast-message {
   color: #a1a1aa;
+}
+
+.toast.error .toast-message {
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
 
 /* Without a title the message is the headline. */

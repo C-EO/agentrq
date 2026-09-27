@@ -117,4 +117,28 @@ describe('Toast', () => {
     expect(titles).toEqual([null, null, null, 'Action Needed'])
     expect(el.querySelectorAll('.toast-message.solo')).toHaveLength(3)
   })
+  it('keeps an error up for 20 seconds and anything else for 4', async () => {
+    vi.useFakeTimers()
+    try {
+      const { notifyError, notifySuccess, addToast, toasts } = useToasts()
+      notifyError('Could not move the task')
+      addToast('Model not available', 'error')
+      notifySuccess('Saved')
+      expect(toasts.value.map((t) => t.duration)).toEqual([20000, 20000, 4000])
+
+      vi.advanceTimersByTime(4000)
+      expect(toasts.value.map((t) => t.message)).toEqual(['Could not move the task', 'Model not available'])
+      vi.advanceTimersByTime(16000)
+      expect(toasts.value).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens the task from anywhere on the card, not only "View task"', async () => {
+    useToasts().notifyError('Agent crashed', 'Agent could not start', { taskId: 't9', workspaceId: 'w2' })
+    const el = await mount()
+    el.querySelector('.toast-message').click()
+    expect(push).toHaveBeenCalledWith('/workspaces/w2/tasks/t9')
+  })
 })
