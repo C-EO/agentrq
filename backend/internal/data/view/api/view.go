@@ -209,6 +209,17 @@ type (
 		CompletionTriggerType int16  `json:"completionTriggerType,omitempty"`
 	}
 
+	// TaskStatusChange is the "task.status" stream event: an agent moving a
+	// task between statuses. Published only for the agent's own change, so the
+	// browser can announce it without diffing every task.updated.
+	TaskStatusChange struct {
+		TaskID      string `json:"taskId"`
+		WorkspaceID string `json:"workspaceId"`
+		Title       string `json:"title"`
+		From        string `json:"from"`
+		To          string `json:"to"`
+	}
+
 	CreateTaskRequest struct {
 		Task Task `json:"task"`
 	}

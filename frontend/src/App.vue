@@ -530,7 +530,7 @@ import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
-import { toastFor } from './composables/useStreamToasts'
+import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
 import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
@@ -577,7 +577,7 @@ const { toKebabCase } = useFormat()
 
 const route = useRoute()
 const router = useRouter()
-const { notifySuccess, notifyInfo, notifyError } = useToasts()
+const { notifySuccess, notifyInfo, notifyError, notifyEvent } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
 const user = ref(null)
 const isUserMenuOpen = ref(false)
@@ -920,10 +920,20 @@ const closeOverlaysOnEscape = (e) => {
 // handler the last one in the flush.
 const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false })
 
+// A stream toast names the workspace it happened in, as the card's eyebrow.
+const showStreamToast = (toast) => notifyEvent(toast, workspaceStore.getWorkspace(toast.workspaceId)?.name ?? '')
+
+const presenceToast = createPresenceToasts({
+  notify: showStreamToast,
+  // Read before the store takes the event, so it is the state being left.
+  wasConnected: (workspaceId) => workspaceStore.getWorkspace(workspaceId)?.agentConnected,
+})
+
 onEvent((event) => {
   // Handle agent connection status updates globally
   if (event.type === 'agent.connected') {
     const { connected, workspaceId } = event.payload
+    presenceToast(event.payload)
     workspaceStore.updateAgentStatus(workspaceId, connected)
   }
 
@@ -981,11 +991,7 @@ onEvent((event) => {
     platform: platformStore.isDesktop ? 'desktop' : 'web',
     openTaskId: route.params.taskId ?? '',
   })
-  if (toast) {
-    const show = toast.tone === 'error' ? notifyError : toast.tone === 'success' ? notifySuccess : notifyInfo
-    const link = toast.taskId && toast.workspaceId ? { taskId: toast.taskId, workspaceId: toast.workspaceId } : null
-    show(toast.message, toast.title, link)
-  }
+  if (toast) showStreamToast(toast)
 })
 
 // Nothing replays the events missed while the stream was down, and a dropped

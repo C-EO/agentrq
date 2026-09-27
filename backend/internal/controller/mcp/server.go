@@ -25,6 +25,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -1486,6 +1487,15 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 	}
 	taskID := id.Int64()
 
+	// Read before the update overwrites it: the status a task moves from is
+	// what makes the change worth announcing.
+	var from string
+	if ps.getTask != nil {
+		if prev, gErr := ps.getTask(ctx, taskID); gErr == nil {
+			from = prev.Status
+		}
+	}
+
 	updated, err := ps.updateStatus(ctx, taskID, params.Status)
 	if err != nil {
 		return &mcp.CallToolResult{
@@ -1507,6 +1517,18 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 		Type:    "task.updated",
 		Payload: mapper.FromModelTaskToView(updated),
 	})
+	if from != "" && from != updated.Status {
+		ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
+			Type: "task.status",
+			Payload: view.TaskStatusChange{
+				TaskID:      monoflake.ID(taskID).String(),
+				WorkspaceID: monoflake.ID(ps.workspaceID).String(),
+				Title:       updated.Title,
+				From:        from,
+				To:          updated.Status,
+			},
+		})
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
