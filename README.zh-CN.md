@@ -7,6 +7,9 @@
   <a href="https://discord.gg/xFSMaEA2b2">
     <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
+  <a href="https://chromewebstore.google.com/detail/agentrq/iadkenmjgjoilnioldgchgjpdnbaghbj">
+    <img src="https://img.shields.io/badge/Chrome%20Web%20Store-Add%20to%20Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" />
+  </a>
 </p>
 
 > 本文是面向中文开发者的导读，帮助快速理解 AgentRQ 的定位、架构和本地运行方式。
@@ -121,6 +124,17 @@ make install       # 安装整个仓库的依赖
 make desktop-dev   # 连接本地服务端启动桌面应用
 make desktop       # 构建安装包到 desktop/release/
 ```
+
+## Chrome 扩展
+
+**[添加到 Chrome →](https://chromewebstore.google.com/detail/agentrq/iadkenmjgjoilnioldgchgjpdnbaghbj)**
+
+在浏览器工具栏中使用 AgentRQ：以弹出窗口打开工作区，或在标签页中全尺寸打开。
+
+- **把任意 WebMCP 网站接入你的 Agent。** 网站通过 [WebMCP](https://github.com/webmachinelearning/webmcp) 提供工具时，工具栏图标会亮起；把该网站共享给某个工作区后，其中的 Agent 即可在你已登录的 Chrome 中调用这些工具。网站未标记为只读的工具，会先在任务中等待你的批准。
+- **在浏览器里直接使用 Agent 终端。** 打开运行在你自己机器上的 Claude Code、Codex 或 Antigravity 会话的实时终端，无需离开当前标签页。
+
+从源码安装与连接自托管服务端，详见[扩展说明](plugins/chrome/README.md)。
 
 ## 快速开始
 
