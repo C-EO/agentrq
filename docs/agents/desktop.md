@@ -97,7 +97,10 @@ so, beside the action that fixes it.
   drag` — the `.app-drag` class. The traffic lights are also drawn over the
   top-left of the page, so that same strip reserves their space. Both are gated
   on `platformStore.isMacDesktop`; making page content draggable on Windows or
-  Linux would only remove text selection.
+  Linux would only remove text selection. The strip is `DesktopTitleBar.vue`,
+  which also shows the page title, the profile switcher (so the sidebar's
+  account menu leaves profiles out on macOS) and a window menu; anything
+  clickable in it needs `.app-no-drag`, or the drag region swallows the click.
 - **macOS only routes a URL scheme an app declares in its bundle.** Calling
   `app.setAsDefaultProtocolClient()` is enough for Windows and Linux, but the
   `protocols` entry in `desktop/electron-builder.yml` is what makes
