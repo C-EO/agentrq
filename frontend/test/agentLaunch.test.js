@@ -14,6 +14,10 @@ import {
   launchParamsPayload,
   lastAcpGatewayChoice,
   rememberAcpGatewayChoice,
+  lastLaunchChoice,
+  rememberLaunchChoice,
+  launchFolderNote,
+  forkParent,
   KINDS,
   GATEWAY_DEFAULTS,
 } from '../src/composables/useAgentLaunch.js'
@@ -584,5 +588,105 @@ describe('defaults', () => {
       'ws1',
       expect.objectContaining({ cols: expect.any(Number), rows: expect.any(Number) })
     )
+  })
+})
+
+describe('a fork', () => {
+  // A fork's folder is made by the daemon from its parent's on the first
+  // launch, so an empty working directory is the normal state of a new fork.
+  const PARENT = { ...READY_WORKSPACE }
+  const FORK = { id: 'f1', name: 'Ops fork', agentConnected: false, forkOfId: 'ws1', workingDirectory: '' }
+
+  it('can run with no folder yet, made from the parent\'s', () => {
+    expect(workspaceEligibility(FORK, PARENT)).toEqual({ ok: true, forkFrom: '/srv/app' })
+    expect(workspaceEligibility(FORK)).toEqual({ ok: true, forkFrom: '' })
+  })
+
+  it('cannot when the parent has no folder to make it from', () => {
+    const e = workspaceEligibility(FORK, { ...PARENT, workingDirectory: '' })
+    expect(e.ok).toBe(false)
+    expect(e.reason).toBe("This fork's folder is made from Ops's, and Ops has no working directory.")
+    expect(e.fix).toEqual({ label: "Set one in Ops's settings", to: '/workspaces/ws1/settings' })
+  })
+
+  it('runs in its own folder once it has one, like any workspace', () => {
+    expect(workspaceEligibility({ ...FORK, workingDirectory: '/home/me/.agentrq/forks/f1' }, PARENT)).toEqual({ ok: true })
+  })
+
+  it('says where it will run', () => {
+    expect(launchFolderNote(FORK, PARENT)).toBe('a folder will be made from /srv/app')
+    expect(launchFolderNote(FORK)).toBe('a folder will be made for this fork')
+    expect(launchFolderNote({ ...FORK, workingDirectory: '/x' })).toBe('/x')
+    expect(launchFolderNote(PARENT)).toBe('/srv/app')
+    expect(launchFolderNote({ id: 'w' })).toBe('')
+    expect(launchFolderNote(null)).toBe('')
+  })
+
+  it('finds its parent in a list', () => {
+    expect(forkParent(FORK, [PARENT, FORK])).toBe(PARENT)
+    expect(forkParent(FORK, [])).toBe(null)
+    expect(forkParent(FORK, undefined)).toBe(null)
+    expect(forkParent(PARENT, [PARENT])).toBe(null)
+  })
+
+  it('is offered on the machine page with the note, and judged by its parent', () => {
+    expect(workspaceOptions([PARENT, FORK])[1]).toMatchObject({ id: 'f1', ready: true, note: 'a folder will be made from /srv/app' })
+    expect(workspaceOptions([{ ...PARENT, workingDirectory: '' }, FORK])[1]).toMatchObject({ ready: false, note: 'no folder set' })
+  })
+
+  it('is launched from the machine page with its parent in view', async () => {
+    const { l, deps } = harness({
+      deps: { fetchWorkspaces: vi.fn().mockResolvedValue({ workspaces: [{ ...PARENT, workingDirectory: '' }, FORK] }) },
+    })
+    await l.load()
+    l.workspaceId.value = 'f1'
+    expect(l.blockers.value[0].reason).toMatch(/made from Ops's/)
+    expect(await l.launch()).toBe(null)
+    expect(deps.launchAgent).not.toHaveBeenCalled()
+  })
+})
+
+describe('the last launch of each workspace', () => {
+  afterEach(() => localStorage.clear())
+
+  it('is remembered per workspace, and read back', () => {
+    localStorage.clear()
+    expect(lastLaunchChoice('ws1')).toBe(null)
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway' })
+    rememberLaunchChoice('ws2', { machineId: 'm2', kind: 'claude-code' })
+    expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'acp-gateway' })
+    expect(lastLaunchChoice('ws2')).toEqual({ machineId: 'm2', kind: 'claude-code' })
+  })
+
+  it('ignores a launch with nothing to remember, and a stored kind the daemon does not run', () => {
+    rememberLaunchChoice('', { machineId: 'm1', kind: 'claude-code' })
+    rememberLaunchChoice('ws1', { machineId: '', kind: 'claude-code' })
+    expect(localStorage.getItem('agentrq:lastLaunch')).toBe(null)
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({ ws1: { machineId: 'm1', kind: 'bash' } }))
+    expect(lastLaunchChoice('ws1')).toBe(null)
+  })
+
+  it('reads anything unexpected as nothing stored', () => {
+    for (const bad of ['not json', '[1]', '"x"', 'null']) {
+      localStorage.setItem('agentrq:lastLaunch', bad)
+      expect(lastLaunchChoice('ws1')).toBe(null)
+    }
+    // And writes over it rather than failing.
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code' })
+    expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
+  })
+
+  it('survives storage that throws', () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    expect(() => rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code' })).not.toThrow()
+    set.mockRestore()
+  })
+
+  it('is recorded by a launch from the machine page', async () => {
+    const { l } = harness()
+    await l.load()
+    l.workspaceId.value = 'ws1'
+    await l.launch()
+    expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
   })
 })

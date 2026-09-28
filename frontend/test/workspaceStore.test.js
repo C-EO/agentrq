@@ -433,3 +433,23 @@ describe('workspaceStore', () => {
     })
   })
 })
+
+describe('workspaceStore.forksOf', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('lists a workspace\'s forks, comparing ids as strings', () => {
+    const store = useWorkspaceStore()
+    store.workspaces = [
+      { id: 'p1', name: 'ops' },
+      { id: 'f1', name: 'ops fork', forkOfId: 'p1' },
+      { id: 'f2', name: 'web fork', forkOfId: 'w1' },
+      { id: 12, name: 'n fork', forkOfId: 3 },
+    ]
+    expect(store.forksOf('p1').map((w) => w.id)).toEqual(['f1'])
+    expect(store.forksOf(3).map((w) => w.id)).toEqual([12])
+    expect(store.forksOf('3').map((w) => w.id)).toEqual([12])
+    expect(store.forksOf('f1')).toEqual([])
+    expect(store.forksOf(undefined)).toEqual([])
+    expect(store.forksOf(null)).toEqual([])
+  })
+})

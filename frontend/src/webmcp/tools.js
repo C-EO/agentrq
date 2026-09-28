@@ -196,6 +196,30 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId }) => api.deleteWorkspace(workspaceId),
     }),
     tool({
+      name: 'forkWorkspace',
+      description:
+        'Fork a workspace: a workspace of its own, with its own queue and agent, that shares the ' +
+        "parent's settings, memory and skills and is merged back when its tasks are done. A fork, " +
+        'the supervisor workspace and an archived workspace cannot be forked.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        name: str('Name for the fork. Defaults to "<parent> fork".'),
+      },
+      required: ['workspaceId'],
+      run: ({ workspaceId, name = '' }) => api.forkWorkspace(workspaceId, { name }),
+    }),
+    tool({
+      name: 'mergeFork',
+      description:
+        "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the " +
+        "parent with its thread, and the fork is removed. Its folder on the machine is left. " +
+        'Refused while any task in the fork is not completed or rejected.',
+      properties: { workspaceId: str('The fork to merge.') },
+      required: ['workspaceId'],
+      destructive: true,
+      run: ({ workspaceId }) => api.mergeFork(workspaceId),
+    }),
+    tool({
       name: 'getWorkspaceToken',
       description:
         'The workspace token an agent uses to connect to this workspace over MCP. ' +

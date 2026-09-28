@@ -8,12 +8,16 @@ on:
       - 'frontend/**'
       # The default self-learning note is checked against the server's copy.
       - 'backend/internal/controller/crud/workspace.go'
+      # What a fork inherits is checked against the server's list.
+      - 'backend/internal/data/model/model.go'
       - '.github/workflows/frontend.yml'
   pull_request:
     paths:
       - 'frontend/**'
       # The default self-learning note is checked against the server's copy.
       - 'backend/internal/controller/crud/workspace.go'
+      # What a fork inherits is checked against the server's list.
+      - 'backend/internal/data/model/model.go'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
 

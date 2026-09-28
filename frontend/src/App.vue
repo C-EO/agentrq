@@ -162,17 +162,7 @@
               <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Workspaces</span>
             </div>
 
-            <router-link v-for="ws in workspaces" :key="ws.id" :to="`/workspaces/${ws.id}`"
-                @mouseenter="showTooltip($event, ws.name)" @mouseleave="hideTooltip"
-                class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md group"
-                :class="[
-                  $route.path.startsWith(`/workspaces/${ws.id}`) ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white font-semibold' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
-                ]">
-              <div class="w-1.5 h-1.5 rounded-full shrink-0"
-                   :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
-                   :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
-              <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
-            </router-link>
+            <SidebarWorkspaces :workspaces="workspaces" :show-tooltip="showTooltip" :hide-tooltip="hideTooltip" />
           </template>
 
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
@@ -516,6 +506,7 @@ import { usePushNotifications } from './composables/usePushNotifications'
 import { toastFor, createPresenceToasts } from './composables/useStreamToasts'
 import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
+import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import ProfileList from './components/ProfileList.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'

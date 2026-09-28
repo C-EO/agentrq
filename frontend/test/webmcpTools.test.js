@@ -158,6 +158,9 @@ describe('the catalogue as a whole', () => {
         // Archiving keeps the tasks but deletes the triggers and workflow
         // steps aimed at the workspace, and unarchiving does not restore them.
         'archiveWorkspace',
+        // Not a delete: the tasks survive in the parent. But it stops the
+        // fork's agent mid-work and the fork itself is gone.
+        'mergeFork',
       ].sort()
     );
   });
@@ -277,6 +280,9 @@ describe('each tool calls the interface the way the UI does', () => {
     ['archiveWorkspace', { workspaceId: 'ws1' }, 'archiveWorkspace', ['ws1']],
     ['unarchiveWorkspace', { workspaceId: 'ws1' }, 'unarchiveWorkspace', ['ws1']],
     ['deleteWorkspace', { workspaceId: 'ws1' }, 'deleteWorkspace', ['ws1']],
+    ['forkWorkspace', { workspaceId: 'ws1' }, 'forkWorkspace', ['ws1', { name: '' }]],
+    ['forkWorkspace', { workspaceId: 'ws1', name: 'try' }, 'forkWorkspace', ['ws1', { name: 'try' }]],
+    ['mergeFork', { workspaceId: 'ws2' }, 'mergeFork', ['ws2']],
     ['getWorkspaceToken', { workspaceId: 'ws1' }, 'getWorkspaceToken', ['ws1']],
     ['getWorkspaceStats', { workspaceId: 'ws1' }, 'fetchWorkspaceStats', ['ws1', '7d', 0, 0]],
     [

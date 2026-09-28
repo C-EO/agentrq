@@ -44,6 +44,8 @@ const updateTaskOrder = vi.fn(() => Promise.resolve({}))
 const fetchTasks = vi.fn((_ws, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
 const fetchGlobalTasks = vi.fn(({ status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
 const moveTask = vi.fn(() => Promise.resolve({}))
+const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'Task n1' } }))
+const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
 let workspaceList = []
 const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
 
@@ -53,6 +55,10 @@ vi.mock('../src/api', async (importOriginal) => ({
   fetchGlobalTasks: (...args) => fetchGlobalTasks(...args),
   fetchWorkspaces: (...args) => fetchWorkspaces(...args),
   moveTask: (...args) => moveTask(...args),
+  fetchMachines: () => Promise.resolve({ machines: [{ id: 'm1', name: 'pi', enabled: true, online: true }] }),
+  forkWorkspace: (...args) => forkWorkspace(...args),
+  launchAgent: (...args) => launchAgent(...args),
+  recordTelemetry: () => {},
   updateTaskStatus: (...args) => updateTaskStatus(...args),
   updateTaskOrder: (...args) => updateTaskOrder(...args),
 }))
@@ -405,5 +411,74 @@ describe('KanbanBoardView under one workspace', () => {
     await settle()
     expect(moveTask).toHaveBeenCalledWith('ws1', 'a1', 'ws2')
     expect(card('Task a1')).toBeUndefined()
+  })
+})
+
+describe('Spin up on a card', () => {
+  const WS1 = { id: 'ws1', name: 'ops', workingDirectory: '/srv/ops' }
+  beforeEach(() => {
+    if (app) app.unmount()
+    document.body.innerHTML = ''
+    localStorage.clear()
+    route.params = { id: 'ws1' }
+    push.mockClear()
+    moveTask.mockClear()
+    forkWorkspace.mockClear()
+    launchAgent.mockClear()
+    // What the list reads back once the fork exists.
+    workspaceList = [WS1, { id: 'f1', name: 'Task n1', forkOfId: 'ws1' }]
+    byStatus = { notstarted: [task('n1', 'notstarted')], 'completed,rejected': [task('d1', 'completed')] }
+  })
+
+  it('is offered on unfinished work only, and not in a fork', async () => {
+    const { card } = await mount({ workspaces: [WS1] })
+    expect(card('Task n1').querySelector('[title="Spin up in a fork"]')).toBeTruthy()
+    expect(card('Task d1').querySelector('[title="Spin up in a fork"]')).toBe(null)
+    app.unmount()
+    const inFork = await mount({ workspaces: [{ ...WS1, forkOfId: 'p1' }] })
+    expect(inFork.card('Task n1').querySelector('[title="Spin up in a fork"]')).toBe(null)
+  })
+
+  it('forks, moves the card in, launches, and goes to the terminal', async () => {
+    const { card } = await mount({ workspaces: [WS1] })
+    card('Task n1').querySelector('[title="Spin up in a fork"]').click()
+    await settle()
+    const pop = document.body.querySelector('[data-test=spin-up]')
+    expect(pop.textContent).toMatch(/On pi, your only machine that is online/)
+    ;[...pop.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Spin up').click()
+    await settle()
+    expect(forkWorkspace).toHaveBeenCalledWith('ws1', { name: 'Task n1' })
+    expect(moveTask).toHaveBeenCalledWith('ws1', 'n1', 'f1')
+    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ machineId: 'm1', kind: 'claude-code' }))
+    expect(push).toHaveBeenCalledWith('/sessions/s1')
+    expect(card('Task n1')).toBeUndefined()
+    expect(document.body.querySelector('[data-test=spin-up]')).toBe(null)
+  })
+
+  it('keeps the card and says so when the move fails, with a way to the fork', async () => {
+    moveTask.mockImplementationOnce(() => Promise.reject(new Error('task not found')))
+    const { card } = await mount({ workspaces: [WS1] })
+    card('Task n1').querySelector('[title="Spin up in a fork"]').click()
+    await settle()
+    const pop = document.body.querySelector('[data-test=spin-up]')
+    ;[...pop.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Spin up').click()
+    await settle()
+    expect(pop.querySelector('[data-test=spin-up-error]').textContent).toBe(
+      'Forked Task n1, but could not move the task into the fork: task not found'
+    )
+    expect(pop.textContent).toMatch(/Open Task n1/)
+    expect(launchAgent).not.toHaveBeenCalled()
+    expect(card('Task n1')).toBeTruthy()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('keeps a spun-up card on the all-workspaces board, under the fork', async () => {
+    route.params = {}
+    const { card } = await mount({ workspaces: [WS1, { id: 'f1', name: 'Task n1', forkOfId: 'ws1' }] })
+    card('Task n1').querySelector('[title="Spin up in a fork"]').click()
+    await settle()
+    ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
+    await settle()
+    expect(card('Task n1').querySelector('[data-test=card-workspace]').textContent).toMatch(/Task n1/)
   })
 })

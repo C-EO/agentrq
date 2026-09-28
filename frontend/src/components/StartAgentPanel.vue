@@ -21,6 +21,8 @@ import { useRouter } from 'vue-router'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
 import AgentKindPicker from './AgentKindPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
+import { launchFolderNote } from '../composables/useAgentLaunch'
+import { useWorkspaceStore } from '../stores/workspaceStore'
 
 const props = defineProps({
   workspace: { type: Object, default: null },
@@ -35,7 +37,14 @@ const emit = defineEmits(['started', 'availability'])
 
 const router = useRouter()
 const workspace = computed(() => props.workspace)
-const launcher = useWorkspaceAgentLaunch({ workspace })
+// A fork's folder is made from its parent's on the first launch, so the parent
+// is what says where it will run, and whether it can.
+const workspaceStore = useWorkspaceStore()
+const parent = computed(() =>
+  props.workspace?.forkOfId ? workspaceStore.getWorkspace(props.workspace.forkOfId) ?? null : null
+)
+const folderNote = computed(() => launchFolderNote(props.workspace, parent.value))
+const launcher = useWorkspaceAgentLaunch({ workspace, parent })
 
 const {
   available,
@@ -121,6 +130,9 @@ async function start() {
             <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white break-all">{{
               workspace.workingDirectory
             }}</code>
+          </template>
+          <template v-else-if="workspace?.forkOfId">
+            <span data-test="fork-folder-note">Runs in a folder of its own — {{ folderNote }}</span>
           </template>
           <template v-else>Runs in the workspace's folder</template>
           <template v-if="onlyMachine"> on {{ onlyMachine.name }}, your only machine that is online.</template>

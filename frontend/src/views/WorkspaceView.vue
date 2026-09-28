@@ -99,7 +99,11 @@
                      </div>
                      
                      <div class="min-w-0">
-                       <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none">{{ toKebabCase(p.name) }}</h3>
+                       <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none flex items-center gap-1.5 min-w-0">
+                         <!-- The sidebar's fork mark, so a fork reads as one here too. -->
+                         <ForkIcon v-if="p.forkOfId" class="w-3 h-3 shrink-0 text-gray-500 dark:text-zinc-400" :title="`Fork of ${p.forkOf?.name ?? 'another workspace'}`" data-test="card-fork" />
+                         <span class="truncate">{{ toKebabCase(p.name) }}</span>
+                       </h3>
                        <!-- The dot already says an agent is live, so when the
                             workspace can say *what* is live the line spends its
                             width on that instead of repeating the dot. Falls
@@ -241,6 +245,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
+import ForkIcon from '../components/ForkIcon.vue';
 import { unarchiveWorkspace, fetchGlobalTaskStats } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';

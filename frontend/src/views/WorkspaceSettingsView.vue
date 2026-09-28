@@ -60,6 +60,17 @@
           <div class="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-sm shadow-sm overflow-hidden min-h-[500px]">
             <form @submit.prevent="save" class="h-full flex flex-col min-w-0">
               <div class="p-4 sm:p-8 flex-1 min-w-0">
+                <!-- A fork keeps its own name, mission and folder; the rest is
+                     its parent's, and is changed there. -->
+                <div v-if="isFork" data-test="fork-banner"
+                     class="mb-6 flex items-start gap-3 p-4 rounded-sm border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/40">
+                  <ForkIcon class="w-4 h-4 shrink-0 mt-0.5 text-gray-600 dark:text-zinc-300" />
+                  <p class="text-[12px] text-gray-700 dark:text-zinc-300 font-medium leading-relaxed min-w-0">
+                    Settings, memory and skills are inherited from
+                    <router-link :to="`/workspaces/${workspace.forkOfId}/settings`" class="font-bold underline text-gray-900 dark:text-white break-words">{{ forkParentName }}</router-link>.
+                    <span class="block text-gray-500 dark:text-zinc-400">Change settings there. Memory and skills are the same ones, so what is saved here is saved there.</span>
+                  </p>
+                </div>
                 
                 <!-- General Settings -->
                 <div v-if="activeTab === 'general'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -75,7 +86,15 @@
                     </div>
                     <div class="space-y-2">
                       <label for="workingDirectory" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Working Directory</label>
-                      <div class="flex items-stretch gap-2">
+                      <!-- A fork's folder is made by the machine on its first
+                           launch, and reported back; it is not chosen here. -->
+                      <template v-if="isFork">
+                        <input id="workingDirectory" :value="workspace.workingDirectory || ''" type="text" readonly
+                               class="w-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm outline-none font-mono text-gray-700 dark:text-zinc-300 shadow-sm cursor-default"
+                               :placeholder="forkFolderPlaceholder" />
+                        <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Made by the machine for this fork. Merging leaves it where it is.</p>
+                      </template>
+                      <div v-else class="flex items-stretch gap-2">
                         <input id="workingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
                                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all shadow-sm"
                                :placeholder="workingDirectoryPlaceholder" />
@@ -84,15 +103,15 @@
                           {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
                         </button>
                       </div>
-                      <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.<span v-if="!canBrowseDirectories"> Browse for it in the desktop app.</span></p>
+                      <p v-if="!isFork" class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.<span v-if="!canBrowseDirectories"> Browse for it in the desktop app.</span></p>
                     </div>
                   </div>
 
-                  <div class="space-y-2">
+                  <fieldset :disabled="isFork" class="space-y-2 disabled:opacity-60">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Self-Learning Strategy</label>
                     <textarea v-model="form.selfLearningLoopNote" rows="6" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="Extract successful workarounds and record them in skills md files..."></textarea>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Guidance for the agent to optimize its strategy over time.</p>
-                  </div>
+                  </fieldset>
 
                   <div class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Voice Input Language</label>
@@ -105,7 +124,7 @@
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
                   </div>
 
-                  <div class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50">
+                  <fieldset :disabled="isFork" class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50 disabled:opacity-60">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message Send Delay</label>
                     <div class="flex flex-wrap gap-1.5 mt-1">
                       <label v-for="opt in INPUT_SEND_DELAY_OPTIONS" :key="opt.value"
@@ -125,7 +144,7 @@
                       </label>
                     </div>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Hold sent messages for a countdown before delivery, with a chance to cancel.</p>
-                  </div>
+                  </fieldset>
 
                   <!-- Local data.
                        Set apart from everything above it on purpose: those
@@ -444,7 +463,7 @@
                 </div>
 
                 <!-- Automations -->
-                <div v-if="activeTab === 'automations'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <fieldset v-if="activeTab === 'automations'" :disabled="isFork" data-test="automations" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 disabled:opacity-60">
                   <div class="space-y-4">
                     <div class="flex items-center justify-between">
                       <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Auto-Allow List</h3>
@@ -526,11 +545,11 @@
                       </div>
                     </label>
                   </div>
-                </div>
+                </fieldset>
 
                 <!-- Notifications -->
                 <div v-if="activeTab === 'notifications'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                   <div class="space-y-4">
+                   <fieldset :disabled="isFork" data-test="event-triggers" class="space-y-4 disabled:opacity-60">
                       <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Event Triggers</h3>
                       <div class="grid grid-cols-1 gap-2">
                         <label v-for="evt in eventTypes" :key="evt.key" class="flex items-center justify-between p-4 bg-gray-50 dark:bg-zinc-800/50 rounded-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all border border-transparent hover:border-gray-200 dark:hover:border-zinc-700 shadow-sm">
@@ -546,14 +565,14 @@
                           </div>
                         </label>
                       </div>
-                   </div>
+                   </fieldset>
 
                    <div class="pt-8 border-t border-gray-100 dark:border-zinc-800">
                       <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1 mb-4">Delivery Channels</h3>
                       <div class="flex flex-wrap gap-3">
                         <label class="flex items-center gap-3 px-4 py-2.5 rounded-sm cursor-pointer transition-all shadow-sm border"
                                :class="form.notificationSettings.channels.includes('email') ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20' : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700'">
-                          <input type="checkbox"
+                          <input type="checkbox" :disabled="isFork"
                                  :checked="form.notificationSettings.channels.includes('email')"
                                  @change="e => { const ch = form.notificationSettings.channels; e.target.checked ? ch.push('email') : form.notificationSettings.channels = ch.filter(c => c !== 'email') }"
                                  class="accent-indigo-600 w-4 h-4" />
@@ -749,7 +768,25 @@
 
                 <!-- Danger Zone -->
                 <div v-if="activeTab === 'danger'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div class="space-y-4">
+                  <!-- A fork has no Archive and no Purge: merging it back is
+                       the only way out, so its tasks are never lost with it. -->
+                  <div v-if="isFork" class="space-y-4">
+                    <div data-test="merge-card" class="p-6 border border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-800/30 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
+                      <div class="flex-1 min-w-0">
+                        <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100 break-words">Merge into {{ forkParentName }}</h4>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1 font-medium">Stops this fork's agent, moves every task back to {{ forkParentName }} with its whole thread, and removes the fork. Its folder is left as it is.</p>
+                        <p v-if="mergeBlocked" data-test="merge-blocked" class="text-[11px] text-amber-700 dark:text-amber-400 mt-2 font-semibold">Not yet: {{ mergeBlocked }}.</p>
+                      </div>
+                      <button type="button" @click="forkActions.startMerge(forkListEntry)" :disabled="!!mergeBlocked"
+                              class="px-6 py-2.5 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold hover:opacity-80 transition-all shadow-sm rounded-sm uppercase tracking-widest whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                        Merge Fork
+                      </button>
+                    </div>
+                  </div>
+                  <div v-else class="space-y-4">
+                    <p v-if="forkCount > 0" data-test="has-forks" class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium px-1">
+                      This workspace has {{ forkCount === 1 ? '1 fork' : `${forkCount} forks` }}. Merge {{ forkCount === 1 ? 'it' : 'them' }} back before archiving or purging it.
+                    </p>
                     <div class="p-6 border border-red-100 dark:border-red-900/30 bg-red-50/30 dark:bg-red-500/5 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
                       <div class="flex-1">
                         <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100">{{ workspace?.archivedAt ? 'Restore Workspace' : 'Archive Workspace' }}</h4>
@@ -830,6 +867,8 @@
       @close="showArchiveConfirm = false"
       @confirm="doArchive"
     />
+    <MergeForkModal :fork="forkActions.state.merging" :parent-name="forkParentName" :busy="forkActions.state.busy"
+                    @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge()" />
     <DeleteModal
       :show="showDeleteConfirm"
       title="Purge Workspace"
@@ -853,6 +892,9 @@ import {
   workingDirectoryPlaceholder as directoryPlaceholderFor,
 } from '../composables/useDirectoryPicker';
 import ArchiveModal from '../components/ArchiveModal.vue';
+import ForkIcon from '../components/ForkIcon.vue';
+import MergeForkModal from '../components/MergeForkModal.vue';
+import { isFork as isForkWorkspace, mergeBlockedReason, parentName, useForkActions } from '../composables/useWorkspaceForks';
 import DeleteModal from '../components/DeleteModal.vue';
 import WorkspaceMemoryPage from '../components/WorkspaceMemoryPage.vue';
 import WorkspaceSkillPage from '../components/WorkspaceSkillPage.vue';
@@ -874,7 +916,7 @@ import {
   getRetentionDays,
   setRetentionDays,
 } from '../composables/useCacheRetention';
-import { shouldShowSettingsActionBar, buildClaudePermissionsConfig, buildMcpServers, buildSupervisorMcpUrl } from '../composables/useWorkspaceSettings';
+import { shouldShowSettingsActionBar, workspaceUpdatePayload, buildClaudePermissionsConfig, buildMcpServers, buildSupervisorMcpUrl } from '../composables/useWorkspaceSettings';
 import {
   entryForTab,
   isExtensionTab,
@@ -901,6 +943,21 @@ const loading = ref(true);
 const saving = ref(false);
 const workspaceStore = useWorkspaceStore();
 const activeTab = ref('general');
+
+// A fork's inherited settings are shown and not edited. The list's copy of the
+// workspace is the one that carries the parent's name and the unfinished count.
+const isFork = computed(() => isForkWorkspace(workspace.value));
+const forkListEntry = computed(() => workspaceStore.getWorkspace(workspaceId.value) ?? workspace.value);
+const forkParentName = computed(() => parentName(forkListEntry.value, workspaceStore.workspaces));
+const forkParent = computed(() => workspaceStore.getWorkspace(workspace.value?.forkOfId));
+const forkFolderPlaceholder = computed(() =>
+  forkParent.value?.workingDirectory
+    ? `Made on the first launch, from ${forkParent.value.workingDirectory}`
+    : 'Made on the first launch'
+);
+const mergeBlocked = computed(() => mergeBlockedReason(forkListEntry.value));
+const forkCount = computed(() => workspaceStore.forksOf(workspaceId.value).length);
+const forkActions = useForkActions({ router, store: workspaceStore, toasts: useToasts() });
 // The skill whose page is open, on /settings/skills/<name>. It belongs to the
 // Skills tab, so any tab picked from it, Skills included, leaves the page.
 const skillName = computed(() => route.params.name || '');
@@ -1347,7 +1404,7 @@ async function load() {
 async function save() {
   saving.value = true;
   try {
-    const res = await updateWorkspace(workspaceId.value, form.value);
+    const res = await updateWorkspace(workspaceId.value, workspaceUpdatePayload(form.value, workspace.value));
     workspace.value = res.workspace;
     workspaceStore.updateWorkspaceMetadata(res.workspace);
     

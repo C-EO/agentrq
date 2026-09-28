@@ -68,6 +68,7 @@ func TestActionString(t *testing.T) {
 		{ActionSiteUnshare, "site_unshare"},
 		{ActionWorkspaceForkCreate, "workspace_fork_create"},
 		{ActionWorkspaceForkMerge, "workspace_fork_merge"},
+		{ActionUISpinUp, "ui_spin_up"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

@@ -73,9 +73,18 @@
                     <span class="truncate">{{ workspaceName(t) }}</span>
                   </span>
                 </div>
-                <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums shrink-0">
-                  {{ formatTime(t.createdAt) }}
-                </span>
+                <div class="flex items-center gap-1 shrink-0">
+                  <!-- The feed's Spin up button, on the card: hover on desktop,
+                       always there on a touch screen, as the feed's row actions. -->
+                  <button v-if="canSpinUp(t, workspaceStore.getWorkspace(workspaceOf(t)))" @click.stop="openSpinUp($event, t)"
+                          class="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all"
+                          title="Spin up in a fork">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  </button>
+                  <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums">
+                    {{ formatTime(t.createdAt) }}
+                  </span>
+                </div>
               </div>
 
               <h3 class="text-[12px] md:text-[13px] leading-snug line-clamp-2 font-medium transition-colors"
@@ -128,6 +137,8 @@
                        @action="onExtensionAction" @input="extensions.setValue"
                        @submit="extensions.submit" @close="extensions.dismiss" />
 
+    <SpinUpPopover :spin="spinUp" @done="onSpinUpDone" />
+
     <!-- Task Context Menu -->
     <ContextMenu
       :show="contextMenu.show"
@@ -153,6 +164,8 @@ import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
+import SpinUpPopover from '../components/SpinUpPopover.vue';
+import { canSpinUp, useSpinUp } from '../composables/useSpinUp';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
@@ -287,6 +300,21 @@ function upsert(t) {
 
 function removeTask(id) {
   tasks.value = tasks.value.filter(x => String(x.id) !== String(id));
+}
+
+const spinUp = useSpinUp();
+
+function openSpinUp(event, task) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  spinUp.open(task, workspaceStore.getWorkspace(workspaceOf(task)), { x: rect.right, y: rect.bottom });
+}
+
+// The same bookkeeping as a move: across every workspace the card stays and
+// names its new one; on one workspace's board it leaves.
+function onSpinUpDone({ task, fork, failedStep }) {
+  if (!fork || failedStep === 'move') return;
+  if (isGlobal.value) upsert({ ...task, workspaceId: fork.id });
+  else removeTask(task.id);
 }
 
 /**

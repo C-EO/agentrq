@@ -1492,6 +1492,10 @@ const (
 	// the merge is recorded against the parent, which is what survives it.
 	ActionWorkspaceForkCreate Action = 80
 	ActionWorkspaceForkMerge  Action = 81
+	// Spin up: a task handed to an agent of its own — fork, move, launch —
+	// composed in the browser from three calls the server counts one by one,
+	// so the browser is the only one that knows they were one action.
+	ActionUISpinUp Action = 82
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1522,6 +1526,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUITrajectoryView, true
 	case "ui_copy_code":
 		return ActionUICopyCode, true
+	case "ui_spin_up":
+		return ActionUISpinUp, true
 	}
 	return 0, false
 }
@@ -1632,6 +1638,8 @@ func (a Action) String() string {
 		return "workspace_fork_create"
 	case ActionWorkspaceForkMerge:
 		return "workspace_fork_merge"
+	case ActionUISpinUp:
+		return "ui_spin_up"
 	}
 	return "unknown"
 }
