@@ -14,6 +14,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -95,12 +96,9 @@ func forkName(parent string) string {
 // MergeFork moves every task of a fork back into its parent and removes the
 // fork. It is refused while any of those tasks is unfinished.
 func (c *controller) MergeFork(ctx context.Context, req entity.MergeForkRequest) (*entity.MergeForkResponse, error) {
-	fork, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, monoflake.IDFromBase62(req.UserID).Int64())
+	fork, err := c.forkToMerge(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-	if fork.ForkOfID == 0 {
-		return nil, entity.NewForkError(entity.ErrNotAFork, "only a fork can be merged")
 	}
 	moved, err := c.repository.MergeForkIntoParent(ctx, fork.ID, fork.ForkOfID)
 	if err != nil {
@@ -130,6 +128,36 @@ func (c *controller) MergeFork(ctx context.Context, req entity.MergeForkRequest)
 		MovedTasks: len(moved),
 		Tasks:      tasks,
 	}, nil
+}
+
+// CheckForkMerge says whether a merge would be refused, before the fork's agent
+// is stopped for it: a merge that is going to fail must not kill the agent.
+// MergeFork asks again inside its transaction, which is the check that holds.
+func (c *controller) CheckForkMerge(ctx context.Context, req entity.MergeForkRequest) error {
+	fork, err := c.forkToMerge(ctx, req)
+	if err != nil {
+		return err
+	}
+	unfinished, err := c.repository.CountUnfinishedTasks(ctx, []int64{fork.ID})
+	if err != nil {
+		return err
+	}
+	if n := unfinished[fork.ID]; n > 0 {
+		return entity.NewForkError(entity.ErrForkUnfinished, base.UnfinishedForkMessage(n))
+	}
+	return nil
+}
+
+// forkToMerge reads the workspace a merge names, refusing one that is no fork.
+func (c *controller) forkToMerge(ctx context.Context, req entity.MergeForkRequest) (model.Workspace, error) {
+	fork, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, monoflake.IDFromBase62(req.UserID).Int64())
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if fork.ForkOfID == 0 {
+		return model.Workspace{}, entity.NewForkError(entity.ErrNotAFork, "only a fork can be merged")
+	}
+	return fork, nil
 }
 
 // refuseForkOrParent says why a workspace cannot be deleted or archived: a

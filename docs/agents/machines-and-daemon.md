@@ -41,6 +41,10 @@ pseudo-terminals, and streams them to the browser.
   nothing else does — the terminal page it navigated to has nothing left to
   read. `useStreamToasts` is what puts it on screen; drop `payload.error` there
   and the reason exists only in that machine's daemon log.
+- **Merging a workspace fork kills its agent first, and waits for the row to
+  say so** (`stopForkAgent`). Merging past a live one leaves it working, token
+  on disk, for a workspace that is gone; so an offline machine refuses the
+  merge, and the unfinished-task check runs before the kill.
 - Machine and session events ride the **user's global** stream
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.

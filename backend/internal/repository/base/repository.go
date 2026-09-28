@@ -354,7 +354,7 @@ func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID i
 			return err
 		}
 		if left > 0 {
-			return entity.NewForkError(entity.ErrForkUnfinished, unfinishedMessage(left))
+			return entity.NewForkError(entity.ErrForkUnfinished, UnfinishedForkMessage(left))
 		}
 
 		// The columns a task move keeps in step (MoveTask, UpdateTask).
@@ -372,7 +372,8 @@ func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID i
 	return moved, nil
 }
 
-func unfinishedMessage(n int64) string {
+// UnfinishedForkMessage is why a merge was refused, in words a person reads.
+func UnfinishedForkMessage(n int64) string {
 	if n == 1 {
 		return "1 task in this fork is not finished"
 	}

@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -127,5 +128,31 @@ func TestKillSessionDoesNotCountAnAlreadyFinishedSession(t *testing.T) {
 	}
 	if len(c.kills) != 0 {
 		t.Errorf("counted %+v, want nothing", c.kills)
+	}
+}
+
+// A daemon socket that has gone away under us.
+type brokenDaemonConn struct{}
+
+func (c *brokenDaemonConn) Send(wire.Frame) error { return errors.New("broken pipe") }
+func (c *brokenDaemonConn) Close() error          { return nil }
+
+// The kill that cannot be delivered says which way it failed.
+func TestKillSessionUndelivered(t *testing.T) {
+	broken := machinectrl.NewRegistry("pod-a")
+	broken.Add(11, &brokenDaemonConn{})
+	for name, tc := range map[string]struct {
+		reg  *machinectrl.Registry
+		want int
+	}{
+		"no machine connections": {nil, http.StatusServiceUnavailable},
+		"socket broken":          {broken, http.StatusBadGateway},
+	} {
+		c := &killCrud{session: runningSession()}
+		res, _ := killApp(c, tc.reg).Test(
+			httptest.NewRequest(http.MethodDelete, "/sessions/"+monoflake.ID(500).String(), nil))
+		if res.StatusCode != tc.want || len(c.kills) != 0 {
+			t.Errorf("%s: status = %d, kills %v", name, res.StatusCode, c.kills)
+		}
 	}
 }

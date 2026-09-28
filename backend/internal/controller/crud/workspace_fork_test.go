@@ -449,3 +449,36 @@ func TestSameForkSettings_ComparesMeaning(t *testing.T) {
 		t.Error("a new tool went unnoticed")
 	}
 }
+
+// The check a merge makes before stopping the fork's agent.
+func TestCheckForkMerge(t *testing.T) {
+	req := entity.MergeForkRequest{UserID: testUserIDStr, WorkspaceID: fkFork}
+	t.Run("ready", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(forkWorkspace(), nil)
+		env.repo.EXPECT().CountUnfinishedTasks(gomock.Any(), []int64{fkFork}).Return(map[int64]int64{}, nil)
+		if err := env.controller.CheckForkMerge(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("unfinished", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(forkWorkspace(), nil)
+		env.repo.EXPECT().CountUnfinishedTasks(gomock.Any(), []int64{fkFork}).Return(map[int64]int64{fkFork: 1}, nil)
+		wantForkErr(t, env.controller.CheckForkMerge(context.Background(), req), entity.ErrForkUnfinished, "1 task in this fork is not finished")
+	})
+	t.Run("not a fork", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkParent, testUserID).Return(parentWorkspace(), nil)
+		err := env.controller.CheckForkMerge(context.Background(), entity.MergeForkRequest{UserID: testUserIDStr, WorkspaceID: fkParent})
+		wantForkErr(t, err, entity.ErrNotAFork, "only a fork can be merged")
+	})
+	t.Run("count fails", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(forkWorkspace(), nil)
+		env.repo.EXPECT().CountUnfinishedTasks(gomock.Any(), []int64{fkFork}).Return(nil, errors.New("db down"))
+		if err := env.controller.CheckForkMerge(context.Background(), req); err == nil {
+			t.Fatal("want the error")
+		}
+	})
+}
