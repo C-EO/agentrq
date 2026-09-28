@@ -17,8 +17,8 @@ const category = (id) => MISSION_CATEGORIES.find((c) => c.id === id);
 const sub = (catId, id) => category(catId).subcategories.find((s) => s.id === id);
 
 describe('MISSION_CATEGORIES', () => {
-  it('offers general, coding, sales, marketing, research, legal, HR and ops, general first', () => {
-    expect(MISSION_CATEGORIES.map((c) => c.label)).toEqual(['General', 'Coding', 'Sales', 'Marketing', 'Research', 'Legal', 'HR', 'Ops']);
+  it('offers general, coding, manager, sales, marketing, research, legal, HR and ops, general first', () => {
+    expect(MISSION_CATEGORIES.map((c) => c.label)).toEqual(['General', 'Coding', 'Manager', 'Sales', 'Marketing', 'Research', 'Legal', 'HR', 'Ops']);
   });
 
   it('breaks categories into the specialities asked for', () => {
@@ -27,6 +27,12 @@ describe('MISSION_CATEGORIES', () => {
     );
     expect(category('research').subcategories.map((s) => s.label)).toEqual(
       expect.arrayContaining(['Researcher', 'Finance Analyst'])
+    );
+    expect(category('manager').subcategories.map((s) => s.label)).toEqual(
+      expect.arrayContaining(['Product (PM)', 'Engineering (EM)', 'Program (TPM)'])
+    );
+    expect(sub('manager', 'tpm').mission.split('\n')[0]).toBe(
+      'This workspace is for technical program management (Manager).'
     );
     expect(category('hr').subcategories.map((s) => s.label)).toContain('Recruiter');
     expect(category('marketing').subcategories.map((s) => s.label)).toEqual(
@@ -41,7 +47,21 @@ describe('MISSION_CATEGORIES', () => {
     for (const m of missions.filter((m) => m !== DEFAULT_WORKSPACE_MISSION)) {
       expect(m.startsWith('This workspace is for ')).toBe(true);
       expect(m).toContain('**Focus**\n- ');
-      expect(m.endsWith(WORKSPACE_WORKING_RULES)).toBe(true);
+      expect(m).toContain(WORKSPACE_WORKING_RULES);
+    }
+  });
+
+  it('ends coding missions with the pull request checklist, and every other mission with the working rules', () => {
+    for (const c of MISSION_CATEGORIES) {
+      for (const s of c.subcategories.filter((s) => s.mission !== DEFAULT_WORKSPACE_MISSION)) {
+        if (c.id === 'coding') {
+          expect(s.mission).toContain(`${WORKSPACE_WORKING_RULES}\n\n**Pull requests**\n`);
+          expect(s.mission.endsWith('- AgentRQ Task ID: <task ID>')).toBe(true);
+          expect(s.mission).toContain('- Test coverage: target 100% unit test coverage on the new lines introduced');
+        } else {
+          expect(s.mission.endsWith(WORKSPACE_WORKING_RULES)).toBe(true);
+        }
+      }
     }
   });
 
