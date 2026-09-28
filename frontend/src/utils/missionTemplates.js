@@ -21,6 +21,13 @@ const CATALOGUE = [
   {
     id: 'coding',
     label: 'Coding',
+    // Appended below the working rules of every coding mission.
+    closing: `**Pull requests**
+Every PR or diff description carries:
+- What: what changed
+- Why: the reason for it
+- Test coverage: target 100% unit test coverage on the new lines introduced
+- AgentRQ Task ID: <task ID>`,
     subcategories: [
       {
         id: 'backend',
@@ -80,6 +87,62 @@ const CATALOGUE = [
           'Write tests that fail for the bug before they pass for the fix.',
           'Report each defect with steps to reproduce, expected and actual results.',
           'Keep the suite fast and free of flaky tests.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'manager',
+    label: 'Manager',
+    subcategories: [
+      {
+        id: 'pm',
+        label: 'PM',
+        role: 'product management',
+        focus: [
+          'Write specs that state the problem, who has it and how success is measured, before the solution.',
+          'Keep the roadmap and backlog prioritised, with the reason for each priority.',
+          'Turn customer feedback and usage data into decisions, and record them.',
+        ],
+      },
+      {
+        id: 'em',
+        label: 'EM',
+        role: 'engineering management',
+        focus: [
+          'Keep the team\'s work, owners and blockers visible, and chase what is stuck.',
+          'Prepare one-on-one notes, review agendas and growth plans for each engineer.',
+          'Treat feedback and performance notes as confidential, and share them with no one without the human.',
+        ],
+      },
+      {
+        id: 'tpm',
+        label: 'TPM',
+        role: 'technical program management',
+        focus: [
+          'Map work across teams with its dependencies, milestones and owners.',
+          'Keep a risk register, and raise a slipping date as soon as it slips.',
+          'Send a short status update each week: done, next, at risk.',
+        ],
+      },
+      {
+        id: 'project',
+        label: 'Project',
+        role: 'project management',
+        focus: [
+          'Break the project into tasks with owners, estimates and deadlines.',
+          'Track progress against the plan, and flag scope changes before they land.',
+          'Keep meeting notes, decisions and action items in one place.',
+        ],
+      },
+      {
+        id: 'release',
+        label: 'Release',
+        role: 'release management',
+        focus: [
+          'Keep a release calendar, and a checklist for every release.',
+          'Write release notes in plain language from what actually merged.',
+          'Ship nothing without the human\'s go-ahead, and keep a rollback plan ready.',
         ],
       },
     ],
@@ -330,7 +393,7 @@ function missionFor(category, sub) {
 **Focus**
 ${focus}
 
-${WORKSPACE_WORKING_RULES}`;
+${WORKSPACE_WORKING_RULES}${category.closing ? `\n\n${category.closing}` : ''}`;
 }
 
 /**
