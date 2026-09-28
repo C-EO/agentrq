@@ -7,6 +7,9 @@
   <a href="https://discord.gg/xFSMaEA2b2">
     <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
+  <a href="https://chromewebstore.google.com/detail/agentrq/iadkenmjgjoilnioldgchgjpdnbaghbj">
+    <img src="https://img.shields.io/badge/Chrome%20Web%20Store-Add%20to%20Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" />
+  </a>
 </p>
 
 AgentRQ is a modern, high-performance platform designed for seamless collaboration between human operators and AI agents. It leverages the **Model Context Protocol (MCP)** to allow AI models (like Claude) to interact directly with your workspace's task management system.
@@ -215,6 +218,25 @@ sandbox around your machine, and the install screen says so on every install.
 Three worked examples live in [`examples/extensions/`](examples/extensions/),
 from one that asks for no permissions at all to one that runs a daily digest
 across every workspace. See the [Extensions Guide](docs/EXTENSIONS.md).
+
+## 🧭 Chrome Extension
+
+**[Add AgentRQ to Chrome →](https://chromewebstore.google.com/detail/agentrq/iadkenmjgjoilnioldgchgjpdnbaghbj)**
+
+AgentRQ lives in your browser's toolbar: open your workspaces in a popup, or full
+size in a tab.
+
+- **Bridge any WebMCP site into your agents.** When a website offers tools
+  through [WebMCP](https://github.com/webmachinelearning/webmcp), the toolbar
+  icon lights up; share the site with a workspace and its agents can call those
+  tools in your own signed-in Chrome. A tool the site does not mark read-only
+  waits for your approval in the task first.
+- **Your agents' terminals, right inside your browser.** Open the live terminal
+  of a Claude Code, Codex or Antigravity session running on one of your
+  [machines](#machines) and work in it without leaving the tab you are in.
+
+Installing from source and self-hosted servers are covered in the
+[extension's README](plugins/chrome/README.md).
 
 ## Driving AgentRQ from a browser agent
 
