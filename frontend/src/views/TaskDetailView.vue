@@ -140,12 +140,12 @@
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
             <div v-for="(att, i) in task.attachments" :key="i"
                  @click="previewAttachment(att)"
-                 class="flex items-center gap-3 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
-              <div class="w-6 h-6 flex items-center justify-center overflow-hidden rounded-lg">
+                 class="flex items-center gap-3 max-w-full min-w-0 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
+              <div class="w-6 h-6 shrink-0 flex items-center justify-center overflow-hidden rounded-lg">
                 <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="getAttachmentUrl(workspaceId, taskId, att.id)" class="w-full h-full object-cover" />
                 <svg v-else class="w-4 h-4 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               </div>
-              <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest">{{ att.filename }}</span>
+              <span class="min-w-0 truncate text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest" :title="att.filename">{{ att.filename }}</span>
             </div>
           </div>
         </div>
@@ -791,42 +791,44 @@
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
       <div class="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4 z-10">
-        <div class="rounded-sm overflow-hidden flex items-center justify-center min-w-[300px] bg-black shadow-2xl border border-white/10">
+        <div class="rounded-sm overflow-hidden flex items-center justify-center min-w-[min(300px,90vw)] max-w-full bg-black shadow-2xl border border-white/10">
           <img v-if="selectedAtt.mimeType?.startsWith('image/')" :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="max-w-full max-h-[70vh] object-scale-down" />
           <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="max-w-full max-h-[70vh]" />
           <div v-else-if="selectedAtt.mimeType?.startsWith('audio/')" class="p-16 flex flex-col items-center gap-6">
             <div class="w-20 h-20 rounded-full bg-gray-900 dark:bg-white flex items-center justify-center shadow-lg">
               <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             </div>
-            <audio controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[400px]" />
+            <audio controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[min(400px,70vw)]" />
           </div>
           <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
-          <div v-else class="p-20 flex flex-col items-center gap-4">
+          <div v-else class="p-8 sm:p-20 flex flex-col items-center gap-4 min-w-0">
             <svg class="w-24 h-24 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-            <p class="text-white font-bold text-sm">{{ selectedAtt.filename }}</p>
+            <p class="text-white font-bold text-sm text-center break-all">{{ selectedAtt.filename }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-4 px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-sm shadow-xl">
-          <div class="flex flex-col">
-            <p class="text-xs font-semibold text-white truncate max-w-[250px]">{{ selectedAtt.filename }}</p>
-            <p class="text-[9px] font-semibold text-zinc-400">{{ selectedAtt.mimeType }}</p>
+        <div class="flex items-center gap-3 sm:gap-4 max-w-full px-4 sm:px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-sm shadow-xl">
+          <div class="flex flex-col min-w-0">
+            <p class="text-xs font-semibold text-white truncate sm:max-w-[250px]" :title="selectedAtt.filename">{{ selectedAtt.filename }}</p>
+            <p class="text-[9px] font-semibold text-zinc-400 truncate">{{ selectedAtt.mimeType }}</p>
           </div>
-          <div class="w-px h-8 bg-zinc-700"></div>
+          <div class="w-px h-8 bg-zinc-700 shrink-0"></div>
           <!-- The public link when there is one; previews above stay on the signed-in
                route, which the desktop app's CSP allows and the attachment cache serves.
                A click saves from that route instead, so the file keeps its name and type. -->
           <a :href="selectedAtt.url || getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
              :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
-             class="flex items-center gap-2 px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
+             title="Download" aria-label="Download"
+             class="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Download
+            <span class="hidden sm:inline">Download</span>
           </a>
           <!-- Only a public link is worth sharing: the signed-in route opens for nobody else. -->
           <button v-if="selectedAtt.url" type="button" @click="copyAttachmentLink(selectedAtt)"
-                  class="flex items-center justify-center gap-2 min-w-[7.5rem] px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
+                  :title="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'" :aria-label="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'"
+                  class="shrink-0 flex items-center justify-center gap-2 sm:min-w-[7.5rem] px-3 sm:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
             <svg v-if="!copiedMessages.has('att-' + selectedAtt.id)" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
             <svg v-else class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
-            {{ copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link' }}
+            <span class="hidden sm:inline">{{ copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link' }}</span>
           </button>
         </div>
       </div>
