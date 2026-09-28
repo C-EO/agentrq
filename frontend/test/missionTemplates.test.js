@@ -29,7 +29,7 @@ describe('MISSION_CATEGORIES', () => {
       expect.arrayContaining(['Researcher', 'Finance Analyst'])
     );
     expect(category('manager').subcategories.map((s) => s.label)).toEqual(
-      expect.arrayContaining(['Product (PM)', 'Engineering (EM)', 'Program (TPM)'])
+      expect.arrayContaining(['PM', 'EM', 'TPM', 'Project', 'Release'])
     );
     expect(sub('manager', 'tpm').mission.split('\n')[0]).toBe(
       'This workspace is for technical program management (Manager).'

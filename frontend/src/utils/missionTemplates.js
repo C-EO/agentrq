@@ -97,7 +97,7 @@ Every PR or diff description carries:
     subcategories: [
       {
         id: 'pm',
-        label: 'Product (PM)',
+        label: 'PM',
         role: 'product management',
         focus: [
           'Write specs that state the problem, who has it and how success is measured, before the solution.',
@@ -107,7 +107,7 @@ Every PR or diff description carries:
       },
       {
         id: 'em',
-        label: 'Engineering (EM)',
+        label: 'EM',
         role: 'engineering management',
         focus: [
           'Keep the team\'s work, owners and blockers visible, and chase what is stuck.',
@@ -117,7 +117,7 @@ Every PR or diff description carries:
       },
       {
         id: 'tpm',
-        label: 'Program (TPM)',
+        label: 'TPM',
         role: 'technical program management',
         focus: [
           'Map work across teams with its dependencies, milestones and owners.',
