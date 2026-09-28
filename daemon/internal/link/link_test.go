@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -380,6 +381,10 @@ func TestHelloDescribesTheMachine(t *testing.T) {
 	}
 	if len(hello.Sessions) != 0 {
 		t.Errorf("a fresh daemon claimed sessions: %v", hello.Sessions)
+	}
+	// The backend refuses to launch a fork on a daemon that does not say this.
+	if !slices.Contains(hello.Capabilities, wire.CapabilityFork) {
+		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityFork)
 	}
 }
 

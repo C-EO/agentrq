@@ -482,3 +482,79 @@ func TestCheckForkMerge(t *testing.T) {
 		}
 	})
 }
+
+func TestRecordForkDirectory(t *testing.T) {
+	const sessionID = int64(77)
+	req := func(dir string) entity.RecordForkDirectoryRequest {
+		return entity.RecordForkDirectoryRequest{UserID: testUserIDStr, SessionID: monoflake.ID(sessionID).String(), Dir: dir}
+	}
+	const made = "/home/u/.agentrq/forks/abc"
+	session := model.Session{ID: sessionID, UserID: testUserID, WorkspaceID: fkFork}
+
+	t.Run("stored on the fork", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(session, nil)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(forkWorkspace(), nil)
+		env.repo.EXPECT().UpdateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, w model.Workspace) (model.Workspace, error) {
+				if w.ID != fkFork || w.WorkingDirectory != made || w.UpdatedAt.IsZero() {
+					t.Errorf("saved %+v", w)
+				}
+				return w, nil
+			})
+		if err := env.controller.RecordForkDirectory(context.Background(), req(made)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("a workspace that is not a fork keeps its own folder", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(model.Session{WorkspaceID: fkParent}, nil)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkParent, testUserID).Return(parentWorkspace(), nil)
+		if err := env.controller.RecordForkDirectory(context.Background(), req("/src/api")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("the same folder is not saved again", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		fork := forkWorkspace()
+		fork.WorkingDirectory = made
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(session, nil)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(fork, nil)
+		if err := env.controller.RecordForkDirectory(context.Background(), req(made)); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("nothing to record", func(t *testing.T) {
+		env := newMachineTelemetryEnv(t)
+		if err := env.controller.RecordForkDirectory(context.Background(), req("")); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.controller.RecordForkDirectory(context.Background(), req("relative/dir")); err == nil {
+			t.Error("a relative folder was accepted")
+		}
+		if err := env.controller.RecordForkDirectory(context.Background(), entity.RecordForkDirectoryRequest{Dir: made}); err == nil {
+			t.Error("a report with no ids was accepted")
+		}
+	})
+	t.Run("errors", func(t *testing.T) {
+		boom := errors.New("boom")
+		env := newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(model.Session{}, boom)
+		if err := env.controller.RecordForkDirectory(context.Background(), req(made)); !errors.Is(err, boom) {
+			t.Errorf("session read: %v", err)
+		}
+		env = newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(session, nil)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(model.Workspace{}, boom)
+		if err := env.controller.RecordForkDirectory(context.Background(), req(made)); !errors.Is(err, boom) {
+			t.Errorf("workspace read: %v", err)
+		}
+		env = newMachineTelemetryEnv(t)
+		env.repo.EXPECT().GetSession(gomock.Any(), sessionID, testUserID).Return(session, nil)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), fkFork, testUserID).Return(forkWorkspace(), nil)
+		env.repo.EXPECT().UpdateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{}, boom)
+		if err := env.controller.RecordForkDirectory(context.Background(), req(made)); !errors.Is(err, boom) {
+			t.Errorf("save: %v", err)
+		}
+	})
+}

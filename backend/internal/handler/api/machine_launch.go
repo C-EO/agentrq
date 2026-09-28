@@ -268,7 +268,27 @@ func (h *handler) launchAgent() fiber.Handler {
 
 		// The folder. Empty means the person has to choose one — never guessed,
 		// and never defaulted to wherever the daemon happens to live.
-		if ws.Workspace.WorkingDirectory == "" {
+		//
+		// A fork runs in a folder the daemon makes from its parent's, so it is
+		// the parent's that has to be set.
+		dir := ws.Workspace.WorkingDirectory
+		var fork *wire.ForkSpec
+		if ws.Workspace.ForkOfID != 0 {
+			parent, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{ID: ws.Workspace.ForkOfID, UserID: userID})
+			if err != nil {
+				e, status := mapper.FromErrorToHTTPResponse(err)
+				c.Status(status)
+				return c.Send(e)
+			}
+			if parent.Workspace.WorkingDirectory == "" {
+				c.Status(http.StatusPreconditionRequired)
+				return c.Send(mapper.FromMessageToHTTPResponse(
+					"set "+parent.Workspace.Name+"'s working directory before launching an agent in its fork",
+					http.StatusPreconditionRequired))
+			}
+			dir = parent.Workspace.WorkingDirectory
+			fork = &wire.ForkSpec{ID: monoflake.ID(ws.Workspace.ID).String(), From: dir}
+		} else if dir == "" {
 			c.Status(http.StatusPreconditionRequired)
 			return c.Send(mapper.FromMessageToHTTPResponse(
 				"set this workspace's working directory before launching an agent",
@@ -301,10 +321,18 @@ func (h *handler) launchAgent() fiber.Handler {
 			return c.Send(mapper.FromMessageToHTTPResponse(
 				"that machine is not connected", http.StatusConflict))
 		}
+		// An agentrqd that predates forks ignores the fork field: the agent
+		// would run in the parent's folder and connect as the parent.
+		if fork != nil && !h.machineRegistry.HasCapability(machineID, wire.CapabilityFork) {
+			c.Status(http.StatusConflict)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"update agentrqd on this machine to run a fork", http.StatusConflict))
+		}
 
 		start := wire.StartSession{
 			Kind:       payload.Kind,
-			Dir:        ws.Workspace.WorkingDirectory,
+			Dir:        dir,
+			Fork:       fork,
 			ServerName: mcpServerName,
 			Workspace:  ws.Workspace.Name,
 			Model:      payload.Model,

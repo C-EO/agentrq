@@ -280,3 +280,33 @@ func (c *controller) withForkInfo(ctx context.Context, ws []entity.Workspace) er
 	}
 	return nil
 }
+
+// RecordForkDirectory stores the folder a daemon made for a fork's session as
+// the fork's working directory, so it can be shown and relaunched from. A
+// session of any other workspace is left alone: its folder is the person's.
+func (c *controller) RecordForkDirectory(ctx context.Context, req entity.RecordForkDirectoryRequest) error {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	id := monoflake.IDFromBase62(req.SessionID).Int64()
+	if uid == 0 || id == 0 {
+		return fmt.Errorf("invalid id")
+	}
+	dir, err := normalizeWorkingDirectory(req.Dir)
+	if err != nil || dir == "" {
+		return err
+	}
+	session, err := c.repository.GetSession(ctx, id, uid)
+	if err != nil {
+		return err
+	}
+	ws, err := c.repository.GetWorkspace(ctx, session.WorkspaceID, uid)
+	if err != nil {
+		return err
+	}
+	if ws.ForkOfID == 0 || ws.WorkingDirectory == dir {
+		return nil
+	}
+	ws.WorkingDirectory = dir
+	ws.UpdatedAt = time.Now()
+	_, err = c.repository.UpdateWorkspace(ctx, ws)
+	return err
+}

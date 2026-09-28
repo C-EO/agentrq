@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -47,6 +48,9 @@ type Registry struct {
 
 	mu    sync.RWMutex
 	conns map[int64]Conn
+	// caps is what each held connection's hello said it can do. Kept per
+	// connection: a reconnect may be a different daemon version.
+	caps map[int64][]string
 
 	pendingMu sync.RWMutex
 	pending   map[string]chan wire.Control
@@ -59,7 +63,7 @@ type Registry struct {
 // configured value. Two instances sharing an id would route to each other's
 // sockets.
 func NewRegistry(instanceID string) *Registry {
-	return &Registry{instanceID: instanceID, conns: map[int64]Conn{}, pending: map[string]chan wire.Control{}}
+	return &Registry{instanceID: instanceID, conns: map[int64]Conn{}, caps: map[int64][]string{}, pending: map[string]chan wire.Control{}}
 }
 
 // InstanceID names this process.
@@ -78,6 +82,7 @@ func (r *Registry) Add(machineID int64, c Conn) (displaced Conn) {
 	defer r.mu.Unlock()
 	displaced = r.conns[machineID]
 	r.conns[machineID] = c
+	delete(r.caps, machineID) // until this connection's hello says otherwise
 	return displaced
 }
 
@@ -97,6 +102,7 @@ func (r *Registry) Remove(machineID int64, c Conn) bool {
 		return false
 	}
 	delete(r.conns, machineID)
+	delete(r.caps, machineID)
 	return true
 }
 
@@ -109,6 +115,25 @@ func (r *Registry) Get(machineID int64) (Conn, error) {
 		return nil, ErrNotConnected
 	}
 	return c, nil
+}
+
+// SetCapabilities records what a connection's hello said it can do, if that
+// connection still holds the machine.
+func (r *Registry) SetCapabilities(machineID int64, c Conn, caps []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.conns[machineID] == c {
+		r.caps[machineID] = append([]string(nil), caps...)
+	}
+}
+
+// HasCapability reports whether the daemon this instance holds for a machine
+// said it can do something. False for a machine not held here, and for a
+// daemon too old to say.
+func (r *Registry) HasCapability(machineID int64, capability string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return slices.Contains(r.caps[machineID], capability)
 }
 
 // Send delivers a frame to a machine held by this instance.
@@ -152,6 +177,7 @@ func (r *Registry) Drop(machineID int64) bool {
 	c, ok := r.conns[machineID]
 	if ok {
 		delete(r.conns, machineID)
+		delete(r.caps, machineID)
 	}
 	r.mu.Unlock()
 

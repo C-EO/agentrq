@@ -219,7 +219,7 @@ daemon.** Anything else is a convention, not a boundary.
 
 ## What it can do, exactly
 
-The daemon runs exactly two programs, and nothing else:
+The daemon runs exactly two agents, and nothing else:
 
 - `claude-code`
 - `acp-gateway`
@@ -233,6 +233,28 @@ message that says "run this".
 What it *can* do, once one of those two is running, is send it keystrokes. That
 is the feature. An agent at a terminal can do whatever you could do at that
 terminal.
+
+The one other program it starts is `git`, and only to make a workspace fork's
+folder: `git worktree add` with arguments it builds itself, never a shell.
+
+### A workspace fork gets a folder of its own
+
+A fork runs in `~/.agentrq/forks/<fork id>`, made from its parent's working
+directory on the fork's first launch and reused after that:
+
+- **Parent folder inside a git repository** → a worktree of that repository on
+  a new branch, `agentrq/fork-<fork id>`, checked out at `HEAD`. The fork starts
+  in the same subfolder its parent does. Uncommitted changes in the parent are
+  not in it.
+- **Anywhere else** → a copy of the folder, without its `.mcp.json` (which
+  points at the parent) and without `.agentrq/`.
+
+Merging a fork back moves its tasks, never its files: the folder and the
+branch stay where they are, and the fork's working directory shows the path.
+A repository that commits a `.mcp.json` with an `agentrq-workspace` entry
+cannot be forked this way — the launch is refused, naming the file — because
+that entry would connect the fork's agent as the parent. A machine running an
+agentrqd from before forks is refused too: update it first.
 
 ---
 
@@ -331,6 +353,7 @@ binary back — it is kept for exactly that reason.
 | Config | `~/.config/agentrqd/config.json` (`%AppData%\agentrqd` on Windows) |
 | Tokens | one `0600` file per profile in `.../agentrqd/tokens/` |
 | Local status | `.../agentrqd/status.json`, what `agentrqd status` reads |
+| Workspace forks | `~/.agentrq/forks/<fork id>`, one folder per fork |
 
 The config file is **not** a credential and can safely be copied, backed up or
 pasted into a bug report. The tokens directory is.

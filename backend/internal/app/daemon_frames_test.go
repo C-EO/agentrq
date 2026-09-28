@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/mustafaturan/monoflake"
 
@@ -24,7 +25,13 @@ type recordedState struct {
 	reconciled []entity.ReconcileSessionsRequest
 	offers     []entity.RecordAvailableVersionRequest
 	versions   []entity.RecordMachineVersionRequest
+	forkDirs   []entity.RecordForkDirectoryRequest
 	err        error
+}
+
+func (r *recordedState) RecordForkDirectory(_ context.Context, req entity.RecordForkDirectoryRequest) error {
+	r.forkDirs = append(r.forkDirs, req)
+	return r.err
 }
 
 func (r *recordedState) UpdateSessionState(_ context.Context, req entity.UpdateSessionStateRequest) error {
@@ -515,5 +522,70 @@ func TestAHelloWithNoVersionAnnouncesNothing(t *testing.T) {
 	}
 	if len(sent) != 0 {
 		t.Errorf("announced %+v for a daemon that named no version", sent)
+	}
+}
+
+// quietAuth accepts every connection, for a session built the real way.
+type quietAuth struct{}
+
+func (quietAuth) AuthenticateMachine(context.Context, string) (machine.Identity, error) {
+	return machine.Identity{}, nil
+}
+func (quietAuth) Touch(context.Context, int64, time.Time, string) error { return nil }
+func (quietAuth) Release(context.Context, int64, string) error          { return nil }
+
+// What the hello says it can do is what the launch gate asks the registry.
+func TestTheHellosCapabilitiesReachTheRegistry(t *testing.T) {
+	reg := machine.NewRegistry("pod-a")
+	session, err := machine.NewSession(context.Background(), reg, quietAuth{}, machine.Identity{MachineID: 11}, quietConn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := daemonFrames(machine.NewRelay(reg), &recordedState{}, nil)
+	hello, err := wire.ControlFrame(wire.Control{Op: wire.OpHello, Body: mustBytes(t, wire.Hello{
+		Version: "1.0", Capabilities: []string{wire.CapabilityFork},
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle(context.Background(), session, hello); err != nil {
+		t.Fatal(err)
+	}
+	if !reg.HasCapability(11, wire.CapabilityFork) {
+		t.Error("the daemon said it can run a fork and the registry did not keep it")
+	}
+}
+
+// The folder a daemon made for a fork's session is recorded on "running", and
+// only then.
+func TestTheForksFolderIsRecordedWhenItsSessionRuns(t *testing.T) {
+	rec := &recordedState{}
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 42}}
+	for _, st := range []wire.SessionState{
+		{SessionID: 9, State: machine.SessionRunning, Dir: "/home/u/.agentrq/forks/abc"},
+		{SessionID: 9, State: machine.SessionRunning},
+		{SessionID: 9, State: machine.SessionExited, Dir: "/home/u/.agentrq/forks/abc"},
+	} {
+		if err := handle(context.Background(), session, controlFrame(t, st)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(rec.forkDirs) != 1 {
+		t.Fatalf("recorded %d folders, want the running one only: %+v", len(rec.forkDirs), rec.forkDirs)
+	}
+	want := entity.RecordForkDirectoryRequest{
+		UserID: monoflake.ID(42).String(), SessionID: monoflake.ID(9).String(), Dir: "/home/u/.agentrq/forks/abc",
+	}
+	if rec.forkDirs[0] != want {
+		t.Errorf("recorded %+v, want %+v", rec.forkDirs[0], want)
+	}
+
+	// A failure is logged, never the end of the connection.
+	rec.err = errors.New("database down")
+	if err := handle(context.Background(), session, controlFrame(t, wire.SessionState{
+		SessionID: 9, State: machine.SessionRunning, Dir: "/x",
+	})); err != nil {
+		t.Errorf("a folder that could not be recorded ended the connection: %v", err)
 	}
 }

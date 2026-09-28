@@ -1,0 +1,222 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package supervisor
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// Errors from preparing a workspace fork's folder.
+var (
+	ErrBadFork = errors.New("supervisor: fork is not acceptable")
+	// ErrForkConfigCollision means the fork's own folder already names the
+	// workspace server at another endpoint — a worktree of a repository that
+	// commits its .mcp.json. Keeping that entry, as any other launch would,
+	// points the fork's agent at the parent.
+	ErrForkConfigCollision = errors.New("supervisor: the fork's folder already configures the workspace server")
+)
+
+// forkIDPattern is a base62 workspace id. It becomes a folder and a branch
+// name, so nothing else gets through.
+var forkIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,24}$`)
+
+// gitTimeout bounds each git command. A variable so a test need not wait.
+var gitTimeout = 60 * time.Second
+
+// ForkBranch is the branch a fork's worktree is checked out on.
+func ForkBranch(id string) string { return "agentrq/fork-" + id }
+
+// PrepareForkDir makes the folder a workspace fork runs in, under
+// <home>/.agentrq/forks/<id>, and returns the directory the agent starts in.
+//
+// A git worktree on its own branch when from is inside a repository (the dir
+// is then the same subfolder of it that from is of its repository), a copy of
+// from otherwise. An existing folder is reused as it is, which is a relaunch.
+func PrepareForkDir(home, from, id string) (dir string, created bool, err error) {
+	if !forkIDPattern.MatchString(id) {
+		return "", false, fmt.Errorf("%w: id=%q", ErrBadFork, id)
+	}
+	if !filepath.IsAbs(home) {
+		return "", false, fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+	}
+	from, err = workspaceDir(from)
+	if err != nil {
+		return "", false, err
+	}
+	// Already absolute and clean; refusing ".." outright is what lets a
+	// path from the server be walked and copied without a second look.
+	if strings.Contains(from, "..") {
+		return "", false, fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
+	}
+
+	target := filepath.Join(home, ".agentrq", "forks", id)
+	root, inRepo := gitRoot(from)
+	rel := "."
+	if inRepo {
+		rel, _ = filepath.Rel(root, from) // root is an ancestor of from
+	}
+	dir = filepath.Join(target, rel)
+
+	if _, err := os.Lstat(target); err == nil {
+		return dir, false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", false, fmt.Errorf("supervisor: fork folder %s: %w", target, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return "", false, fmt.Errorf("supervisor: fork folder: %w", err)
+	}
+
+	if inRepo {
+		err = addWorktree(root, target, id)
+	} else {
+		err = copyTree(from, target, filepath.Join(home, ".agentrq"))
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return dir, true, nil
+}
+
+// addWorktree checks out HEAD of the repository at root into target on the
+// fork's branch. A branch left by an earlier fork of the same id is checked
+// out again rather than refused; -f covers its worktree still being
+// registered after somebody deleted the folder.
+func addWorktree(root, target, id string) error {
+	branch := ForkBranch(id)
+	out, err := runGit(root, "worktree", "add", "-b", branch, "--", target, "HEAD")
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(out, "already exists") {
+		return fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+	}
+	if out, err := runGit(root, "worktree", "add", "-f", "--", target, branch); err != nil {
+		return fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// configPointsElsewhere reports whether the config at path names serverName
+// at an endpoint other than want's. The query, which holds the token, is not
+// compared: an entry an earlier launch of this fork wrote is the fork's own.
+func configPointsElsewhere(path, serverName, want string) bool {
+	cfg, _, err := readMCPConfig(path)
+	got, gotErr := url.Parse(cfg.Servers[serverName].URL)
+	w, wantErr := url.Parse(want)
+	return err != nil || gotErr != nil || wantErr != nil ||
+		got.Scheme != w.Scheme || got.Host != w.Host || got.Path != w.Path
+}
+
+// runGit runs git in dir with a fixed argv and no shell, returning what it
+// printed. dir is the working directory, never an argument, so a folder the
+// server named cannot be read as a git option.
+func runGit(dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
+// copyTree copies from into target, keeping modes and copying symlinks as
+// symlinks. The top-level .mcp.json is left out — its entry points at the
+// parent — as is the daemon's own folder, wherever it turns up.
+//
+// Built beside target and renamed into place, so a copy that fails half way
+// leaves nothing a relaunch would take for a finished fork.
+func copyTree(from, target, skip string) error {
+	tmp, err := os.MkdirTemp(filepath.Dir(target), filepath.Base(target)+".tmp-")
+	if err != nil {
+		return fmt.Errorf("supervisor: fork folder: %w", err)
+	}
+	// Modes are set once everything is in, deepest first, so a read-only
+	// folder can still be filled and umask has no say.
+	type mode struct {
+		path string
+		perm fs.FileMode
+	}
+	var modes []mode
+	// Compared by identity, not by path: the walk sees resolved paths, and
+	// a spelling that differs (macOS /var, a Windows short name) would copy
+	// the staging folder into itself.
+	skipInfo, _ := os.Stat(skip)
+	// Walk does not follow a symlink, the root included.
+	src := from
+	if real, err := filepath.EvalSymlinks(from); err == nil {
+		src = real
+	}
+	walkErr := filepath.Walk(src, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		if rel == MCPConfigName || rel == ".agentrq" || os.SameFile(info, skipInfo) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		dst := filepath.Join(tmp, rel)
+		switch {
+		case info.Mode()&fs.ModeSymlink != 0:
+			link, err := os.Readlink(path)
+			if err == nil {
+				err = os.Symlink(link, dst)
+			}
+			return err
+		case info.IsDir():
+			modes = append(modes, mode{dst, info.Mode().Perm()})
+			if rel == "." {
+				return nil
+			}
+			return os.Mkdir(dst, 0o700)
+		case info.Mode().IsRegular():
+			modes = append(modes, mode{dst, info.Mode().Perm()})
+			return copyFile(path, dst)
+		}
+		return nil // a socket or a device is not part of a project
+	})
+	for i := len(modes) - 1; walkErr == nil && i >= 0; i-- {
+		walkErr = os.Chmod(modes[i].path, modes[i].perm)
+	}
+	if walkErr == nil {
+		walkErr = os.Rename(tmp, target)
+	}
+	if walkErr != nil {
+		_ = os.RemoveAll(tmp)
+		return fmt.Errorf("supervisor: copy %s into a fork folder: %w", from, walkErr)
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		_, err = io.Copy(out, in)
+		err = errors.Join(err, out.Close())
+	}
+	return err
+}

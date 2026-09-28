@@ -374,3 +374,56 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 	}
 	t.Fatal(msg)
 }
+
+// A fork launch is refused unless the daemon said it can run one, and what it
+// said belongs to that connection: a reconnect may be an older daemon.
+func TestCapabilitiesBelongToTheConnectionThatSaidThem(t *testing.T) {
+	r := NewRegistry("pod-a")
+	old, fresh := &fakeConn{name: "old"}, &fakeConn{name: "fresh"}
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Fatal("an unheld machine has a capability")
+	}
+
+	r.Add(1, old)
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Fatal("a daemon that has not said hello has a capability")
+	}
+	r.SetCapabilities(1, old, []string{wire.CapabilityFork})
+	if !r.HasCapability(1, wire.CapabilityFork) || r.HasCapability(1, "other") {
+		t.Fatal("the hello's capabilities were not kept as said")
+	}
+
+	r.Add(1, fresh)
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Error("a reconnect inherited the previous connection's capabilities")
+	}
+	r.SetCapabilities(1, old, []string{wire.CapabilityFork}) // a late hello on the displaced socket
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Error("a displaced connection's hello was credited to the new one")
+	}
+
+	r.SetCapabilities(1, fresh, []string{wire.CapabilityFork})
+	r.Remove(1, fresh)
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Error("capabilities outlived their connection's removal")
+	}
+	r.Add(1, fresh)
+	r.SetCapabilities(1, fresh, []string{wire.CapabilityFork})
+	r.Drop(1)
+	if r.HasCapability(1, wire.CapabilityFork) {
+		t.Error("capabilities outlived a drop")
+	}
+}
+
+func TestASessionRecordsItsDaemonsCapabilities(t *testing.T) {
+	r := NewRegistry("pod-a")
+	s, err := NewSession(t.Context(), r, &fakeAuth{}, Identity{MachineID: 7}, &fakeConn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetCapabilities([]string{wire.CapabilityFork})
+	if !r.HasCapability(7, wire.CapabilityFork) {
+		t.Error("the session's hello was not recorded")
+	}
+	(&Session{}).SetCapabilities([]string{wire.CapabilityFork}) // no registry: nothing to record
+}

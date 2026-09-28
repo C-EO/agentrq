@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -62,8 +63,12 @@ type Request struct {
 	// session fails with a reason rather than starting an agent that cannot
 	// reach its workspace and looks merely broken.
 	ReuseMCPConfig bool
-	Cols           uint16
-	Rows           uint16
+	// Fork runs a workspace fork in a folder of its own, made from Fork.From;
+	// Dir is ignored then. Nil for every other workspace.
+	Fork *wire.ForkSpec
+
+	Cols uint16
+	Rows uint16
 }
 
 // Session is one running agent.
@@ -164,6 +169,9 @@ type Supervisor struct {
 	perProfile   int
 	wholeMachine int
 
+	// Home is where the forks folder lives; empty means the user's home.
+	Home string
+
 	// finishedRetention is how long a finished session stays answerable.
 	// A field rather than a constant so a test need not wait out the window.
 	finishedRetention time.Duration
@@ -191,6 +199,18 @@ func (s *Supervisor) log() *slog.Logger {
 		return s.Log
 	}
 	return slog.Default()
+}
+
+// home is where the forks folder lives.
+func (s *Supervisor) home() (string, error) {
+	if s.Home != "" {
+		return s.Home, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("supervisor: no home folder for the fork: %w", err)
+	}
+	return home, nil
 }
 
 // workspaceDir decides whether a folder is one this daemon will write into,
@@ -245,6 +265,15 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	cmd, err := Resolve(req.Kind, req.Params)
 	if err != nil {
 		return nil, err
+	}
+	if req.Fork != nil {
+		home, err := s.home()
+		if err != nil {
+			return nil, err
+		}
+		if req.Dir, _, err = PrepareForkDir(home, req.Fork.From, req.Fork.ID); err != nil {
+			return nil, err
+		}
 	}
 	dir, err := workspaceDir(req.Dir)
 	if err != nil {
@@ -311,6 +340,12 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 			if err != nil {
 				release()
 				return nil, err
+			}
+			if req.Fork != nil && slices.Contains(kept, req.Params.ServerName) &&
+				configPointsElsewhere(path, req.Params.ServerName, req.MCPURL) {
+				release()
+				return nil, fmt.Errorf("%w: %s already has a %q entry, which would connect this fork as its parent workspace; remove it from %s",
+					ErrForkConfigCollision, path, req.Params.ServerName, MCPConfigName)
 			}
 			if len(kept) > 0 {
 				// Said out loud rather than assumed: the agent is about to

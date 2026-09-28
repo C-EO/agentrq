@@ -370,3 +370,40 @@ func TestDecodeFromViewerCopiesThePayload(t *testing.T) {
 		t.Errorf("the payload followed the buffer: %q", f.Payload)
 	}
 }
+
+// The fork's fields must survive the trip in both directions, spelled as the
+// other side reads them: an old daemon ignores what it does not know, so a
+// typo here would look exactly like a daemon without the capability.
+func TestForkFieldsRoundTrip(t *testing.T) {
+	start := StartSession{SessionID: 7, Dir: "/srv/app", Fork: &ForkSpec{ID: "0jUM5wEc1Hl", From: "/srv/app"}}
+	b, err := json.Marshal(start)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"fork":{"id":"0jUM5wEc1Hl","from":"/srv/app"}`) {
+		t.Errorf("fork spelled wrong on the wire: %s", b)
+	}
+	var gotStart StartSession
+	if err := json.Unmarshal(b, &gotStart); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if gotStart.Fork == nil || *gotStart.Fork != *start.Fork {
+		t.Errorf("fork = %+v, want %+v", gotStart.Fork, start.Fork)
+	}
+	if b, _ := json.Marshal(StartSession{}); strings.Contains(string(b), "fork") {
+		t.Errorf("a start that is not a fork still says fork: %s", b)
+	}
+
+	hello := Hello{Version: "1.0.0", Capabilities: []string{CapabilityFork}}
+	b, _ = json.Marshal(hello)
+	var gotHello Hello
+	if err := json.Unmarshal(b, &gotHello); err != nil || len(gotHello.Capabilities) != 1 || gotHello.Capabilities[0] != "fork" {
+		t.Errorf("capabilities = %v (%v) from %s", gotHello.Capabilities, err, b)
+	}
+
+	b, _ = json.Marshal(SessionState{SessionID: 7, State: "running", Dir: "/home/u/.agentrq/forks/x"})
+	var gotState SessionState
+	if err := json.Unmarshal(b, &gotState); err != nil || gotState.Dir != "/home/u/.agentrq/forks/x" {
+		t.Errorf("dir = %q (%v) from %s", gotState.Dir, err, b)
+	}
+}

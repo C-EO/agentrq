@@ -28,6 +28,7 @@ type daemonRecorder interface {
 	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
 	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
+	RecordForkDirectory(ctx context.Context, req entity.RecordForkDirectoryRequest) error
 }
 
 // notifier tells the browser something changed, so a page showing machines
@@ -78,6 +79,7 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 			}); err != nil {
 				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the running version")
 			}
+			s.SetCapabilities(hello.Capabilities)
 			reconcile(ctx, rec, s.Identity.MachineID, hello.Sessions)
 			announceVersion(notify, s.Identity, hello.Version)
 			return nil
@@ -144,6 +146,14 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 		}
 		if err := rec.UpdateSessionState(ctx, req); err != nil {
 			zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record session state")
+		}
+		// The folder a daemon made for a fork is the fork's from now on.
+		if st.State == machine.SessionRunning && st.Dir != "" {
+			if err := rec.RecordForkDirectory(ctx, entity.RecordForkDirectoryRequest{
+				UserID: req.UserID, SessionID: req.SessionID, Dir: st.Dir,
+			}); err != nil {
+				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the fork's folder")
+			}
 		}
 		announceSession(notify, s.Identity, req, st)
 		return nil

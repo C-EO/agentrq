@@ -69,7 +69,15 @@ type Hello struct {
 	Arch     string   `json:"arch,omitempty"`
 	Hostname string   `json:"hostname,omitempty"`
 	Sessions []uint64 `json:"sessions,omitempty"`
+	// Capabilities names what this daemon can do beyond the protocol's
+	// baseline. A daemon ignores a StartSession field it does not know, so a
+	// launch that needs one is refused by the backend unless it is listed here.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
+
+// CapabilityFork is a daemon that honours [StartSession.Fork]. Without it a
+// fork would run in its parent's folder and connect as the parent.
+const CapabilityFork = "fork"
 
 // UpdateAvailable is the daemon telling the panel there is a newer release.
 //
@@ -253,8 +261,19 @@ type StartSession struct {
 	Model string `json:"model,omitempty"`
 	Agent string `json:"agent,omitempty"`
 
+	// Fork runs this session in a folder of its own, made from Dir, for a
+	// workspace fork. Nil for every other workspace.
+	Fork *ForkSpec `json:"fork,omitempty"`
+
 	Cols uint16 `json:"cols,omitempty"`
 	Rows uint16 `json:"rows,omitempty"`
+}
+
+// ForkSpec names a workspace fork's folder: ID (base62) keys it under the
+// daemon's own forks directory, From is the parent's folder it is made from.
+type ForkSpec struct {
+	ID   string `json:"id"`
+	From string `json:"from"`
 }
 
 // Redacted returns a copy safe to log.
@@ -337,4 +356,7 @@ type SessionState struct {
 	// Restored marks a session re-spawned after an update, so the UI can say
 	// why the scrollback is empty.
 	Restored bool `json:"restored,omitempty"`
+	// Dir is the folder the session runs in, sent with "running". For a fork
+	// it is the one the daemon made, which the backend records as the fork's.
+	Dir string `json:"dir,omitempty"`
 }
