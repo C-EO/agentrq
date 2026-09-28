@@ -356,7 +356,7 @@ onWebMCPChange(() => Promise.all([
   <div class="flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
 
     <!-- Header -->
-    <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-center justify-between gap-4">
+    <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
         <div v-if="loadingEvent" class="h-8 w-64 bg-gray-100 dark:bg-zinc-800 animate-pulse rounded-lg"></div>
         <template v-else>

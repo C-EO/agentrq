@@ -865,7 +865,7 @@ onWebMCPChange(async () => {
 <template>
   <div class="flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
     <!-- Header -->
-    <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-center justify-between gap-4">
+    <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="min-w-0">
         <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
           <span class="opacity-50 cursor-pointer hover:opacity-100 transition-opacity" @click="router.push('/workflows')">Workflows</span>
