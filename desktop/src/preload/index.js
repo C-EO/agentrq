@@ -295,6 +295,18 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
   },
 
+  view: {
+    /**
+     * Zoom and full screen, for the title bar's window menu on macOS.
+     *
+     * @returns {Promise<{zoom: number, fullScreen: boolean}>}
+     */
+    get: () => ipcRenderer.invoke('agentrq:view:get'),
+    /** @param {'in'|'out'|'reset'} direction */
+    zoom: (direction) => ipcRenderer.invoke('agentrq:view:zoom', direction),
+    toggleFullScreen: () => ipcRenderer.invoke('agentrq:view:fullscreen'),
+  },
+
   theme: {
     /**
      * Tell the shell which theme the app is using, so the native chrome follows

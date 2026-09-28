@@ -50,6 +50,7 @@ import {
 import { createProcessGoneHandler } from './network-service.js'
 import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink } from './links.js'
+import { toggleFullScreen, viewState, zoomWindow } from './window-view.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
 import { createInstallLog } from './install-log.js'
@@ -1039,6 +1040,13 @@ function registerIpc(getWindow) {
     'agentrq:update:install-via-script',
     () => updater?.installViaScript() ?? { ok: false, reason: 'Updater unavailable' },
   )
+
+  // The title bar's window menu on macOS. Each answers with the state the menu
+  // shows next, for the window that asked.
+  const senderWindow = (event) => BrowserWindow.fromWebContents(event.sender)
+  ipcMain.handle('agentrq:view:get', (event) => viewState(senderWindow(event)))
+  ipcMain.handle('agentrq:view:zoom', (event, direction) => zoomWindow(senderWindow(event), direction))
+  ipcMain.handle('agentrq:view:fullscreen', (event) => toggleFullScreen(senderWindow(event)))
 
   ipcMain.handle('agentrq:theme:set', (_event, theme) => {
     currentTheme = theme

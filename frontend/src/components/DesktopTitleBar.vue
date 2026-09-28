@@ -7,7 +7,7 @@
 <!-- The macOS desktop window's title bar. The shell hides the native one, so
      this strip is the window's drag handle and the space the traffic lights sit
      in; it also carries what an installed web app's title bar does — the page's
-     title, and the profile the window belongs to. Everything clickable in it
+     title, the profile the window belongs to, and a window menu. Everything clickable in it
      needs `app-no-drag`, or the drag region swallows the click. -->
 <template>
   <div class="app-drag fixed top-0 inset-x-0 h-10 z-[210] flex items-center gap-3 pl-20 pr-3 select-none">
@@ -42,12 +42,15 @@
                      @switch="choose('switch', $event)" @remove="choose('remove', $event)" @add="choose('add')" />
       </div>
     </div>
+
+    <WindowMenu :server-url="activeProfile?.serverUrl || ''" :path="path" :version="version" :copy-text="copyText" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ProfileList from './ProfileList.vue'
+import WindowMenu from './WindowMenu.vue'
 import { duplicateNotice } from '../composables/useProfileDisplay'
 
 const props = defineProps({
@@ -57,6 +60,10 @@ const props = defineProps({
   /** Every desktop profile, the active one included. */
   profiles: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
+  /** For the window menu: the page's route, the app version and the clipboard. */
+  path: { type: String, default: '/' },
+  version: { type: String, default: '' },
+  copyText: { type: Function, default: async () => {} },
 })
 const emit = defineEmits(['switch', 'remove', 'add'])
 

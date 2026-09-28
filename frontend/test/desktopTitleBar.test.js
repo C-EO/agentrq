@@ -37,7 +37,7 @@ function mount(props = {}) {
   return { state, ...handlers }
 }
 
-const avatar = () => el.querySelector('button[aria-haspopup]')
+const avatar = () => el.querySelector('button[aria-haspopup="true"]')
 const card = () => el.querySelector('[data-profile-card]')
 const buttons = () => [...el.querySelectorAll('button')]
 const buttonNamed = (text) => buttons().find((b) => b.textContent.trim() === text)

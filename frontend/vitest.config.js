@@ -77,6 +77,7 @@ export default defineConfig({
         'src/composables/useDirectoryPicker.js',
         'src/composables/useProfileDisplay.js',
         'src/composables/useWindowTitle.js',
+        'src/composables/useWindowMenu.js',
         'src/composables/useAuthedFetch.js',
         'src/composables/useKeyboardShortcuts.js',
         'src/composables/useTaskFinder.js',

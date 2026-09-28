@@ -20,6 +20,7 @@
     <DesktopTitleBar v-if="isMacDesktop"
                      :title="windowTitle" :user="isLoginPage ? null : user"
                      :profiles="profiles" :disabled="switchingProfile"
+                     :path="route.fullPath" :version="appVersion" :copy-text="copyText"
                      @switch="switchToProfile" @remove="removeProfile" @add="addProfile" />
 
     <!-- PWA Update Banner. It is the progress bar while a new version
@@ -365,7 +366,8 @@
               </div>
 
               <!-- Other profiles. Desktop only: each is a separate session, which
-                   a browser tab cannot give us. -->
+                   a browser tab cannot give us. Not on macOS, where the title
+                   bar's profile card switches them instead. -->
               <ProfileList v-if="showProfiles" class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1"
                            :profiles="profiles" :disabled="switchingProfile"
                            @switch="switchToProfile" @remove="removeProfile" @add="addProfile" />
@@ -614,7 +616,7 @@ const profiles = ref([])
 // session, so it is never a single click.
 const profileToRemove = ref(null)
 const switchingProfile = ref(false)
-const showProfiles = computed(() => platformStore.isDesktop && profiles.value.length > 0)
+const showProfiles = computed(() => platformStore.isDesktop && !platformStore.isMacDesktop && profiles.value.length > 0)
 
 /** Whether this build has to draw its own window chrome. See style.css. */
 const isMacDesktop = computed(() => platformStore.isMacDesktop)
