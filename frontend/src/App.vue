@@ -460,7 +460,9 @@
              about to get. useLaunchTerminalSize.js reads it before a launch
              navigates to the terminal that has not been created yet. -->
         <div data-terminal-launch-area class="px-4 py-6 md:px-8 md:py-8 h-full flex flex-col">
-          <router-view class="grow flex flex-col min-h-0 min-w-0" />
+          <router-view v-slot="{ Component, route: page }">
+            <component :is="Component" :key="pageKey(page)" class="grow flex flex-col min-h-0 min-w-0" />
+          </router-view>
         </div>
       </div>
     </main>
@@ -548,6 +550,7 @@ import {
   useShortcuts,
   usesCommandKey,
 } from './composables/useKeyboardShortcuts'
+import { pageKey } from './pageKey'
 import { useExtensionPages } from './composables/useExtensionPages'
 import { useExtensionShortcuts } from './composables/useExtensionShortcuts'
 import ExtensionViewPanel from './components/ExtensionViewPanel.vue'

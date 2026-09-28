@@ -22,6 +22,9 @@ import App from './App.vue'
 import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 
+// `meta.remount` marks a page that reads its params once, in setup. Vue Router
+// reuses the mounted page when only the params change, so without a fresh
+// instance /events/a → /events/b keeps drawing a — see `pageKey`.
 export const routes = [
   { path: '/', component: () => import('./views/WorkspaceView.vue') },
   // Ranked above /workspaces/:id by the router, since a static segment wins.
@@ -47,14 +50,14 @@ export const routes = [
       { path: 'tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
     ]
   },
-  { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
-  { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
+  { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue'), meta: { remount: true } },
+  { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue'), meta: { remount: true } },
 
   // Every workspace's tasks as one board: the workspace board, with no workspace.
   { path: '/kanban', component: () => import('./views/KanbanView.vue') },
 
   { path: '/events', component: () => import('./views/EventsView.vue') },
-  { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
+  { path: '/events/:id', component: () => import('./views/EventDetailView.vue'), meta: { remount: true } },
 
   // Desktop-only in practice — the view renders nothing without the bridge, and
   // the sidebar entry is hidden in the browser. The route lives here all the
@@ -67,15 +70,15 @@ export const routes = [
   // Machines belong to the account rather than to a workspace, which is why
   // these sit beside /events rather than under /workspaces/:id.
   { path: '/machines', component: () => import('./views/MachinesView.vue') },
-  { path: '/machines/:id', component: () => import('./views/MachineDetailView.vue') },
+  { path: '/machines/:id', component: () => import('./views/MachineDetailView.vue'), meta: { remount: true } },
 
   // A session's terminal. Addressed by session rather than by machine: a
   // session is what a person is watching, and it outlives the page they
   // reached it from.
-  { path: '/sessions/:id', component: () => import('./views/SessionTerminalView.vue') },
+  { path: '/sessions/:id', component: () => import('./views/SessionTerminalView.vue'), meta: { remount: true } },
 
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
-  { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },
+  { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue'), meta: { remount: true } },
 
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]

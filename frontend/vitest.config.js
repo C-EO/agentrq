@@ -38,6 +38,7 @@ export default defineConfig({
       provider: 'v8',
       include: [
         'src/app.js',
+        'src/pageKey.js',
         'src/useEventBus.js',
         'src/stores/platformStore.js',
         'src/stores/workspaceStore.js',
