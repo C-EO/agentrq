@@ -227,6 +227,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDSiteShare
 	case entity.ActionSiteUnshare:
 		action = model.ActionIDSiteUnshare
+	case entity.ActionWorkspaceForkCreate:
+		action = model.ActionIDWorkspaceForkCreate
+	case entity.ActionWorkspaceForkMerge:
+		action = model.ActionIDWorkspaceForkMerge
 	default:
 		return
 	}

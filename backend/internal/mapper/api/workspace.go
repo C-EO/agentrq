@@ -6,6 +6,8 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
+	"unicode/utf8"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -169,6 +171,14 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		SelfLearningLoopNote:  p.SelfLearningLoopNote,
 		InputSendDelaySeconds: p.InputSendDelaySeconds,
 		WorkingDirectory:      p.WorkingDirectory,
+		ForkCount:             p.ForkCount,
+		UnfinishedTasks:       p.UnfinishedTasks,
+	}
+	if p.ForkOfID != 0 {
+		v.ForkOfID = monoflake.ID(p.ForkOfID).String()
+	}
+	if p.ForkOf != nil {
+		v.ForkOf = &view.WorkspaceRef{ID: monoflake.ID(p.ForkOf.ID).String(), Name: p.ForkOf.Name}
 	}
 	if p.Slack != nil {
 		v.Slack = &view.SlackConfig{
@@ -294,4 +304,44 @@ func fromEntityAgentClientToView(c *entity.AgentClient) *view.AgentClient {
 		return nil
 	}
 	return &view.AgentClient{Name: c.Name, Title: c.Title, Version: c.Version}
+}
+
+// FromHTTPRequestToForkWorkspaceRequestEntity reads a fork request; the body
+// is optional, and so is the name in it.
+func FromHTTPRequestToForkWorkspaceRequestEntity(c *fiber.Ctx) *entity.ForkWorkspaceRequest {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	var payload view.ForkWorkspaceRequest
+	if body := c.BodyRaw(); len(body) > 0 {
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil
+		}
+	}
+	name := strings.TrimSpace(payload.Name)
+	if utf8.RuneCountInString(name) > 128 {
+		return nil
+	}
+	return &entity.ForkWorkspaceRequest{WorkspaceID: id, Name: name}
+}
+
+func FromForkWorkspaceResponseEntityToHTTPResponse(rs *entity.ForkWorkspaceResponse, mcpURL string) []byte {
+	payload, _ := json.Marshal(view.CreateWorkspaceResponse{
+		Workspace: fromEntityWorkspaceToView(rs.Workspace, mcpURL),
+	})
+	return payload
+}
+
+func FromHTTPRequestToMergeForkRequestEntity(c *fiber.Ctx) *entity.MergeForkRequest {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	return &entity.MergeForkRequest{WorkspaceID: id}
+}
+
+func FromMergeForkResponseEntityToHTTPResponse(rs *entity.MergeForkResponse) []byte {
+	payload, _ := json.Marshal(view.MergeForkResponse{ParentID: rs.ParentID, MovedTasks: rs.MovedTasks})
+	return payload
 }

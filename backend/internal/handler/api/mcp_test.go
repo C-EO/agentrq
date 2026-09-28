@@ -64,6 +64,8 @@ func (f *fakeMCPManager) AgentConcurrency(workspaceID int64) *mcpctrl.AgentConcu
 // does: no error from the notifications, and a StopOutcome that did nothing —
 // which `Acted()` reads as false.
 type fakeWorkspaceServer struct {
+	autoAllowedCalls int
+
 	modelID    string
 	modelCalls int
 	modelErr   error
@@ -125,7 +127,7 @@ func (f *fakeWorkspaceServer) RespondToElicitation(requestID, action string, con
 
 func (f *fakeWorkspaceServer) UpdateArchivedAt(at *time.Time)                {}
 func (f *fakeWorkspaceServer) UpdateMetadata(name, description, icon string) {}
-func (f *fakeWorkspaceServer) UpdateAutoAllowedTools(tools []string)         {}
+func (f *fakeWorkspaceServer) UpdateAutoAllowedTools(tools []string)         { f.autoAllowedCalls++ }
 
 // The adapter's one job, and the reason it is written out rather than promoted.
 //

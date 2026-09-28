@@ -6,6 +6,7 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -46,6 +47,20 @@ type (
 		InputSendDelaySeconds int
 		WorkingDirectory      string
 		Slack                 *SlackConfig
+		// ForkOfID is the parent of a workspace fork, zero on any other
+		// workspace. ForkOf, ForkCount and UnfinishedTasks are read for the
+		// interface, not stored: the parent's name, how many forks a parent
+		// has, and how many of a fork's tasks still keep it from merging.
+		ForkOfID        int64
+		ForkOf          *WorkspaceRef
+		ForkCount       int
+		UnfinishedTasks int
+	}
+
+	// WorkspaceRef names another workspace without carrying all of it.
+	WorkspaceRef struct {
+		ID   int64
+		Name string
 	}
 
 	// SlackConfig holds the Slack channel linked to a workspace.
@@ -186,6 +201,33 @@ type (
 
 	UpdateWorkspaceResponse struct {
 		Workspace Workspace
+		// ForkIDs are the forks the update's inherited settings were written
+		// to, so the caller can refresh their running servers too.
+		ForkIDs []int64
+	}
+
+	ForkWorkspaceRequest struct {
+		UserID      string
+		WorkspaceID int64
+		// Name is optional; blank means "<parent> fork".
+		Name string
+	}
+
+	ForkWorkspaceResponse struct {
+		Workspace Workspace
+	}
+
+	MergeForkRequest struct {
+		UserID      string
+		WorkspaceID int64
+	}
+
+	MergeForkResponse struct {
+		ParentID   string
+		MovedTasks int
+		// Tasks are the moved tasks as the parent now has them, for the
+		// interface's live updates.
+		Tasks []Task
 	}
 
 	UpdateWorkspaceAutoAllowedToolsRequest struct {
@@ -1437,6 +1479,11 @@ const (
 	// Backend-observed, on the browser socket.
 	ActionSiteShare   Action = 78
 	ActionSiteUnshare Action = 79
+	// A workspace fork made, and merged back into its parent. The fork is
+	// also counted as a workspace_create, so the workspace count stays true;
+	// the merge is recorded against the parent, which is what survives it.
+	ActionWorkspaceForkCreate Action = 80
+	ActionWorkspaceForkMerge  Action = 81
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1573,6 +1620,10 @@ func (a Action) String() string {
 		return "site_share"
 	case ActionSiteUnshare:
 		return "site_unshare"
+	case ActionWorkspaceForkCreate:
+		return "workspace_fork_create"
+	case ActionWorkspaceForkMerge:
+		return "workspace_fork_merge"
 	}
 	return "unknown"
 }
@@ -1919,3 +1970,39 @@ const (
 	PublicFileArtifacts = "artifacts"
 	PublicFileSkills    = "skills"
 )
+
+// Why a fork, or a merge, was refused. Each one reaches the caller wrapped in a
+// ForkError carrying the sentence to show, and the HTTP mapper answers with
+// that sentence rather than the generic message it gives unknown errors.
+var (
+	// ErrHasForks: a parent cannot be deleted or archived while it has forks,
+	// or they would be left pointing at nothing.
+	ErrHasForks = errors.New("workspace has forks")
+	// ErrForkOfFork: forks are one level deep, and the supervisor workspace
+	// is never forked.
+	ErrForkOfFork = errors.New("workspace cannot be forked")
+	// ErrForkUnfinished: a merge is refused while any of the fork's tasks
+	// is not finished.
+	ErrForkUnfinished = errors.New("fork has unfinished tasks")
+	// ErrForkNoDelete: merging is the only way out of a fork, so none of its
+	// tasks can be lost with it.
+	ErrForkNoDelete = errors.New("fork cannot be deleted")
+	// ErrForkInherited: a fork's settings are its parent's.
+	ErrForkInherited = errors.New("setting is inherited")
+	// ErrNotAFork: only a fork can be merged.
+	ErrNotAFork = errors.New("workspace is not a fork")
+)
+
+// ForkError is one of the Err* kinds above with the sentence a person sees.
+type ForkError struct {
+	Kind    error
+	Message string
+}
+
+func (e *ForkError) Error() string { return e.Message }
+func (e *ForkError) Unwrap() error { return e.Kind }
+
+// NewForkError wraps kind with the message to show for it.
+func NewForkError(kind error, message string) error {
+	return &ForkError{Kind: kind, Message: message}
+}

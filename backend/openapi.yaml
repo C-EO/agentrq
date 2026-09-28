@@ -344,6 +344,77 @@ paths:
                 properties:
                   status: { type: string, example: archived }
 
+  /workspaces/{id}/forks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Fork a workspace
+      description: |
+        Makes a workspace fork: a workspace of its own, with its own queue and
+        agent, that inherits the parent's settings and is merged back into it.
+        A fork of a fork, of the `supervisor` workspace or of an archived
+        workspace is refused.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 128
+                  description: Defaults to "<parent> fork".
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Invalid payload, or a workspace that cannot be forked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /workspaces/{id}/merge:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Merge a fork back into its parent
+      description: |
+        Moves every task of the fork, with its whole thread, into the parent
+        and removes the fork. Refused while any task in the fork is not
+        finished (completed or rejected); a scheduled task moves back with
+        its schedule.
+      responses:
+        '200':
+          description: Merged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  parentId: { type: string }
+                  movedTasks: { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A task in the fork is not finished
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: The workspace is not a fork
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /workspaces/{id}/unarchive:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2277,6 +2348,23 @@ components:
             agent. 0 disables the delay.
         workingDirectory: { type: string }
         slack: { $ref: '#/components/schemas/SlackConfig' }
+        forkOfId:
+          type: string
+          description: The parent, when this workspace is a fork.
+        forkOf:
+          type: object
+          description: The parent's name, on the list of workspaces.
+          properties:
+            id: { type: string }
+            name: { type: string }
+        forkCount:
+          type: integer
+          description: How many forks a parent has, on the list of workspaces.
+        unfinishedTasks:
+          type: integer
+          description: |
+            How many of a fork's tasks keep it from merging, on the list of
+            workspaces.
 
     AgentModels:
       type: object

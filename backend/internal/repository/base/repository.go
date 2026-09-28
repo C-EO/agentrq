@@ -32,6 +32,16 @@ type Repository interface {
 	// ArchiveWorkspace saves p, which carries its ArchivedAt, and deletes the
 	// triggers and workflow steps that create tasks in it, in one transaction.
 	ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+	// ListForks lists a parent's forks; CountForks counts them.
+	ListForks(ctx context.Context, parentID, userID int64) ([]model.Workspace, error)
+	CountForks(ctx context.Context, parentID, userID int64) (int64, error)
+	// CountUnfinishedTasks counts, per workspace, the tasks that would keep
+	// a fork from merging. Workspaces with none are absent from the map.
+	CountUnfinishedTasks(ctx context.Context, workspaceIDs []int64) (map[int64]int64, error)
+	// MergeForkIntoParent moves every task of a fork, with everything that
+	// follows a task, into its parent and deletes the fork, in one
+	// transaction. It refuses, moving nothing, while any task is unfinished.
+	MergeForkIntoParent(ctx context.Context, forkID, parentID int64) ([]int64, error)
 
 	// Task
 	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
@@ -254,11 +264,119 @@ func (r *repository) ListWorkspaces(ctx context.Context, userID int64, includeAr
 	return workspaces, err
 }
 
+// UpdateWorkspace saves p and, when p has forks, writes the settings they
+// inherit to every one of them in the same transaction, so a fork never runs
+// with settings its parent no longer has.
 func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
-	if err := r.conn(ctx).Save(&p).Error; err != nil {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&p).Error; err != nil {
+			return err
+		}
+		if p.ForkOfID != 0 {
+			return nil
+		}
+		return tx.Model(&model.Workspace{}).
+			Where("fork_of_id = ? AND user_id = ?", p.ID, p.UserID).
+			Updates(p.ForkSettings()).Error
+	})
+	if err != nil {
 		return model.Workspace{}, err
 	}
 	return p, nil
+}
+
+func (r *repository) ListForks(ctx context.Context, parentID, userID int64) ([]model.Workspace, error) {
+	var forks []model.Workspace
+	err := r.conn(ctx).Where("fork_of_id = ? AND user_id = ?", parentID, userID).
+		Order("created_at desc").Find(&forks).Error
+	return forks, err
+}
+
+func (r *repository) CountForks(ctx context.Context, parentID, userID int64) (int64, error) {
+	var n int64
+	err := r.conn(ctx).Model(&model.Workspace{}).
+		Where("fork_of_id = ? AND user_id = ?", parentID, userID).Count(&n).Error
+	return n, err
+}
+
+// forkFinishedStatuses are the statuses a merge takes back. A cron template
+// is not a piece of work, it is a schedule, so it goes back and keeps running.
+var forkFinishedStatuses = []string{"completed", "rejected", "cron"}
+
+func (r *repository) CountUnfinishedTasks(ctx context.Context, workspaceIDs []int64) (map[int64]int64, error) {
+	out := make(map[int64]int64)
+	if len(workspaceIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		WorkspaceID int64
+		N           int64
+	}
+	err := r.conn(ctx).Model(&model.Task{}).
+		Select("workspace_id, COUNT(*) AS n").
+		Where("workspace_id IN ? AND status NOT IN ?", workspaceIDs, forkFinishedStatuses).
+		Group("workspace_id").Scan(&rows).Error
+	for _, row := range rows {
+		out[row.WorkspaceID] = row.N
+	}
+	return out, err
+}
+
+func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID int64) ([]int64, error) {
+	var moved []int64
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		var fork model.Workspace
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND fork_of_id = ?", forkID, parentID).
+			Take(&fork).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		// Move the finished tasks, then refuse if anything is left. Checking
+		// first and moving after would take along a task reopened, or
+		// created by the fork's agent, in between.
+		if err := tx.Model(&model.Task{}).
+			Where("workspace_id = ? AND status IN ?", forkID, forkFinishedStatuses).
+			Order("id").Pluck("id", &moved).Error; err != nil {
+			return err
+		}
+		if len(moved) > 0 {
+			if err := tx.Model(&model.Task{}).Where("id IN ?", moved).
+				Update("workspace_id", parentID).Error; err != nil {
+				return err
+			}
+		}
+		var left int64
+		if err := tx.Model(&model.Task{}).Where("workspace_id = ?", forkID).Count(&left).Error; err != nil {
+			return err
+		}
+		if left > 0 {
+			return entity.NewForkError(entity.ErrForkUnfinished, unfinishedMessage(left))
+		}
+
+		// The columns a task move keeps in step (MoveTask, UpdateTask).
+		for _, m := range []any{&model.ToolCall{}, &model.SlackTaskThread{}, &model.TaskStateTransition{}, &model.TaskLatency{}} {
+			if err := tx.Model(m).Where("workspace_id = ?", forkID).
+				Update("workspace_id", parentID).Error; err != nil {
+				return err
+			}
+		}
+		return deleteWorkspaceRows(tx, forkID, fork.UserID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return moved, nil
+}
+
+func unfinishedMessage(n int64) string {
+	if n == 1 {
+		return "1 task in this fork is not finished"
+	}
+	return fmt.Sprintf("%d tasks in this fork are not finished", n)
 }
 
 func (r *repository) ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
@@ -286,57 +404,62 @@ func deleteEventRouting(tx *gorm.DB, workspaceID int64) error {
 
 func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Delete everything that references any task in this workspace.
-		//    Tool calls matter as much as messages here: they carry the same
-		//    foreign key to tasks.id, so leaving them would refuse the delete
-		//    in step 2 exactly as it did for a single task.
-		taskIDs := tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)
-		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.Message{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.ToolCall{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.TaskStateTransition{}).Error; err != nil {
-			return err
-		}
-		// Skills go with their workspace, and so does every share of them and
-		// every share into it. The files' content is purged by the caller.
-		skillIDs := tx.Model(&model.Skill{}).Select("id").Where("workspace_id = ?", id)
-		if err := tx.Where("skill_id IN (?) OR target_workspace_id = ?", skillIDs, id).Delete(&model.SkillShare{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("skill_id IN (?)", skillIDs).Delete(&model.SkillFile{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("workspace_id = ?", id).Delete(&model.Skill{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
-			return err
-		}
-		if err := deleteEventRouting(tx, id); err != nil {
-			return err
-		}
-
-		// 2. Delete all tasks in this workspace
-		if err := tx.Where("workspace_id = ?", id).Delete(&model.Task{}).Error; err != nil {
-			return err
-		}
-
-		// 3. Delete the workspace itself
-		res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Workspace{})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		return nil
+		return deleteWorkspaceRows(tx, id, userID)
 	})
+}
+
+// deleteWorkspaceRows deletes a workspace and everything in it, inside tx.
+func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
+	// 1. Delete everything that references any task in this workspace.
+	//    Tool calls matter as much as messages here: they carry the same
+	//    foreign key to tasks.id, so leaving them would refuse the delete
+	//    in step 2 exactly as it did for a single task.
+	taskIDs := tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)
+	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.Message{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.ToolCall{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.TaskStateTransition{}).Error; err != nil {
+		return err
+	}
+	// Skills go with their workspace, and so does every share of them and
+	// every share into it. The files' content is purged by the caller.
+	skillIDs := tx.Model(&model.Skill{}).Select("id").Where("workspace_id = ?", id)
+	if err := tx.Where("skill_id IN (?) OR target_workspace_id = ?", skillIDs, id).Delete(&model.SkillShare{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("skill_id IN (?)", skillIDs).Delete(&model.SkillFile{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.Skill{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {
+		return err
+	}
+	if err := deleteEventRouting(tx, id); err != nil {
+		return err
+	}
+
+	// 2. Delete all tasks in this workspace
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.Task{}).Error; err != nil {
+		return err
+	}
+
+	// 3. Delete the workspace itself
+	res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Workspace{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
