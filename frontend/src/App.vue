@@ -321,7 +321,7 @@
         </div>
 
         <!-- Sidebar Footer -->
-        <div class="mt-auto p-4">
+        <div class="mt-auto" :class="(isCollapsed && !isMobileMenuOpen) ? 'px-2 py-4' : 'p-4'">
 
           <!-- App Version & Docs -->
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-3 flex items-center justify-between gap-2">
@@ -403,10 +403,14 @@
 
             <!-- User Profile Button -->
             <button @click="isUserMenuOpen = !isUserMenuOpen"
-                    class="flex items-center gap-3 w-full px-2 py-1.5 rounded-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all duration-200 group outline-none focus-visible:ring-2 focus-visible:ring-gray-200 dark:focus-visible:ring-zinc-700"
-                    :class="(isCollapsed && !isMobileMenuOpen) ? 'justify-center mx-0' : ''">
-              <div class="relative shrink-0">
-                <div class="w-9 h-9 rounded-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shadow-sm flex items-center justify-center text-gray-700 dark:text-zinc-200 font-bold text-sm overflow-hidden">
+                    class="flex items-center gap-3 w-full py-1.5 rounded-sm transition-all duration-200 group outline-none"
+                    :class="(isCollapsed && !isMobileMenuOpen) ? 'justify-center' : 'px-2 hover:bg-gray-100 dark:hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-gray-200 dark:focus-visible:ring-zinc-700'">
+              <!-- Collapsed, a small avatar in a round hover background wider
+                   than the sidebar's column, which is only 32px. -->
+              <div class="relative shrink-0"
+                   :class="(isCollapsed && !isMobileMenuOpen) ? 'size-10 rounded-full flex items-center justify-center transition-colors group-hover:bg-gray-200 dark:group-hover:bg-zinc-800 group-focus-visible:ring-2 group-focus-visible:ring-gray-300 dark:group-focus-visible:ring-zinc-600' : ''">
+                <div class="rounded-full bg-white dark:bg-zinc-900 shadow-sm flex items-center justify-center text-gray-700 dark:text-zinc-200 font-bold overflow-hidden"
+                     :class="(isCollapsed && !isMobileMenuOpen) ? 'w-7 h-7 text-[11px]' : 'w-9 h-9 text-sm border border-gray-200 dark:border-zinc-700'">
                   <img v-if="user?.picture" :src="user.picture" class="w-full h-full object-cover" alt="Profile" />
                   <span v-else class="">{{ user?.name?.charAt(0) || user?.email?.charAt(0) || '?' }}</span>
                 </div>

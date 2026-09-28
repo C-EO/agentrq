@@ -17,7 +17,7 @@
       <button type="button" @click="open = !open"
               :aria-expanded="open" aria-haspopup="true"
               :title="accountName"
-              class="w-7 h-7 rounded-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[11px] font-bold text-gray-700 dark:text-zinc-200 overflow-hidden hover:ring-2 hover:ring-gray-300 dark:hover:ring-zinc-700 transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
+              class="w-7 h-7 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center text-[11px] font-bold text-gray-700 dark:text-zinc-200 overflow-hidden hover:ring-2 hover:ring-gray-300 dark:hover:ring-zinc-700 transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
         <img v-if="user.picture" :src="user.picture" class="w-full h-full object-cover" alt="Profile" />
         <span v-else>{{ initial }}</span>
       </button>
