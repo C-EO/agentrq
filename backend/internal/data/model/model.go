@@ -708,3 +708,13 @@ func (w Workspace) ForkSettings() map[string]any {
 		"input_send_delay_seconds": w.InputSendDelaySeconds,
 	}
 }
+
+// ContentID is the workspace whose memory, skills, site shares and attachment
+// files this one uses: its parent for a fork, itself otherwise. A fork keeps
+// none of its own, so a task moved in or merged back never moves a file.
+func (w Workspace) ContentID() int64 {
+	if w.ForkOfID != 0 {
+		return w.ForkOfID
+	}
+	return w.ID
+}

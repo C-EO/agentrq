@@ -106,6 +106,7 @@ type PermissionRequestParams struct {
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
 type WorkspaceServer struct {
 	workspaceID           int64
+	contentWorkspaceID    int64
 	userID                string
 	mcpServer             *mcp.Server
 	streamServer          *mcp.StreamableHTTPHandler
@@ -397,8 +398,18 @@ func validateElicitEnumOptions(raw any) error {
 	return nil
 }
 
+// contentID is the workspace whose site shares and attachment files this one
+// uses: its parent, for a fork (model.Workspace.ContentID).
+func (ps *WorkspaceServer) contentID() int64 {
+	if ps.contentWorkspaceID != 0 {
+		return ps.contentWorkspaceID
+	}
+	return ps.workspaceID
+}
+
 func NewWorkspaceServer(
 	workspaceID int64,
+	contentWorkspaceID int64,
 	userID string,
 	baseURL string,
 	createTask CreateTaskFunc,
@@ -432,6 +443,7 @@ func NewWorkspaceServer(
 	zlog.Info().Int64("workspace_id", workspaceID).Msg("new workspace server created")
 	ps := &WorkspaceServer{
 		workspaceID:            workspaceID,
+		contentWorkspaceID:     contentWorkspaceID,
 		userID:                 userID,
 		done:                   make(chan struct{}),
 		createTask:             createTask,
@@ -1385,7 +1397,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 
 	var attachmentsJSON string
 	if atts := toEntityAttachments(params.Attachments); len(atts) > 0 {
-		crud.SaveAttachments(ps.storage, ps.idgen, ps.workspaceID, taskID, atts)
+		crud.SaveAttachments(ps.storage, ps.idgen, ps.contentID(), taskID, atts)
 		if b, err := json.Marshal(atts); err == nil {
 			attachmentsJSON = string(b)
 		}
@@ -1626,7 +1638,7 @@ func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Cal
 	if format == AttachmentFormatURL && a.URL != "" {
 		out.URL = a.URL
 	} else {
-		data, err := storage.LoadAttachment(ps.storage, ps.workspaceID, task.ID, a.ID)
+		data, err := storage.LoadAttachment(ps.storage, ps.contentID(), task.ID, a.ID)
 		if err != nil {
 			return &mcp.CallToolResult{
 				IsError: true,

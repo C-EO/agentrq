@@ -93,7 +93,7 @@ func (ps *WorkspaceServer) ownerID() int64 { return monoflake.IDFromBase62(ps.us
 
 func (ps *WorkspaceServer) handleListSiteTools(ctx context.Context, req *mcp.CallToolRequest, _ ListSiteToolsParams) (*mcp.CallToolResult, any, error) {
 	ps.emitTelemetry(ctx, ActionMCPToolCall, "listSiteTools", clientIdentityFromRequest(req))
-	shares, err := ps.siteTools.List(ctx, ps.workspaceID, ps.ownerID())
+	shares, err := ps.siteTools.List(ctx, ps.contentID(), ps.ownerID())
 	if err != nil {
 		return siteToolError("failed to list shared websites: %v", err), nil, nil
 	}
@@ -125,7 +125,7 @@ func (ps *WorkspaceServer) handleGetSiteToolDefinition(ctx context.Context, req 
 // findSiteTool looks up a shared site's tool, or says why it cannot, naming
 // what there is instead.
 func (ps *WorkspaceServer) findSiteTool(ctx context.Context, userID int64, site, name string) (SiteShareView, sitetools.Tool, *mcp.CallToolResult) {
-	share, found, err := ps.siteTools.Get(ctx, ps.workspaceID, userID, site)
+	share, found, err := ps.siteTools.Get(ctx, ps.contentID(), userID, site)
 	if err != nil {
 		return share, sitetools.Tool{}, siteToolError("failed to look up %s: %v", site, err)
 	}
@@ -200,7 +200,7 @@ func (ps *WorkspaceServer) handleCallSiteTool(ctx context.Context, req *mcp.Call
 
 // sharedSites names the workspace's shared sites for an error, or "none".
 func (ps *WorkspaceServer) sharedSites(ctx context.Context, userID int64) string {
-	shares, _ := ps.siteTools.List(ctx, ps.workspaceID, userID)
+	shares, _ := ps.siteTools.List(ctx, ps.contentID(), userID)
 	sites := make([]string, len(shares))
 	for i, s := range shares {
 		sites[i] = s.Site
@@ -268,7 +268,7 @@ func (ps *WorkspaceServer) approveSiteCall(ctx context.Context, taskID, userID i
 	}
 	switch resp.Content["decision"] {
 	case "always":
-		if err := ps.siteTools.AllowAlways(ctx, ps.workspaceID, userID, site, tool); err != nil {
+		if err := ps.siteTools.AllowAlways(ctx, ps.contentID(), userID, site, tool); err != nil {
 			return false, fmt.Errorf("failed to remember the approval: %v", err)
 		}
 		return true, nil

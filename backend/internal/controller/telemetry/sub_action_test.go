@@ -74,7 +74,7 @@ func TestSubActionIDCoversEveryRegisteredToolResourceAndPrompt(t *testing.T) {
 	// Nil-heavy on purpose: listing tools/resources/prompts never calls a
 	// single handler, so nothing here is ever invoked.
 	workspaceSrv := mcpctrl.NewWorkspaceServer(
-		1, "1", "https://agentrq.example",
+		1, 0, "1", "https://agentrq.example",
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, "", "", "", nil, nil, nil, nil,
 	)

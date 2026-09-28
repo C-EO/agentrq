@@ -27,16 +27,19 @@ type fakeSiteTools struct {
 	callErr  error
 	text     string
 
-	allowed []string
-	calls   []string
-	args    json.RawMessage
+	allowed    []string
+	calls      []string
+	args       json.RawMessage
+	workspaces []int64 // the workspace each List, Get and AllowAlways asked for
 }
 
-func (f *fakeSiteTools) List(context.Context, int64, int64) ([]SiteShareView, error) {
+func (f *fakeSiteTools) List(_ context.Context, workspaceID, _ int64) ([]SiteShareView, error) {
+	f.workspaces = append(f.workspaces, workspaceID)
 	return f.shares, f.listErr
 }
 
-func (f *fakeSiteTools) Get(_ context.Context, _, _ int64, origin string) (SiteShareView, bool, error) {
+func (f *fakeSiteTools) Get(_ context.Context, workspaceID, _ int64, origin string) (SiteShareView, bool, error) {
+	f.workspaces = append(f.workspaces, workspaceID)
 	if f.getErr != nil {
 		return SiteShareView{}, false, f.getErr
 	}
@@ -48,7 +51,8 @@ func (f *fakeSiteTools) Get(_ context.Context, _, _ int64, origin string) (SiteS
 	return SiteShareView{}, false, nil
 }
 
-func (f *fakeSiteTools) AllowAlways(_ context.Context, _, _ int64, origin, tool string) error {
+func (f *fakeSiteTools) AllowAlways(_ context.Context, workspaceID, _ int64, origin, tool string) error {
+	f.workspaces = append(f.workspaces, workspaceID)
 	f.allowed = append(f.allowed, origin+" "+tool)
 	return f.allowErr
 }

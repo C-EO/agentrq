@@ -27,6 +27,7 @@ func storedMemory(name, content string) model.Memory {
 func TestListMemories_ReportsSizeWithoutTheContent(t *testing.T) {
 	e := newTestController(t)
 	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+	expectOwnWorkspace(e, 1)
 	e.repo.EXPECT().ListMemoriesByWorkspace(gomock.Any(), testUserID, int64(1)).Return([]model.Memory{
 		storedMemory("MEMORY.md", "# Index"),
 		storedMemory("deploys.md", "how we ship"),
@@ -57,6 +58,7 @@ func TestListMemories_ReportsSizeWithoutTheContent(t *testing.T) {
 func TestGetMemory_ReturnsTheContent(t *testing.T) {
 	e := newTestController(t)
 	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+	expectOwnWorkspace(e, 1)
 	e.repo.EXPECT().GetMemory(gomock.Any(), testUserID, int64(1), "MEMORY.md").Return(storedMemory("MEMORY.md", "# Index"), nil)
 
 	rs, err := e.controller.GetMemory(context.Background(), entity.GetMemoryRequest{
@@ -140,6 +142,7 @@ func TestMemories_RejectIncompleteRequests(t *testing.T) {
 			e := newTestController(t)
 			if tc.name == "get with no name" {
 				e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+				expectOwnWorkspace(e, 1)
 			}
 
 			if err := tc.call(e); err == nil {
@@ -153,6 +156,7 @@ func TestMemories_ReportStorageFailures(t *testing.T) {
 	t.Run("list", func(t *testing.T) {
 		e := newTestController(t)
 		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+		expectOwnWorkspace(e, 1)
 		e.repo.EXPECT().ListMemoriesByWorkspace(gomock.Any(), testUserID, int64(1)).Return(nil, errors.New("db down"))
 
 		if _, err := e.controller.ListMemories(context.Background(), entity.ListMemoriesRequest{WorkspaceID: 1, UserID: testUserIDStr}); err == nil {
@@ -163,6 +167,7 @@ func TestMemories_ReportStorageFailures(t *testing.T) {
 	t.Run("get", func(t *testing.T) {
 		e := newTestController(t)
 		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+		expectOwnWorkspace(e, 1)
 		e.repo.EXPECT().GetMemory(gomock.Any(), testUserID, int64(1), "gone.md").Return(model.Memory{}, base.ErrNotFound)
 
 		_, err := e.controller.GetMemory(context.Background(), entity.GetMemoryRequest{WorkspaceID: 1, UserID: testUserIDStr, Name: "gone.md"})
