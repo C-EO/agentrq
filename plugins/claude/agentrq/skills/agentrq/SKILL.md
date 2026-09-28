@@ -24,6 +24,8 @@ You are a **supervisor agent** orchestrating work across multiple specialized wo
 | `getWorkspace` | Get workspace details by ID |
 | `updateWorkspace` | Update workspace name, description, notification settings, or self-learning notes |
 | `getWorkspaceStats` | Get workspace statistics for a given time range (`7d` or `30d`) |
+| `forkWorkspace` | Fork a workspace: its own queue and agent, sharing the parent's settings, memory and skills. Move tasks into it for a second agent to work them |
+| `mergeFork` | Merge a fork back once its tasks are completed or rejected: its agent is stopped and every task moves to the parent |
 
 ### Task Management
 | Tool | Description |

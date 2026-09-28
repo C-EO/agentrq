@@ -43,8 +43,11 @@ type (
 		// because revoking a machine has to close its socket, and only the
 		// process holding it can do that — the database change alone leaves a
 		// connected daemon running until it next tries to authenticate.
-		MachineRegistry  *machinectrl.Registry
-		EventBus         *eventbus.Bus
+		MachineRegistry *machinectrl.Registry
+		EventBus        *eventbus.Bus
+		// ForkMerger merges a fork back, stopping its agent first; CoreMCP
+		// shares it.
+		ForkMerger       forkMerger
 		BaseURL          string
 		MCPBaseURL       string
 		Domain           string
@@ -61,6 +64,11 @@ type (
 
 	Handler interface{}
 
+	// forkMerger is forkmerge.Merger, the one merge REST and CoreMCP share.
+	forkMerger interface {
+		Merge(ctx context.Context, rq entity.MergeForkRequest) (*entity.MergeForkResponse, error)
+	}
+
 	handler struct {
 		crud             crud.Controller
 		auth             auth.Service
@@ -70,6 +78,7 @@ type (
 		mcpManager       mcpManager
 		machineRegistry  *machinectrl.Registry
 		bus              *eventbus.Bus
+		forks            forkMerger
 		baseURL          string
 		mcpBaseURL       string
 		domain           string
@@ -111,6 +120,7 @@ func New(p Params) (Handler, error) {
 		mcpManager:       liveMCPManager{p.MCPManager},
 		machineRegistry:  p.MachineRegistry,
 		bus:              p.EventBus,
+		forks:            p.ForkMerger,
 		baseURL:          p.BaseURL,
 		mcpBaseURL:       p.MCPBaseURL,
 		domain:           p.Domain,
@@ -976,86 +986,15 @@ func (h *handler) mergeFork() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 
-		// Refused merges first, so one that would fail leaves the agent be;
-		// then the agent, so it is gone before the workspace it works for.
-		err := h.crud.CheckForkMerge(ctx, *rq)
-		if err == nil {
-			err = h.stopForkAgent(ctx, *rq)
-		}
-		var rs *entity.MergeForkResponse
-		if err == nil {
-			rs, err = h.crud.MergeFork(ctx, *rq)
-		}
+		rs, err := h.forks.Merge(ctx, *rq)
 		if err != nil {
 			zlog.Error().Err(err).Msg("Failed to merge fork")
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
 		}
-		h.mcpManager.Remove(rq.WorkspaceID)
-
-		// Each task leaves the fork and appears in the parent, as a move does.
-		parentID := monoflake.IDFromBase62(rs.ParentID).Int64()
-		for _, t := range rs.Tasks {
-			h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
-				Type:    "task.deleted",
-				Payload: map[string]string{"id": monoflake.ID(t.ID).String()},
-			})
-			h.bus.Publish(parentID, rq.UserID, eventbus.Event{
-				Type:    "task.created",
-				Payload: mapper.FromEntityTaskToView(t),
-			})
-		}
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromMergeForkResponseEntityToHTTPResponse(rs))
-	}
-}
-
-// How long a merge waits for the daemon to report the fork's agent dead, and
-// how often it looks.
-var (
-	_forkAgentStopWait = 10 * time.Second
-	_forkAgentStopPoll = 250 * time.Millisecond
-)
-
-// stopForkAgent kills the fork's running agent, if it has one, and waits for
-// the daemon to say it is dead. Merging with it alive would leave it working,
-// with its token on disk, for a workspace that no longer exists.
-func (h *handler) stopForkAgent(ctx context.Context, rq entity.MergeForkRequest) error {
-	s, err := h.crud.ActiveSessionForWorkspace(ctx, entity.ActiveSessionRequest{
-		UserID:      rq.UserID,
-		WorkspaceID: monoflake.ID(rq.WorkspaceID).String(),
-	})
-	if err != nil || s == nil {
-		return err
-	}
-	machine := "its machine"
-	if m, err := h.crud.GetMachine(ctx, entity.GetMachineRequest{UserID: rq.UserID, MachineID: s.MachineID}); err == nil && m.Machine.Name != "" {
-		machine = m.Machine.Name
-	}
-	if err := h.stopSession(ctx, monoflake.IDFromBase62(s.MachineID).Int64(), s.ID); err != nil {
-		return entity.NewForkError(entity.ErrForkAgentRunning, "the fork's agent is on "+machine+
-			", which is offline — stop it from the machine page or bring the machine back")
-	}
-
-	deadline := time.Now().Add(_forkAgentStopWait)
-	for {
-		rs, err := h.crud.GetSession(ctx, entity.GetSessionRequest{UserID: rq.UserID, SessionID: s.ID})
-		if err != nil {
-			return err
-		}
-		if machinectrl.SessionTerminal(rs.Session.Status) {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return entity.NewForkError(entity.ErrForkAgentRunning, "the fork's agent on "+machine+
-				" has not stopped yet — try the merge again in a moment")
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(_forkAgentStopPoll):
-		}
 	}
 }
 

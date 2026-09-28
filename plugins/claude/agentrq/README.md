@@ -38,6 +38,8 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | --- | --- |
 | `listWorkspaces` | List all workspaces for the authenticated user |
 | `createWorkspace` | Create a new workspace |
+| `forkWorkspace` | Fork a workspace, for a second agent to work some of its tasks |
+| `mergeFork` | Merge a fork back: stop its agent and move its tasks to the parent |
 | `getWorkspace` | Get a workspace by ID |
 | `updateWorkspace` | Update a workspace |
 | `getWorkspaceStats` | Get statistics for a workspace |

@@ -692,6 +692,9 @@ const (
 	SubActionIDMCPListSiteTools
 	SubActionIDMCPCallSiteTool
 	SubActionIDMCPGetSiteToolDefinition
+	// CoreMCP's workspace forks.
+	SubActionIDMCPForkWorkspace
+	SubActionIDMCPMergeFork
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

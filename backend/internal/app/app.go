@@ -23,6 +23,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
+	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
 	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
@@ -815,14 +816,18 @@ func New(cfg Config) (*App, error) {
 		Mux:       mux,
 	})
 
+	// One fork merge for REST and CoreMCP, so both stop the fork's agent first.
+	forkMerger := &forkmerge.Merger{Crud: crudCtrl, Machines: machineRegistry, Servers: mcpManager, Bus: bus}
+
 	// CoreMCP Handler
 	if _, err := handlercoremcp.New(handlercoremcp.Params{
-		Crud:     crudCtrl,
-		TokenSvc: tokenSvc,
-		BaseURL:  cfg.App.BaseURL,
-		Domain:   cfg.App.Domain,
-		Mux:      mux,
-		PubSub:   pubsubSvc,
+		Crud:       crudCtrl,
+		ForkMerger: forkMerger,
+		TokenSvc:   tokenSvc,
+		BaseURL:    cfg.App.BaseURL,
+		Domain:     cfg.App.Domain,
+		Mux:        mux,
+		PubSub:     pubsubSvc,
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}
@@ -848,6 +853,7 @@ func New(cfg Config) (*App, error) {
 		MCPManager:       mcpManager,
 		MachineRegistry:  machineRegistry,
 		EventBus:         bus,
+		ForkMerger:       forkMerger,
 		BaseURL:          cfg.App.BaseURL,
 		MCPBaseURL:       cfg.App.BaseURL,
 		Domain:           cfg.App.Domain,

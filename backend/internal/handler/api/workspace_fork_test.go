@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/gofiber/fiber/v2"
@@ -81,7 +82,8 @@ func (m *mockCrudWorkspaceFork) UpdateWorkspace(_ context.Context, req entity.Up
 
 func forkApp(ctrl *mockCrudWorkspaceFork, mgr *fakeMCPManager, bus *eventbus.Bus) *fiber.App {
 	app := fiber.New()
-	h := &handler{crud: ctrl, mcpManager: mgr, bus: bus, router: app.Group("")}
+	forks := &forkmerge.Merger{Crud: ctrl, Servers: mgr, Bus: bus}
+	h := &handler{crud: ctrl, mcpManager: mgr, bus: bus, forks: forks, router: app.Group("")}
 	app.Use(func(c *fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
 		return c.Next()

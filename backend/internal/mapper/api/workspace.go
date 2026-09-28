@@ -319,16 +319,31 @@ func FromHTTPRequestToForkWorkspaceRequestEntity(c *fiber.Ctx) *entity.ForkWorks
 			return nil
 		}
 	}
-	name := strings.TrimSpace(payload.Name)
+	return FromMCPToForkWorkspaceRequestEntity(id, payload.Name)
+}
+
+// FromMCPToForkWorkspaceRequestEntity is a fork request from its two
+// arguments, or nil when the name is too long.
+func FromMCPToForkWorkspaceRequestEntity(workspaceID int64, name string) *entity.ForkWorkspaceRequest {
+	name = strings.TrimSpace(name)
 	if utf8.RuneCountInString(name) > 128 {
 		return nil
 	}
-	return &entity.ForkWorkspaceRequest{WorkspaceID: id, Name: name}
+	return &entity.ForkWorkspaceRequest{WorkspaceID: workspaceID, Name: name}
 }
 
 func FromForkWorkspaceResponseEntityToHTTPResponse(rs *entity.ForkWorkspaceResponse, mcpURL string) []byte {
 	payload, _ := json.Marshal(view.CreateWorkspaceResponse{
 		Workspace: fromEntityWorkspaceToView(rs.Workspace, mcpURL),
+	})
+	return payload
+}
+
+func FromForkWorkspaceResponseEntityToMCPResponse(rs *entity.ForkWorkspaceResponse, mcpURL string) []byte {
+	w := fromEntityWorkspaceToView(rs.Workspace, mcpURL)
+	w.Icon = ""
+	payload, _ := json.Marshal(view.CreateWorkspaceResponse{
+		Workspace: w,
 	})
 	return payload
 }

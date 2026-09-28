@@ -7,6 +7,7 @@ package coremcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -24,8 +25,15 @@ type WorkspaceServer struct {
 	server       *mcp.Server
 	streamServer *mcp.StreamableHTTPHandler
 	crud         crud.Controller
+	forks        ForkMerger
 	baseURL      string
 	pubsub       pubsub.Service
+}
+
+// ForkMerger is forkmerge.Merger: the merge REST runs too, so mergeFork stops
+// the fork's agent before its tasks move.
+type ForkMerger interface {
+	Merge(ctx context.Context, rq entity.MergeForkRequest) (*entity.MergeForkResponse, error)
 }
 
 // NewServer creates a single MCP server instance with tools that span all user-accessible endpoints.
@@ -167,6 +175,15 @@ type CreateWorkspaceParams struct {
 	Description          *string        `json:"description,omitempty"`
 	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
 	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
+}
+
+type ForkWorkspaceParams struct {
+	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace to fork (base62)"`
+	Name        string `json:"name,omitempty" jsonschema:"Name for the fork, at most 128 characters. Defaults to '<parent> fork'"`
+}
+
+type MergeForkParams struct {
+	WorkspaceID string `json:"workspaceId" jsonschema:"The fork to merge back (base62)"`
 }
 
 type GetWorkspaceParams struct {
@@ -314,6 +331,8 @@ type GetSkillParams struct {
 func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listWorkspaces", Description: "List all workspaces for the authenticated user", Annotations: mcphint.Read("List workspaces")}, s.handleListWorkspaces)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "createWorkspace", Description: "Create a new workspace", Annotations: mcphint.Write("Create a workspace")}, s.handleCreateWorkspace)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "forkWorkspace", Description: "Fork a workspace: a workspace of its own, with its own queue and agent, that shares the parent's settings, memory and skills and is merged back when its tasks are done. Move tasks into it to have a second agent work on them. A fork, the supervisor workspace and an archived workspace cannot be forked", Annotations: mcphint.Write("Fork a workspace")}, s.handleForkWorkspace)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "mergeFork", Description: "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the parent with its thread, and the fork is removed. Its folder on the machine is left. Refused while any task in the fork is not completed or rejected", Annotations: mcphint.Write("Merge a fork back")}, s.handleMergeFork)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspace", Description: "Get a workspace by ID", Annotations: mcphint.Read("Get a workspace")}, s.handleGetWorkspace)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateWorkspace", Description: "Update a workspace", Annotations: mcphint.Update("Update a workspace")}, s.handleUpdateWorkspace)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspaceStats", Description: "Get statistics for a workspace", Annotations: mcphint.Read("Workspace statistics")}, s.handleGetWorkspaceStats)
@@ -397,6 +416,35 @@ func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.Ca
 
 	b := apiMapper.FromCreateWorkspaceResponseEntityToMCPResponse(res, s.mcpURL(res.Workspace.ID))
 	return textResponse(string(b)), nil, nil
+}
+
+func (s *WorkspaceServer) handleForkWorkspace(ctx context.Context, req *mcp.CallToolRequest, args ForkWorkspaceParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "forkWorkspace", parseID(args.WorkspaceID))
+	rq := apiMapper.FromMCPToForkWorkspaceRequestEntity(parseID(args.WorkspaceID), args.Name)
+	if rq == nil {
+		return errorResponse(errors.New("the fork's name is longer than 128 characters")), nil, nil
+	}
+	rq.UserID = getUserID(ctx)
+	res, err := s.crud.ForkWorkspace(ctx, *rq)
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	b := apiMapper.FromForkWorkspaceResponseEntityToMCPResponse(res, s.mcpURL(res.Workspace.ID))
+	return textResponse(string(b)), nil, nil
+}
+
+func (s *WorkspaceServer) handleMergeFork(ctx context.Context, req *mcp.CallToolRequest, args MergeForkParams) (*mcp.CallToolResult, any, error) {
+	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "mergeFork", parseID(args.WorkspaceID))
+	res, err := s.forks.Merge(ctx, entity.MergeForkRequest{
+		UserID:      getUserID(ctx),
+		WorkspaceID: parseID(args.WorkspaceID),
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	return textResponse(string(apiMapper.FromMergeForkResponseEntityToHTTPResponse(res))), nil, nil
 }
 
 func (s *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, args GetWorkspaceParams) (*mcp.CallToolResult, any, error) {
