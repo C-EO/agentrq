@@ -460,3 +460,56 @@ func TestRemovingAForkIsRefusedWhenItsNamesAreNotAcceptable(t *testing.T) {
 		}
 	}
 }
+
+// A kill that arrives while the fork's folder is still being made finds the
+// session, and the agent is never started: the backend has been told it is
+// dead, and may already have merged the fork away.
+func TestAForkKilledWhileItsFolderIsMadeNeverStarts(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	made := t.TempDir()
+	preparing, release := make(chan struct{}), make(chan struct{})
+	s.PrepareDir = func(string, string, string) (string, bool, error) {
+		close(preparing)
+		<-release
+		return made, true, nil
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir()))
+		errc <- err
+	}()
+	<-preparing
+	if err := s.Kill(1); err != nil {
+		t.Fatalf("Kill while the folder is made: %v", err)
+	}
+	close(release)
+	if err := <-errc; !errors.Is(err, ErrStoppedWhileStarting) {
+		t.Fatalf("err = %v, want ErrStoppedWhileStarting", err)
+	}
+	if len(st.specs) != 0 {
+		t.Error("the agent was started after its kill")
+	}
+	if s.Count() != 0 {
+		t.Error("the stopped start kept its slot")
+	}
+}
+
+// A folder that was made but cannot be worked in is refused, and the slot is
+// given back.
+func TestAForkWhoseFolderIsUnusableIsRefused(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	s.PrepareDir = func(string, string, string) (string, bool, error) {
+		return filepath.Join(s.Home, "never-made"), true, nil
+	}
+	if _, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir())); err == nil {
+		t.Fatal("a fork started in a folder that does not exist")
+	}
+	if len(st.specs) != 0 || s.Count() != 0 {
+		t.Errorf("specs %d, count %d: the refused start left something behind", len(st.specs), s.Count())
+	}
+}

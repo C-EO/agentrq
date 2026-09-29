@@ -341,6 +341,9 @@ type capturingReporter struct {
 	to   supervisor.Reporter
 	mu   sync.Mutex
 	last string
+	// beforeRunning runs just before "running" is sent, so a viewer the
+	// backend lets in on hearing it finds the terminal's stream there.
+	beforeRunning func()
 }
 
 func (r *capturingReporter) ReportSessionState(st wire.SessionState) error {
@@ -348,6 +351,9 @@ func (r *capturingReporter) ReportSessionState(st wire.SessionState) error {
 		r.mu.Lock()
 		r.last = st.Error
 		r.mu.Unlock()
+	}
+	if st.State == string(supervisor.StateRunning) && r.beforeRunning != nil {
+		r.beforeRunning()
 	}
 	return r.to.ReportSessionState(st)
 }
@@ -520,11 +526,23 @@ func (l *Link) start(ctx context.Context, conn *Conn, c wire.Control) {
 		l.Log.Warn("unreadable start request", "error", err)
 		return
 	}
+	if req.Fork != nil {
+		// Its own goroutine: a fork's first launch makes its folder, a git
+		// worktree or a copy of a whole project, and every session on the
+		// machine rides this socket.
+		go l.launch(ctx, conn, c, req)
+		return
+	}
+	l.launch(ctx, conn, c, req)
+}
 
+func (l *Link) launch(ctx context.Context, conn *Conn, c wire.Control, req wire.StartSession) {
 	// Wrapped so the reason a start was refused can be logged here as well as
 	// sent. The supervisor reports it and then returns nil, which is right for
 	// the connection and useless to the person at the machine.
 	rep := &capturingReporter{to: conn}
+	var once sync.Once
+	rep.beforeRunning = func() { once.Do(func() { l.stream(conn, req) }) }
 	if err := l.Supervisor.Handle(ctx, l.Profile, c, rep); err != nil {
 		l.Log.Warn("start failed", "session", req.SessionID, "error", err)
 		return
@@ -538,11 +556,17 @@ func (l *Link) start(ctx context.Context, conn *Conn, c wire.Control) {
 	// standing at this machine can see the log and not the control panel, so
 	// it is said here too. Without this, a start that fails is completely
 	// silent on the machine it failed on.
-	sess, err := l.Supervisor.Get(req.SessionID)
-	if err != nil {
+	if _, err := l.Supervisor.Get(req.SessionID); err != nil {
 		l.Log.Warn("a session was refused and never started",
 			"session", req.SessionID, "kind", req.Kind, "dir", req.Dir,
 			"reason", rep.reason())
+	}
+}
+
+// stream starts reading a session's terminal, once it is running.
+func (l *Link) stream(conn *Conn, req wire.StartSession) {
+	sess, err := l.Supervisor.Get(req.SessionID)
+	if err != nil {
 		return
 	}
 	tty := sess.PTY()

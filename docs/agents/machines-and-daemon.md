@@ -69,6 +69,10 @@ gap or reconnecting achieves nothing.
   stay; on the new one `streams.rebind` moves them across and repaints
   whatever somebody is still watching. The browser's own socket never dropped,
   so nobody is going to ask to attach again on its behalf.
+- **Anything slow runs off the frame loop, and a launch that does streams before
+  it reports `running`.** Every session on the machine rides one socket, so a
+  git call or a copy on the loop freezes every terminal. The backend lets a
+  viewer attach on hearing `running`, and an attach with no stream is dropped.
 
 Both were found by disabling a machine while an agent was running on it, which
 closes the daemon's socket from the server's side — the cheapest way to make a
