@@ -140,7 +140,7 @@ const (
 // into it — whose name or description contains the query, ignoring case. With
 // no query it lists them all, and with no limit it returns every match.
 func (c *controller) SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,14 +154,14 @@ func (c *controller) SearchSkills(ctx context.Context, req entity.SearchSkillsRe
 		return nil, skillErr(SkillInvalid, "limit and offset cannot be negative")
 	}
 	limit := min(req.Limit, MaxSkillSearchLimit)
-	found, total, err := c.repository.SearchSkills(ctx, uid, req.WorkspaceID, q, limit, req.Offset)
+	found, total, err := c.repository.SearchSkills(ctx, uid, workspaceID, q, limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
 	skills := make([]entity.Skill, len(found))
 	for i, s := range found {
 		var sharedFrom int64
-		if s.WorkspaceID != req.WorkspaceID {
+		if s.WorkspaceID != workspaceID {
 			sharedFrom = s.WorkspaceID
 		}
 		skills[i] = fromModelSkill(s, sharedFrom)
@@ -187,7 +187,7 @@ func (c *controller) emitSkillEvent(ctx context.Context, action entity.Action, u
 }
 
 func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 	if err != nil {
 		return nil, err
 	}
-	s, sharedFrom, err := c.resolveSkill(ctx, uid, req.WorkspaceID, name)
+	s, sharedFrom, err := c.resolveSkill(ctx, uid, workspaceID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 }
 
 func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 	if err != nil {
 		return nil, skillErr(SkillInvalid, "%v", err)
 	}
-	s, sharedFrom, err := c.resolveSkill(ctx, uid, req.WorkspaceID, name)
+	s, sharedFrom, err := c.resolveSkill(ctx, uid, workspaceID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRe
 // when there is none; any other file needs the skill to exist first, because a
 // skill without a SKILL.md is invisible to every agent that might use it.
 func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFileRequest) (*entity.SaveSkillFileResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 	}
 	content := []byte(req.Content)
 
-	s, exists, err := c.ownedSkill(ctx, uid, req.WorkspaceID, name)
+	s, exists, err := c.ownedSkill(ctx, uid, workspaceID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 			return nil, skillErr(SkillInvalid, "%s names the skill %q, but it is being saved as %q; make the two match", skill.FileName, fm.Name, name)
 		}
 		if !exists {
-			s = model.Skill{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, WorkspaceID: req.WorkspaceID, Name: name, SourceType: skillSourceManual}
+			s = model.Skill{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, WorkspaceID: workspaceID, Name: name, SourceType: skillSourceManual}
 		}
 		s.Description = fm.Description
 	} else {
@@ -350,7 +350,7 @@ func skillStorageID(s model.Skill, blobID int64) string {
 }
 
 func (c *controller) DeleteSkill(ctx context.Context, req entity.DeleteSkillRequest) error {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return err
 	}
@@ -358,7 +358,7 @@ func (c *controller) DeleteSkill(ctx context.Context, req entity.DeleteSkillRequ
 	if err != nil {
 		return err
 	}
-	s, exists, err := c.ownedSkill(ctx, uid, req.WorkspaceID, name)
+	s, exists, err := c.ownedSkill(ctx, uid, workspaceID, name)
 	if err != nil {
 		return err
 	}
@@ -374,7 +374,7 @@ func (c *controller) DeleteSkill(ctx context.Context, req entity.DeleteSkillRequ
 }
 
 func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkillFileRequest) (*entity.DeleteSkillFileResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +389,7 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 	if path == skill.FileName {
 		return nil, skillErr(SkillInvalid, "a skill cannot lose its %s; delete the whole skill instead", skill.FileName)
 	}
-	s, exists, err := c.ownedSkill(ctx, uid, req.WorkspaceID, name)
+	s, exists, err := c.ownedSkill(ctx, uid, workspaceID, name)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +415,7 @@ func (c *controller) DeleteSkillFile(ctx context.Context, req entity.DeleteSkill
 // alone, unless overwrite asks to replace one this workspace owns; a skill
 // shared in from elsewhere is never replaced.
 func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRequest) (*entity.ImportSkillsResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -436,11 +436,11 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 		return nil, skillErr(SkillUpstream, "%v", err)
 	}
 
-	own, err := c.repository.ListSkillsByWorkspace(ctx, uid, req.WorkspaceID)
+	own, err := c.repository.ListSkillsByWorkspace(ctx, uid, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	shared, err := c.repository.ListSkillsSharedInto(ctx, uid, req.WorkspaceID)
+	shared, err := c.repository.ListSkillsSharedInto(ctx, uid, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func (c *controller) ImportSkills(ctx context.Context, req entity.ImportSkillsRe
 		}
 		// Each skill commits on its own, so one that fails is reported with
 		// the rest rather than failing an import whose earlier skills stay.
-		saved, err := c.importSkill(ctx, uid, req.WorkspaceID, existing, taken, sk, res)
+		saved, err := c.importSkill(ctx, uid, workspaceID, existing, taken, sk, res)
 		if err != nil {
 			out.Skipped = append(out.Skipped, entity.SkillImportSkip{Name: sk.Name, Path: sk.Dir, Reason: "could not be saved; try the import again: " + err.Error()})
 			continue
@@ -544,7 +544,7 @@ func (c *controller) ShareSkill(ctx context.Context, req entity.ShareSkillReques
 	if err != nil {
 		return err
 	}
-	if err := c.shareTarget(ctx, req); err != nil {
+	if req.TargetWorkspaceID, err = c.shareTarget(ctx, s, req); err != nil {
 		return err
 	}
 	if _, err := c.repository.GetSkill(ctx, uid, req.TargetWorkspaceID, s.Name); err == nil {
@@ -571,17 +571,23 @@ func (c *controller) ShareSkill(ctx context.Context, req entity.ShareSkillReques
 }
 
 func (c *controller) UnshareSkill(ctx context.Context, req entity.ShareSkillRequest) error {
-	s, _, err := c.sharedSkill(ctx, req.WorkspaceID, req.UserID, req.Name)
+	s, uid, err := c.sharedSkill(ctx, req.WorkspaceID, req.UserID, req.Name)
 	if err != nil {
 		return err
 	}
-	return c.repository.DeleteSkillShare(ctx, s.ID, req.TargetWorkspaceID)
+	// A share into a fork was filed under its parent. A target that is gone
+	// may still have a share to remove, so it is taken as it is.
+	target := req.TargetWorkspaceID
+	if id, err := c.ContentWorkspaceID(ctx, target, uid); err == nil {
+		target = id
+	}
+	return c.repository.DeleteSkillShare(ctx, s.ID, target)
 }
 
 // sharedSkill is the skill a sharing call is about, which only the workspace
 // that owns it may manage.
 func (c *controller) sharedSkill(ctx context.Context, workspaceID int64, userID, rawName string) (model.Skill, int64, error) {
-	uid, err := c.memoryOwner(ctx, workspaceID, userID)
+	uid, workspaceID, err := c.memoryOwner(ctx, workspaceID, userID)
 	if err != nil {
 		return model.Skill{}, 0, err
 	}
@@ -599,20 +605,25 @@ func (c *controller) sharedSkill(ctx context.Context, workspaceID int64, userID,
 	return s, uid, nil
 }
 
-// shareTarget checks the workspace a skill is being shared into. One the
-// caller does not own is not found, exactly like the source would be.
-func (c *controller) shareTarget(ctx context.Context, req entity.ShareSkillRequest) error {
-	if req.TargetWorkspaceID == req.WorkspaceID {
-		return skillErr(SkillInvalid, "a skill is already available in the workspace that owns it")
-	}
+// shareTarget checks the workspace skill s is being shared into, and returns
+// the one the share is filed under: the parent, for a fork. One the caller
+// does not own is not found, exactly like the source would be.
+func (c *controller) shareTarget(ctx context.Context, s model.Skill, req entity.ShareSkillRequest) (int64, error) {
 	ok, err := c.CheckWorkspaceAccess(ctx, req.TargetWorkspaceID, req.UserID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !ok {
-		return base.ErrNotFound
+		return 0, base.ErrNotFound
 	}
-	return nil
+	target, err := c.ContentWorkspaceID(ctx, req.TargetWorkspaceID, s.UserID)
+	if err != nil {
+		return 0, err
+	}
+	if target == s.WorkspaceID {
+		return 0, skillErr(SkillInvalid, "a skill is already available in the workspace that owns it")
+	}
+	return target, nil
 }
 
 // purge deletes storage blobs whose rows are gone. Best effort: a blob left

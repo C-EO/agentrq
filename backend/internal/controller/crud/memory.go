@@ -26,36 +26,42 @@ type MemoryController interface {
 }
 
 // memoryOwner resolves the account a workspace's memories are filed under, and
-// refuses a caller who does not own the workspace.
+// refuses a caller who does not own the workspace. It also returns the
+// workspace they are filed under, which for a fork is its parent: a fork
+// shares its parent's memories and skills rather than keeping its own.
 //
 // Memories are keyed to the workspace's owner, so this is also what stops one
 // account reading another's notes by guessing a workspace ID.
-func (c *controller) memoryOwner(ctx context.Context, workspaceID int64, userID string) (int64, error) {
+func (c *controller) memoryOwner(ctx context.Context, workspaceID int64, userID string) (int64, int64, error) {
 	uid := monoflake.IDFromBase62(userID).Int64()
 	if uid == 0 || workspaceID == 0 {
-		return 0, fmt.Errorf("invalid request")
+		return 0, 0, fmt.Errorf("invalid request")
 	}
 	ok, err := c.CheckWorkspaceAccess(ctx, workspaceID, userID)
 	if err != nil {
-		return 0, fmt.Errorf("check workspace access: %w", err)
+		return 0, 0, fmt.Errorf("check workspace access: %w", err)
 	}
 	if !ok {
 		// Not found rather than forbidden, matching every other route under
 		// /workspaces/:id: those scope their query by user, so a workspace you
 		// do not own simply is not there. Answering "forbidden" here would
 		// confirm the workspace exists to someone who cannot see it.
-		return 0, base.ErrNotFound
+		return 0, 0, base.ErrNotFound
 	}
-	return uid, nil
+	contentID, err := c.ContentWorkspaceID(ctx, workspaceID, uid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolve workspace: %w", err)
+	}
+	return uid, contentID, nil
 }
 
 func (c *controller) ListMemories(ctx context.Context, req entity.ListMemoriesRequest) (*entity.ListMemoriesResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	models, err := c.repository.ListMemoriesByWorkspace(ctx, uid, req.WorkspaceID)
+	models, err := c.repository.ListMemoriesByWorkspace(ctx, uid, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +78,7 @@ func (c *controller) ListMemories(ctx context.Context, req entity.ListMemoriesRe
 }
 
 func (c *controller) GetMemory(ctx context.Context, req entity.GetMemoryRequest) (*entity.GetMemoryResponse, error) {
-	uid, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +86,7 @@ func (c *controller) GetMemory(ctx context.Context, req entity.GetMemoryRequest)
 		return nil, fmt.Errorf("invalid request")
 	}
 
-	m, err := c.repository.GetMemory(ctx, uid, req.WorkspaceID, req.Name)
+	m, err := c.repository.GetMemory(ctx, uid, workspaceID, req.Name)
 	if err != nil {
 		return nil, err
 	}

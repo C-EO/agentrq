@@ -30,6 +30,12 @@ func newSiteShareStore(t *testing.T) (siteShareStore, *mock_repository.MockRepos
 	return siteShareStore{repo: repo, ids: ids}, repo, ids
 }
 
+// expectWorkspace answers the lookup of workspace id, a fork of forkOf when
+// that is not zero.
+func expectWorkspace(repo *mock_repository.MockRepository, id, forkOf int64) {
+	repo.EXPECT().SystemGetWorkspace(gomock.Any(), id).Return(model.Workspace{ID: id, UserID: 7, ForkOfID: forkOf}, nil)
+}
+
 func TestSiteShareStoreOwnsWorkspace(t *testing.T) {
 	s, repo, _ := newSiteShareStore(t)
 	repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(70), int64(7)).Return(true, nil)
@@ -45,15 +51,25 @@ func TestSiteShareStoreUpsert(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name     string
+		sharedTo int64
 		existing []model.SiteShare
 		changed  bool
 	}{
-		{"new", []model.SiteShare{{Origin: "https://b.com", WorkspaceID: 70}}, true},
-		{"same workspace", []model.SiteShare{{Origin: "https://a.com", WorkspaceID: 70}}, false},
-		{"moved", []model.SiteShare{{Origin: "https://a.com", WorkspaceID: 71}}, true},
+		{"new", 70, []model.SiteShare{{Origin: "https://b.com", WorkspaceID: 70}}, true},
+		{"same workspace", 70, []model.SiteShare{{Origin: "https://a.com", WorkspaceID: 70}}, false},
+		{"moved", 70, []model.SiteShare{{Origin: "https://a.com", WorkspaceID: 71}}, true},
+		// A site shared with a fork is filed under its parent, where the fork reads it.
+		{"to a fork", 72, []model.SiteShare{{Origin: "https://a.com", WorkspaceID: 70}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, repo, ids := newSiteShareStore(t)
+			if tc.sharedTo == 70 {
+				expectWorkspace(repo, 70, 0)
+			} else {
+				expectWorkspace(repo, tc.sharedTo, 70)
+			}
+			share := share
+			share.WorkspaceID = tc.sharedTo
 			repo.EXPECT().ListSiteSharesForUser(gomock.Any(), int64(7)).Return(tc.existing, nil)
 			ids.EXPECT().NextID().Return(int64(900))
 			repo.EXPECT().UpsertSiteShare(gomock.Any(), model.SiteShare{
@@ -71,6 +87,7 @@ func TestSiteShareStoreUpsert(t *testing.T) {
 // No tools is an empty list in the row, not "null".
 func TestSiteShareStoreUpsertNoTools(t *testing.T) {
 	s, repo, ids := newSiteShareStore(t)
+	expectWorkspace(repo, 70, 0)
 	repo.EXPECT().ListSiteSharesForUser(gomock.Any(), int64(7)).Return(nil, nil)
 	ids.EXPECT().NextID().Return(int64(900))
 	repo.EXPECT().UpsertSiteShare(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -86,8 +103,16 @@ func TestSiteShareStoreUpsertNoTools(t *testing.T) {
 }
 
 func TestSiteShareStoreUpsertErrors(t *testing.T) {
+	t.Run("workspace", func(t *testing.T) {
+		s, repo, _ := newSiteShareStore(t)
+		repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(70)).Return(model.Workspace{}, errRepo)
+		if _, err := s.Upsert(context.Background(), sitetools.Share{UserID: 7, WorkspaceID: 70}); !errors.Is(err, errRepo) {
+			t.Fatalf("err = %v", err)
+		}
+	})
 	t.Run("list", func(t *testing.T) {
 		s, repo, _ := newSiteShareStore(t)
+		expectWorkspace(repo, 0, 0)
 		repo.EXPECT().ListSiteSharesForUser(gomock.Any(), int64(7)).Return(nil, errRepo)
 		if _, err := s.Upsert(context.Background(), sitetools.Share{UserID: 7}); !errors.Is(err, errRepo) {
 			t.Fatalf("err = %v", err)
@@ -95,6 +120,7 @@ func TestSiteShareStoreUpsertErrors(t *testing.T) {
 	})
 	t.Run("upsert", func(t *testing.T) {
 		s, repo, ids := newSiteShareStore(t)
+		expectWorkspace(repo, 0, 0)
 		repo.EXPECT().ListSiteSharesForUser(gomock.Any(), int64(7)).Return(nil, nil)
 		ids.EXPECT().NextID().Return(int64(900))
 		repo.EXPECT().UpsertSiteShare(gomock.Any(), gomock.Any()).Return(model.SiteShare{}, errRepo)

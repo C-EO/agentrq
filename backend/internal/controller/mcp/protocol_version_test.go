@@ -32,7 +32,7 @@ func newProtocolTestServer(t *testing.T) *httptest.Server {
 	}
 
 	ps := NewWorkspaceServer(
-		1, "user", "http://localhost",
+		1, 0, "user", "http://localhost",
 		nil, nil, nil, listTasks, nil, nil, nil, nil,
 		nil,           // clearAgentContext
 		nil,           // publishEvent

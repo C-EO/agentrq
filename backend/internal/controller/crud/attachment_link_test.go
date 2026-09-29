@@ -144,6 +144,7 @@ func TestGetAttachment_LinkOnlySkipsTheFile(t *testing.T) {
 	}
 
 	// Asked for the content, it reads the file too.
+	expectOwnWorkspace(e, 1)
 	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "a")).Return([]byte("png"), nil)
 	req.LinkOnly = false
 	if got, err := e.controller.GetAttachment(context.Background(), req); err != nil || string(got.Data) != "png" || got.URL != "https://l/a" {

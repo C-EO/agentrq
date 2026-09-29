@@ -1045,6 +1045,7 @@ func TestGetAttachment_Success(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Attachments: datatypes.JSON(attsJSON)}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOwnWorkspace(e, 1)
 	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-1")).Return([]byte("content"), nil)
 
 	resp, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{
@@ -1075,6 +1076,7 @@ func TestGetAttachment_SuccessMessageAttachment(t *testing.T) {
 	}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOwnWorkspace(e, 1)
 	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-msg")).Return([]byte("imgdata"), nil)
 
 	resp, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{
@@ -1130,6 +1132,7 @@ func TestGetAttachment_FileNotFound(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Attachments: datatypes.JSON(attsJSON)}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOwnWorkspace(e, 1)
 	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 10, "att-1")).Return(nil, fmt.Errorf("no such file"))
 	e.storage.EXPECT().LoadRaw("att-1").Return(nil, fmt.Errorf("no such file"))
 

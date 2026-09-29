@@ -34,7 +34,8 @@ func (c *controller) ForkTask(ctx context.Context, req entity.ForkTaskRequest) (
 	if req.Status != "ongoing" && req.Status != "notstarted" {
 		return nil, fmt.Errorf("invalid task status: %s", req.Status)
 	}
-	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 	src, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, userID)
@@ -67,7 +68,7 @@ func (c *controller) ForkTask(ctx context.Context, req entity.ForkTaskRequest) (
 	var copied []string
 	forkID := c.idgen.NextID()
 	copyAtts := func(raw datatypes.JSON) datatypes.JSON {
-		out, keys := c.copyAttachments(src.WorkspaceID, src.ID, forkID, raw)
+		out, keys := c.copyAttachments(w.ContentID(), src.ID, forkID, raw)
 		copied = append(copied, keys...)
 		return out
 	}

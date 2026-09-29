@@ -31,6 +31,13 @@ func (s siteShareStore) OwnsWorkspace(ctx context.Context, userID, workspaceID i
 }
 
 func (s siteShareStore) Upsert(ctx context.Context, sh sitetools.Share) (bool, error) {
+	// A fork lists its parent's shares, so a site shared with a fork is filed
+	// under the parent: there is one home for it, and a merge leaves none behind.
+	w, err := s.repo.SystemGetWorkspace(ctx, sh.WorkspaceID)
+	if err != nil {
+		return false, err
+	}
+	sh.WorkspaceID = w.ContentID()
 	prev, found, err := s.find(ctx, sh.UserID, sh.Origin)
 	if err != nil {
 		return false, err

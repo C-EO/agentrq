@@ -93,7 +93,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	taskID := c.idgen.NextID()
 
 	// Save attachments binary to filesystem and clear Data for metadata DB storage
-	c.saveAttachments(req.Task.WorkspaceID, taskID, req.Task.Attachments)
+	c.saveAttachments(w.ContentID(), taskID, req.Task.Attachments)
 
 	var attachJSON datatypes.JSON
 	if len(req.Task.Attachments) > 0 {
@@ -240,7 +240,8 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
 
-	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
@@ -300,7 +301,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 
 	if createMsg && (msgText != "" || len(req.Attachments) > 0) {
 		// Save attachments
-		c.saveAttachments(req.WorkspaceID, req.TaskID, req.Attachments)
+		c.saveAttachments(w.ContentID(), req.TaskID, req.Attachments)
 
 		var attsData []byte
 		if len(req.Attachments) > 0 {
@@ -572,7 +573,8 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		return nil, fmt.Errorf("rate limit exceeded")
 	}
 
-	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
@@ -581,7 +583,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	}
 
 	// Save attachments
-	c.saveAttachments(req.WorkspaceID, req.TaskID, req.Attachments)
+	c.saveAttachments(w.ContentID(), req.TaskID, req.Attachments)
 
 	var attsData []byte
 	if len(req.Attachments) > 0 {
@@ -648,7 +650,8 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 }
 
 func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error) {
-	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -699,7 +702,7 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 
 	// 3. Purge storage files
 	for _, id := range attachmentIDs {
-		storage.DeleteAttachment(c.storage, req.WorkspaceID, req.TaskID, id)
+		storage.DeleteAttachment(c.storage, w.ContentID(), req.TaskID, id)
 	}
 
 	return &entity.DeleteTaskResponse{}, nil
@@ -831,7 +834,11 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 			if req.LinkOnly && a.URL != "" {
 				return res, nil
 			}
-			data, err := storage.LoadAttachment(c.storage, t.WorkspaceID, t.ID, a.ID)
+			contentID, err := c.ContentWorkspaceID(ctx, t.WorkspaceID, uid)
+			if err != nil {
+				return nil, base.ErrNotFound
+			}
+			data, err := storage.LoadAttachment(c.storage, contentID, t.ID, a.ID)
 			if err != nil {
 				return nil, base.ErrNotFound
 			}

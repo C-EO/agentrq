@@ -352,16 +352,12 @@ func New(cfg Config) (*App, error) {
 
 	// ── MCP manager ───────────────────────────────────────────────────────────
 	mcpManager := mcp.NewManager(func(workspaceID int64, userID string) *mcp.WorkspaceServer {
-		var workspaceOwner string
-		workspace, err := repo.SystemGetWorkspace(context.Background(), workspaceID)
-		if err == nil {
-			workspaceOwner = monoflake.ID(workspace.UserID).String()
-		} else {
-			workspaceOwner = userID
-		}
+		workspace, workspaceOwner, contentID := mcpWorkspace(context.Background(), repo, workspaceID, userID)
+		memory := workspaceMemory{repo: repo, ids: ids, workspaceID: contentID, userID: workspaceOwner}
 
 		srv := mcp.NewWorkspaceServer(
 			workspaceID,
+			contentID,
 			workspaceOwner,
 			cfg.App.BaseURL,
 			func(ctx context.Context, task model.Task) (model.Task, error) {
@@ -457,7 +453,7 @@ func New(cfg Config) (*App, error) {
 				}
 				taskID := id.Int64()
 
-				crud.SaveAttachments(storageSvc, ids, workspaceID, taskID, attachments)
+				crud.SaveAttachments(storageSvc, ids, contentID, taskID, attachments)
 
 				var attsData []byte
 				if len(attachments) > 0 {
@@ -609,47 +605,9 @@ func New(cfg Config) (*App, error) {
 				})
 				return nil
 			},
-			// The workspace's memory. Scoped to the workspace and its owner here,
-			// so the tools themselves only ever name a memory — an agent cannot
-			// reach another workspace's notes by asking for them.
-			func(ctx context.Context, name string) (string, bool, error) {
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				m, err := repo.GetMemory(ctx, uid, workspaceID, name)
-				if errors.Is(err, base.ErrNotFound) {
-					// A memory nobody has written yet: the ordinary state of a
-					// fresh workspace, and not a failure to report.
-					return "", false, nil
-				}
-				if err != nil {
-					return "", false, err
-				}
-				return m.Content, true, nil
-			},
-			func(ctx context.Context, name string, content string) error {
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				now := time.Now()
-				_, err := repo.UpsertMemory(ctx, model.Memory{
-					ID:          ids.NextID(),
-					CreatedAt:   now,
-					UpdatedAt:   now,
-					UserID:      uid,
-					WorkspaceID: workspaceID,
-					Name:        name,
-					Content:     content,
-				})
-				return err
-			},
-			func(ctx context.Context, name string) (bool, error) {
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				err := repo.DeleteMemory(ctx, uid, workspaceID, name)
-				if errors.Is(err, base.ErrNotFound) {
-					return false, nil
-				}
-				if err != nil {
-					return false, err
-				}
-				return true, nil
-			},
+			memory.load,
+			memory.save,
+			memory.delete,
 			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
 			siteToolsBackend{repo: repo, hub: siteHub},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
