@@ -639,6 +639,8 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Delete("/:id", h.deleteWorkspace())
 	r.Patch("/:id", h.updateWorkspace())
 	r.Post("/:id/archive", h.archiveWorkspace())
+	r.Post("/:id/forks", h.forkWorkspace())
+	r.Post("/:id/merge", h.mergeFork())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
 	r.Get("/:id/stats", h.getWorkspaceStats())
 	r.Get("/:id/stats/latency", h.getTaskLatencyStats(true))
@@ -936,6 +938,69 @@ func (h *handler) archiveWorkspace() fiber.Handler {
 	}
 }
 
+func (h *handler) forkWorkspace() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToForkWorkspaceRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.ForkWorkspace(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to fork workspace")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
+		c.Status(http.StatusCreated)
+		return c.Send(mapper.FromForkWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID)))
+	}
+}
+
+// mergeFork merges a fork back into its parent: its tasks move there, and the
+// fork is gone.
+func (h *handler) mergeFork() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToMergeForkRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.MergeFork(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to merge fork")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		h.mcpManager.Remove(rq.WorkspaceID)
+
+		// Each task leaves the fork and appears in the parent, as a move does.
+		parentID := monoflake.IDFromBase62(rs.ParentID).Int64()
+		for _, t := range rs.Tasks {
+			h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+				Type:    "task.deleted",
+				Payload: map[string]string{"id": monoflake.ID(t.ID).String()},
+			})
+			h.bus.Publish(parentID, rq.UserID, eventbus.Event{
+				Type:    "task.created",
+				Payload: mapper.FromEntityTaskToView(t),
+			})
+		}
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromMergeForkResponseEntityToHTTPResponse(rs))
+	}
+}
+
 func (h *handler) unarchiveWorkspace() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
@@ -986,6 +1051,12 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		if srv := h.mcpManager.Get(rq.Workspace.ID, rq.UserID); srv != nil {
 			srv.UpdateMetadata(rs.Workspace.Name, rs.Workspace.Description, rs.Workspace.Icon)
 			srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
+		}
+		// The forks were given the same tools; their servers hear of it too.
+		for _, id := range rs.ForkIDs {
+			if srv := h.mcpManager.Get(id, rq.UserID); srv != nil {
+				srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
+			}
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)

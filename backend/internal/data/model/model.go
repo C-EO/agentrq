@@ -29,6 +29,9 @@ type (
 		SelfLearningLoopNote  string `gorm:"type:text"`
 		InputSendDelaySeconds int    `gorm:"default:0"`
 		WorkingDirectory      string `gorm:"type:text"`
+		// ForkOfID is the workspace this one is a fork of; zero when it is
+		// not a fork. Forks are one level deep.
+		ForkOfID int64 `gorm:"index:idx_workspaces_fork_of_id;default:0"`
 	}
 
 	// Task hosts a task created by a human or an agent within a workspace
@@ -602,6 +605,9 @@ const (
 	// A site shared into a workspace from the Chrome extension, and withdrawn.
 	ActionIDSiteShare
 	ActionIDSiteUnshare
+	// A workspace fork made, and merged back into its parent.
+	ActionIDWorkspaceForkCreate
+	ActionIDWorkspaceForkMerge
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
@@ -687,3 +693,18 @@ const (
 	SubActionIDMCPCallSiteTool
 	SubActionIDMCPGetSiteToolDefinition
 )
+
+// ForkSettings is the one list of what a workspace fork inherits from its
+// parent, keyed by column: copied when the fork is made, written to every fork
+// whenever the parent is saved, and refused when edited on the fork itself.
+// Name, icon, description and working directory are the fork's own.
+func (w Workspace) ForkSettings() map[string]any {
+	return map[string]any{
+		"notification_settings":    w.NotificationSettings,
+		"auto_allowed_tools":       w.AutoAllowedTools,
+		"allow_all_commands":       w.AllowAllCommands,
+		"clear_context_default":    w.ClearContextDefault,
+		"self_learning_loop_note":  w.SelfLearningLoopNote,
+		"input_send_delay_seconds": w.InputSendDelaySeconds,
+	}
+}

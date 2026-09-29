@@ -118,6 +118,8 @@ func TestCreateWorkspace_GivenNoteIsKept(t *testing.T) {
 func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().CountForks(gomock.Any(), int64(1), testUserID).Return(int64(0), nil)
 	e.repo.EXPECT().GetWorkspaceAttachments(gomock.Any(), int64(1)).Return([]entity.TaskAttachment{{TaskID: 2, ID: "att-1"}, {TaskID: 3, ID: "att-2"}}, nil)
 	e.repo.EXPECT().GetWorkspaceSkillStorageIDs(gomock.Any(), int64(1)).Return([]string{"skill-1"}, nil)
 	e.repo.EXPECT().DeleteWorkspace(gomock.Any(), int64(1), testUserID).Return(nil)
@@ -173,6 +175,7 @@ func TestArchiveWorkspace_Success(t *testing.T) {
 
 	ws := activeWorkspace()
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.repo.EXPECT().CountForks(gomock.Any(), int64(1), testUserID).Return(int64(0), nil)
 	// ArchiveWorkspace, not UpdateWorkspace: it also deletes the workspace's
 	// triggers and workflow steps.
 	e.repo.EXPECT().ArchiveWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
@@ -220,6 +223,7 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 		w.SelfLearningLoopNote = "Be mindful."
 		return w, nil
 	})
+	e.repo.EXPECT().ListForks(gomock.Any(), int64(1), testUserID).Return(nil, nil)
 
 	resp, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
 		UserID:    testUserIDStr,

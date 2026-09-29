@@ -32,11 +32,30 @@ type (
 		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
 		AllowAllCommands     bool                  `json:"allowAllCommands"`
 		// ClearContextDefault is what a new task's clearContext starts as.
-		ClearContextDefault   bool         `json:"clearContextDefault"`
-		SelfLearningLoopNote  string       `json:"selfLearningLoopNote,omitempty"`
-		InputSendDelaySeconds int          `json:"inputSendDelaySeconds"`
-		WorkingDirectory      string       `json:"workingDirectory,omitempty"`
-		Slack                 *SlackConfig `json:"slack,omitempty"`
+		ClearContextDefault   bool          `json:"clearContextDefault"`
+		SelfLearningLoopNote  string        `json:"selfLearningLoopNote,omitempty"`
+		InputSendDelaySeconds int           `json:"inputSendDelaySeconds"`
+		WorkingDirectory      string        `json:"workingDirectory,omitempty"`
+		Slack                 *SlackConfig  `json:"slack,omitempty"`
+		ForkOfID              string        `json:"forkOfId,omitempty"`
+		ForkOf                *WorkspaceRef `json:"forkOf,omitempty"`
+		ForkCount             int           `json:"forkCount,omitempty"`
+		UnfinishedTasks       int           `json:"unfinishedTasks,omitempty"`
+	}
+
+	// WorkspaceRef names another workspace.
+	WorkspaceRef struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	ForkWorkspaceRequest struct {
+		Name string `json:"name"`
+	}
+
+	MergeForkResponse struct {
+		ParentID   string `json:"parentId"`
+		MovedTasks int    `json:"movedTasks"`
 	}
 
 	// AgentModels is what the connected agent can switch between. Omitted

@@ -115,12 +115,23 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 	for i, m := range ms {
 		workspaces[i] = fromModelWorkspaceToEntity(m)
 	}
+	if err := c.withForkInfo(ctx, workspaces); err != nil {
+		return nil, err
+	}
 	return &entity.ListWorkspacesResponse{Workspaces: workspaces}, nil
 }
 
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {
-	// 1. Get all task and message attachment IDs directly from DB
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
+	if err != nil {
+		return err
+	}
+	if err := c.refuseForkOrParent(ctx, m); err != nil {
+		return err
+	}
+
+	// 1. Get all task and message attachment IDs directly from DB
 	attachments, _ := c.repository.GetWorkspaceAttachments(ctx, req.ID)
 	skillFileIDs, _ := c.repository.GetWorkspaceSkillStorageIDs(ctx, req.ID)
 
@@ -150,6 +161,9 @@ func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWor
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
 	if err != nil {
+		return err
+	}
+	if err := c.refuseForkOrParent(ctx, m); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -262,6 +276,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	if m.ArchivedAt != nil {
 		return nil, fmt.Errorf("cannot update archived workspace")
 	}
+	before := m
 
 	m.Name = req.Workspace.Name
 	m.Description = req.Workspace.Description
@@ -286,10 +301,22 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 		// If resize fails, we don't update/store the icon.
 	}
 	m.UpdatedAt = time.Now()
+	if err := c.refuseInheritedChange(ctx, before, m); err != nil {
+		return nil, err
+	}
 
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err != nil {
 		return nil, err
+	}
+	var forkIDs []int64
+	if updated.ForkOfID == 0 {
+		// Best effort: the forks have the settings already, and this only
+		// lets their running servers hear of it.
+		forks, _ := c.repository.ListForks(ctx, updated.ID, updated.UserID)
+		for _, f := range forks {
+			forkIDs = append(forkIDs, f.ID)
+		}
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionWorkspaceUpdate,
@@ -301,6 +328,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	})
 	return &entity.UpdateWorkspaceResponse{
 		Workspace: fromModelWorkspaceToEntity(updated),
+		ForkIDs:   forkIDs,
 	}, nil
 }
 
@@ -309,6 +337,13 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	m, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, uid)
 	if err != nil {
 		return err
+	}
+	if m.ForkOfID != 0 {
+		// A fork's tools are its parent's: allowing one from a fork allows it
+		// in the parent, which writes it to every fork.
+		if m, err = c.repository.GetWorkspace(ctx, m.ForkOfID, uid); err != nil {
+			return err
+		}
 	}
 	b, _ := json.Marshal(req.Tools)
 	m.AutoAllowedTools = datatypes.JSON(b)
@@ -450,6 +485,7 @@ func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 		SelfLearningLoopNote:  m.SelfLearningLoopNote,
 		InputSendDelaySeconds: m.InputSendDelaySeconds,
 		WorkingDirectory:      m.WorkingDirectory,
+		ForkOfID:              m.ForkOfID,
 	}
 	if len(m.AutoAllowedTools) > 0 {
 		_ = json.Unmarshal(m.AutoAllowedTools, &res.AutoAllowedTools)
