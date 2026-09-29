@@ -558,6 +558,70 @@ func TestRemoveForkDirDoesNotBlockTheSocket(t *testing.T) {
 	}
 }
 
+// A fork's first launch makes its folder, which can mean copying a whole
+// project, so it runs on its own goroutine: a control message sent while the
+// folder is being made must still be answered.
+func TestAForkLaunchDoesNotBlockTheSocket(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	made := t.TempDir()
+	release := make(chan struct{})
+	h.sup.Home = t.TempDir()
+	h.sup.PrepareDir = func(string, string, string) (string, bool, error) {
+		<-release
+		return made, true, nil
+	}
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
+		Fork: &wire.ForkSpec{ID: "0jUM5wEc1Hl", From: t.TempDir()},
+	}))
+
+	b.send(t, controlFrame(t, wire.OpKillSession, wire.KillSession{SessionID: 999}))
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpSessionState)) > 0 },
+		"an unrelated control message was stuck behind the fork's folder")
+
+	close(release)
+	waitFor(t, func() bool {
+		for _, c := range b.controls(t, wire.OpSessionState) {
+			var st wire.SessionState
+			_ = json.Unmarshal(c.Body, &st)
+			if st.SessionID == 7 && st.State == "running" {
+				_, ok := h.link.streams.get(7)
+				return ok
+			}
+		}
+		return false
+	}, "the fork never reported running with its terminal streaming")
+}
+
+// The terminal's stream exists before "running" goes out: the backend lets a
+// viewer attach when it hears it, and an attach that finds no stream is
+// dropped, leaving a blank terminal.
+func TestTheStreamIsThereBeforeRunningIsReported(t *testing.T) {
+	var streaming bool
+	rep := &capturingReporter{to: reporterFunc(func(st wire.SessionState) error {
+		if st.State == "running" && !streaming {
+			t.Error("running was reported before the stream existed")
+		}
+		return nil
+	})}
+	calls := 0
+	rep.beforeRunning = func() { streaming = true; calls++ }
+	for _, st := range []string{"starting", "running", "exited"} {
+		if err := rep.ReportSessionState(wire.SessionState{SessionID: 7, State: st}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("beforeRunning ran %d times, want once", calls)
+	}
+}
+
+type reporterFunc func(wire.SessionState) error
+
+func (f reporterFunc) ReportSessionState(st wire.SessionState) error { return f(st) }
+
 // The models lookup carries the agent and the workspace directory both ways —
 // the daemon needs both to ask, and the reply names which agent it answered
 // for, since a client can have more than one outstanding.

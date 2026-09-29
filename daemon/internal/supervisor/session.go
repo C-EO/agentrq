@@ -139,6 +139,9 @@ var (
 	// config it was going to read. Relaunching it from the panel writes a
 	// fresh one; this cannot, because it has no credential to write.
 	ErrNoMCPConfig = errors.New("supervisor: the config a restored session needs is not there")
+	// ErrStoppedWhileStarting means a kill arrived while a fork's folder was
+	// still being made, so the agent was never started.
+	ErrStoppedWhileStarting = errors.New("supervisor: the session was stopped before it started")
 )
 
 // KillGrace is how long a process gets to leave politely.
@@ -180,6 +183,9 @@ type Supervisor struct {
 	// RemoveDir deletes a fork's folder; nil is [RemoveForkDir]. A field so
 	// a test can hold a removal open.
 	RemoveDir func(home, forkID string) error
+	// PrepareDir makes a fork's folder; nil is [PrepareForkDir]. A field for
+	// the same reason.
+	PrepareDir func(home, from, forkID string) (dir string, created bool, err error)
 	// ClaudeDir is where claude-code keeps its conversations; empty means
 	// $CLAUDE_CONFIG_DIR, or ~/.claude.
 	ClaudeDir string
@@ -283,20 +289,20 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	if err != nil {
 		return nil, err
 	}
+	// A fork's folder is made after the reservation below, not before: it can
+	// take a minute, and a kill that arrives meanwhile has to find the session.
+	var home string
 	if req.Fork != nil {
-		home, err := s.home()
+		if home, err = s.home(); err != nil {
+			return nil, err
+		}
+	} else {
+		dir, err := workspaceDir(req.Dir)
 		if err != nil {
 			return nil, err
 		}
-		if req.Dir, _, err = PrepareForkDir(home, req.Fork.From, req.Fork.ID); err != nil {
-			return nil, err
-		}
+		req.Dir = dir
 	}
-	dir, err := workspaceDir(req.Dir)
-	if err != nil {
-		return nil, err
-	}
-	req.Dir = dir
 
 	s.mu.Lock()
 	s.pruneFinishedLocked(time.Now())
@@ -326,6 +332,29 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		delete(s.sessions, req.ID)
 		delete(s.profiles, req.ID)
 		s.mu.Unlock()
+	}
+
+	if req.Fork != nil {
+		prepare := s.PrepareDir
+		if prepare == nil {
+			prepare = PrepareForkDir
+		}
+		dir, _, err := prepare(home, req.Fork.From, req.Fork.ID)
+		if err == nil {
+			dir, err = workspaceDir(dir)
+		}
+		if err != nil {
+			release()
+			return nil, err
+		}
+		if state, _, _ := sess.State(); state == StateKilled {
+			release()
+			return nil, ErrStoppedWhileStarting
+		}
+		s.mu.Lock()
+		sess.Dir = dir
+		s.mu.Unlock()
+		req.Dir = dir
 	}
 
 	servers := []MCPEntry{{Name: req.Params.ServerName, URL: req.MCPURL}}
