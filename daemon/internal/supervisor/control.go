@@ -57,7 +57,11 @@ func (s *Supervisor) Handle(ctx context.Context, profile string, c wire.Control,
 		if err != nil {
 			return err
 		}
-		return RemoveForkDir(home, req.ForkID)
+		remove := s.RemoveDir
+		if remove == nil {
+			remove = RemoveForkDir
+		}
+		return remove(home, req.ForkID)
 
 	default:
 		// An op from a newer backend is ignored rather than fatal. Dropping

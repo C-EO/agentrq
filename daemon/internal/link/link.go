@@ -319,10 +319,19 @@ func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 		go l.listAcpAgents(ctx, conn, c)
 	case wire.OpListAcpModels:
 		go l.listAcpModels(ctx, conn, c)
+	case wire.OpRemoveForkDir:
+		// Its own goroutine too: git and deleting a whole tree can take a
+		// minute, and every session on the machine rides this socket.
+		go l.handle(ctx, conn, c)
 	default:
-		if err := l.Supervisor.Handle(ctx, l.Profile, c, conn); err != nil {
-			l.Log.Warn("control message failed", "op", string(c.Op), "error", err)
-		}
+		l.handle(ctx, conn, c)
+	}
+}
+
+// handle passes a control message to the supervisor.
+func (l *Link) handle(ctx context.Context, conn *Conn, c wire.Control) {
+	if err := l.Supervisor.Handle(ctx, l.Profile, c, conn); err != nil {
+		l.Log.Warn("control message failed", "op", string(c.Op), "error", err)
 	}
 }
 
