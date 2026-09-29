@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/pty"
 	"github.com/agentrq/agentrq/daemon/internal/restore"
@@ -107,6 +108,7 @@ func signedFeed(t *testing.T, version, reports string) *feed {
 // live session, and a restart that records rather than happens.
 type updaterHarness struct {
 	u        *Updater
+	r        *Restarter
 	dir      string
 	state    string
 	binary   string
@@ -131,28 +133,33 @@ func newUpdater(t *testing.T, f *feed, current string) *updaterHarness {
 	sup := supervisor.New(func(context.Context, pty.Spec) (pty.Session, error) { return tty, nil }, 0, 0)
 
 	h := &updaterHarness{dir: dir, state: state, binary: binary, tty: tty}
-	h.u = &Updater{
-		BinaryPath:  binary,
-		ManifestURL: "https://releases.example/agentrqd.json",
-		Version:     current,
-		StateDir:    state,
-		Client:      f,
-		Supervisor:  sup,
-		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		GOOS:        runtime.GOOS,
-		GOARCH:      runtime.GOARCH,
-		Mode:        update.ModeReexec,
+	h.r = &Restarter{
+		BinaryPath: binary,
+		Version:    current,
+		StateDir:   state,
+		Supervisor: sup,
+		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Mode:       update.ModeReexec,
 		Restart: func(_ update.Mode, path string, _ []string) error {
 			h.restarts = append(h.restarts, path)
 			return h.restart
 		},
+		Grace: time.Second,
+	}
+	h.u = &Updater{
+		ManifestURL: "https://releases.example/agentrqd.json",
+		Client:      f,
+		Log:         h.r.Log,
+		GOOS:        runtime.GOOS,
+		GOARCH:      runtime.GOARCH,
+		Restarter:   h.r,
 	}
 	return h
 }
 
 func (h *updaterHarness) startSession(t *testing.T, id uint64) {
 	t.Helper()
-	if _, err := h.u.Supervisor.Start(context.Background(), "work", supervisor.Request{
+	if _, err := h.r.Supervisor.Start(context.Background(), "work", supervisor.Request{
 		ID: id, Kind: supervisor.KindACPGateway, Dir: t.TempDir(), MCPURL: "https://agentrq.example/mcp/ws?token=test",
 		Params: supervisor.Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
 		Cols:   120, Rows: 40,
@@ -190,7 +197,7 @@ func TestTheNoteIsWrittenBeforeAnythingIsKilled(t *testing.T) {
 	// The restart is where the process would have gone. By the time it is
 	// reached, the note must already describe what was running.
 	var noteAtHandover restore.File
-	h.u.Restart = func(update.Mode, string, []string) error {
+	h.r.Restart = func(update.Mode, string, []string) error {
 		b, err := os.ReadFile(restore.Path(h.state))
 		if err != nil {
 			t.Errorf("no note on disk at handover: %v", err)
@@ -247,7 +254,7 @@ func TestApplyRefusesAVersionNobodyApproved(t *testing.T) {
 
 func mustLive(t *testing.T, h *updaterHarness, id uint64) *supervisor.Session {
 	t.Helper()
-	s, err := h.u.Supervisor.Get(id)
+	s, err := h.r.Supervisor.Get(id)
 	if err != nil {
 		t.Fatalf("session %d: %v", id, err)
 	}
@@ -300,7 +307,7 @@ func TestAnUnwritableNoteStopsTheUpdate(t *testing.T) {
 	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h.u.StateDir = filepath.Join(blocked, "state")
+	h.r.StateDir = filepath.Join(blocked, "state")
 
 	if err := h.u.Apply(context.Background(), "0.7.1"); err == nil {
 		t.Fatal("Apply carried on without a note")

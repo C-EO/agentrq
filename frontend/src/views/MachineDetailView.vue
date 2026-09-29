@@ -15,7 +15,12 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMachineDetail, updateConsequence, deleteConsequence } from '../composables/useMachineDetail'
+import {
+  useMachineDetail,
+  updateConsequence,
+  deleteConsequence,
+  REMOTE_CONTROL_MIN_VERSION,
+} from '../composables/useMachineDetail'
 import {
   formatBytes,
   formatPercent,
@@ -43,12 +48,12 @@ const { notifySuccess, notifyError } = useToasts()
 
 const machineId = String(route.params.id ?? '')
 const detail = useMachineDetail({ machineId })
-const { machine, sessions, liveSessions, loading, error, busy } = detail
+const { machine, sessions, liveSessions, canControl, updating, loading, error, busy } = detail
 
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
 const showDelete = ref(false)
-const showUpdate = ref(false)
+const showRestart = ref(false)
 
 // Destructured because refs keep their reactivity through it, and the
 // alternative — reaching through `launcher.x.value` in every binding — is
@@ -69,6 +74,7 @@ const {
 
 const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
+const handUpdateText = `Update agentrqd on this machine by hand to ${REMOTE_CONTROL_MIN_VERSION} or newer to restart or update it from here.`
 const deleteText = computed(() => deleteConsequence(machine.value, liveCount.value))
 
 const TABS = [
@@ -107,6 +113,11 @@ const TONES = {
 
 // The same tokens as a filled dot. Text colours, which is what TONES holds,
 // are chosen to be readable as words and read as grey at eight pixels across.
+// The update and restart button on a phone, where it is this icon alone: the
+// row beside it already says which of the two it is.
+const REFRESH_ICON =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+
 const DOTS = {
   good: 'bg-emerald-500',
   pending: 'bg-amber-500',
@@ -143,10 +154,12 @@ async function confirmDelete() {
   }
 }
 
-async function confirmUpdate() {
-  showUpdate.value = false
-  if (await detail.approveUpdate()) {
-    notifySuccess('The machine is updating; its sessions will come back as new terminals')
+async function confirmRestart() {
+  showRestart.value = false
+  // Read before the call: the daemon's next hello clears the offer.
+  const doing = updating.value ? 'updating' : 'restarting'
+  if (await detail.restart()) {
+    notifySuccess(`The machine is ${doing}; its sessions will come back as new terminals`)
   } else {
     notifyError(error.value)
   }
@@ -229,17 +242,26 @@ async function stopSession(id) {
             <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
               agentrqd {{ machine.availableVersion }} is available
             </p>
-            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
-            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
-              Sessions come back as new terminals: same agent, same folder, empty scrollback.
-            </p>
+            <template v-if="canControl">
+              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
+              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
+                Sessions come back as new terminals: same agent, same folder, empty scrollback. Claude Code
+                agents resume their conversation.
+              </p>
+            </template>
+            <p v-else class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ handUpdateText }}</p>
           </div>
           <button
-            :disabled="busy"
-            @click="showUpdate = true"
-            class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
+            v-if="canControl"
+            :disabled="busy || !machine.online"
+            @click="showRestart = true"
+            aria-label="Update daemon"
+            class="shrink-0 p-2.5 sm:px-4 sm:py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
           >
-            Update and restart
+            <span class="hidden sm:inline">Update daemon</span>
+            <svg class="sm:hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" :d="REFRESH_ICON" />
+            </svg>
           </button>
         </div>
 
@@ -646,9 +668,55 @@ async function stopSession(id) {
                 <button
                   :disabled="busy"
                   @click="toggleEnabled"
-                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                  class="hidden sm:block shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
                 >
                   {{ machine.enabled ? 'Disable' : 'Enable' }}
+                </button>
+                <!-- A phone gets the switch workspace settings uses instead. -->
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="machine.enabled"
+                  aria-label="Enabled"
+                  :disabled="busy"
+                  @click="toggleEnabled"
+                  class="sm:hidden shrink-0 w-11 h-6 rounded-full border transition-colors relative disabled:opacity-50"
+                  :class="machine.enabled ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'"
+                >
+                  <span
+                    class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                    :class="machine.enabled ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"
+                  ></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
+                Daemon
+              </p>
+              <div
+                class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+                    {{ updating ? `Update agentrqd to ${machine.availableVersion}` : 'Restart agentrqd' }}
+                  </p>
+                  <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                    {{ canControl ? updateText : handUpdateText }}
+                  </p>
+                </div>
+                <button
+                  v-if="canControl"
+                  :disabled="busy || !machine.online"
+                  @click="showRestart = true"
+                  :aria-label="updating ? 'Update daemon' : 'Restart daemon'"
+                  class="shrink-0 p-2.5 sm:px-5 sm:py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <span class="hidden sm:inline">{{ updating ? 'Update daemon' : 'Restart daemon' }}</span>
+                  <svg class="sm:hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" :d="REFRESH_ICON" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -691,13 +759,14 @@ async function stopSession(id) {
     />
 
     <!-- A bare "Update?" is not consent: the person pressing it is usually not
-         the person whose agent is mid-task. -->
+         the person whose agent is mid-task. One confirm for the one command. -->
     <DeleteModal
-      :show="showUpdate"
-      title="Update and restart"
+      :show="showRestart"
+      :title="updating ? `Update agentrqd to ${machine?.availableVersion}` : 'Restart agentrqd'"
       :message="updateText"
-      @close="showUpdate = false"
-      @confirm="confirmUpdate"
+      :confirm-label="updating ? 'Update' : 'Restart'"
+      @close="showRestart = false"
+      @confirm="confirmRestart"
     />
 
   </div>

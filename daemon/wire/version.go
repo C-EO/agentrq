@@ -15,6 +15,12 @@ import (
 // development build can say the capability without making fork folders.
 const MinForkVersion = "0.9.3"
 
+// MinRemoteControlVersion is the first agentrqd release that can be restarted
+// or updated from the panel and bring its agents back listed. Before it an
+// update never came back under systemd or launchd, and the agents it restored
+// had lost their session rows.
+const MinRemoteControlVersion = "0.9.3"
+
 var releasePattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
 
 // VersionAtLeast reports whether a daemon's [Hello.Version] is min or later,

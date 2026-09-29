@@ -7,6 +7,8 @@ import {
   useMachineDetail,
   updateConsequence,
   deleteConsequence,
+  versionAtLeast,
+  REMOTE_CONTROL_MIN_VERSION,
 } from '../src/composables/useMachineDetail.js'
 
 const MACHINE = { id: 'm1', name: 'rpi', enabled: true, sessions: 1, metrics: { cpuPercent: 4 } }
@@ -23,7 +25,7 @@ function harness(over = {}) {
     updateMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, name: 'renamed' } }),
     deleteMachine: vi.fn().mockResolvedValue(true),
     killSession: vi.fn().mockResolvedValue(true),
-    approveMachineUpdate: vi.fn().mockResolvedValue(true),
+    restartDaemon: vi.fn().mockResolvedValue(true),
     ...over,
   }
   return { deps, d: useMachineDetail(deps) }
@@ -36,11 +38,11 @@ describe('updateConsequence', () => {
     const text = updateConsequence(3)
     expect(text).toContain('3 running sessions')
     expect(text).toContain('starts them again')
-    expect(text).toContain('not saved is lost')
+    expect(text).toContain('Unsaved work is lost')
   })
 
   it('counts one session as one', () => {
-    expect(updateConsequence(1)).toContain('1 running session')
+    expect(updateConsequence(1)).toContain('1 running session and starts it again')
     expect(updateConsequence(1)).not.toContain('1 running sessions')
   })
 
@@ -227,43 +229,89 @@ describe('stopping a session', () => {
   })
 })
 
-describe('approving an update', () => {
-  // The version travels with the approval, so a release that appeared between
-  // the offer and the yes is refused rather than installed.
+describe('updating, which is the same command', () => {
+  // The version travels with it, so a release that appeared between the offer
+  // and the yes is refused rather than installed.
   it('sends the version the machine actually offered', async () => {
     const h = harness({
       getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
     })
     await h.d.load()
-    expect(await h.d.approveUpdate()).toBe(true)
-    expect(h.deps.approveMachineUpdate).toHaveBeenCalledWith('m1', '0.7.1')
+    expect(h.d.updating.value).toBe(true)
+    expect(await h.d.restart()).toBe(true)
+    expect(h.deps.restartDaemon).toHaveBeenCalledWith('m1', '0.7.1')
   })
 
-  it('does nothing when nothing has been offered', async () => {
+  it('is a plain restart when nothing has been offered', async () => {
     const h = harness()
     await h.d.load()
-    expect(await h.d.approveUpdate()).toBe(false)
-    expect(h.deps.approveMachineUpdate).not.toHaveBeenCalled()
+    expect(h.d.updating.value).toBe(false)
+    await h.d.restart()
+    expect(h.deps.restartDaemon).toHaveBeenCalledWith('m1', '')
   })
 
-  it('reports an approval the server refused', async () => {
+  it('falls back to a message that says it was an update', async () => {
     const h = harness({
       getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
-      approveMachineUpdate: vi.fn().mockRejectedValue(new Error('that machine is not connected')),
+      restartDaemon: vi.fn().mockRejectedValue({}),
     })
     await h.d.load()
-    expect(await h.d.approveUpdate()).toBe(false)
+    expect(await h.d.restart()).toBe(false)
+    expect(h.d.error.value).toBe('Failed to update this machine')
+  })
+})
+
+// The same answers as wire.VersionAtLeast, which the server refuses by.
+describe('versionAtLeast', () => {
+  it('compares as semver, not as text', () => {
+    expect(versionAtLeast('0.9.3', '0.9.3')).toBe(true)
+    expect(versionAtLeast('0.9.10', '0.9.3')).toBe(true)
+    expect(versionAtLeast('1.0.0', '0.9.3')).toBe(true)
+    expect(versionAtLeast('0.9.2', '0.9.3')).toBe(false)
+    expect(versionAtLeast('0.8.9', '0.9.3')).toBe(false)
+  })
+
+  it('puts a pre-release below its release', () => {
+    expect(versionAtLeast('0.9.3-rc.1', '0.9.3')).toBe(false)
+    expect(versionAtLeast('0.9.4-rc.1', '0.9.3')).toBe(true)
+  })
+
+  it('puts anything that is not a release below everything', () => {
+    for (const v of ['dev', '', undefined, null, 'v0.9.3', '0.9']) {
+      expect(versionAtLeast(v, '0.9.3'), String(v)).toBe(false)
+    }
+    expect(versionAtLeast('0.9.3', 'not a version')).toBe(false)
+  })
+})
+
+describe('restarting', () => {
+  it('can be asked of a daemon new enough to do it', async () => {
+    const h = harness({
+      getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, version: REMOTE_CONTROL_MIN_VERSION } }),
+    })
+    await h.d.load()
+    expect(h.d.canControl.value).toBe(true)
+    expect(await h.d.restart()).toBe(true)
+    expect(h.deps.restartDaemon).toHaveBeenCalledWith('m1', '')
+    expect(h.d.busy.value).toBe(false)
+  })
+
+  it('cannot be asked of an older one', async () => {
+    const h = harness({ getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, version: '0.9.2' } }) })
+    await h.d.load()
+    expect(h.d.canControl.value).toBe(false)
+  })
+
+  it('reports a restart the server refused', async () => {
+    const h = harness({ restartDaemon: vi.fn().mockRejectedValue(new Error('that machine is not connected')) })
+    expect(await h.d.restart()).toBe(false)
     expect(h.d.error.value).toBe('that machine is not connected')
   })
 
   it('falls back to a message', async () => {
-    const h = harness({
-      getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
-      approveMachineUpdate: vi.fn().mockRejectedValue({}),
-    })
-    await h.d.load()
-    await h.d.approveUpdate()
-    expect(h.d.error.value).toBe('Failed to approve the update')
+    const h = harness({ restartDaemon: vi.fn().mockRejectedValue({}) })
+    await h.d.restart()
+    expect(h.d.error.value).toBe('Failed to restart this machine')
   })
 })
 

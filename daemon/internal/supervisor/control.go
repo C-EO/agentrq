@@ -105,6 +105,9 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 	// does not sit in the UI as running forever.
 	go func() {
 		s.awaitEnd(sess)
+		if sess.HandedOver() {
+			return // it is coming back, and its row has to be there when it does
+		}
 		state, code, _ := sess.State()
 		_ = r.ReportSessionState(wire.SessionState{
 			SessionID: req.SessionID,

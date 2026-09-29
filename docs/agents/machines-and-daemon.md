@@ -122,6 +122,13 @@ Two details in `cmdServe` are load-bearing and easy to undo:
 - **Restoration is intent, not state**: new processes, new terminals, no
   scrollback. Restored sessions are marked as such so nobody wonders why their
   terminal is empty. The note that survives the restart carries no credential.
+- **A restart or update from the panel exits 75, never 0.** The shipped units
+  restart on failure only; exit 0 left the machine with no daemon.
+- **A handover must not end the session rows.** The stopped agents' ends are
+  not reported, and `Supervisor.Running` (and the next daemon's hello, via
+  `Expect`) keeps naming them until restored — or the backend deletes the rows
+  and the restored agents run unlisted. Both commands are sent only to a daemon
+  ≥ `wire.MinRemoteControlVersion` with the `restart`/`update` capability.
 
 ## A background without a foreground is a bug in one theme
 

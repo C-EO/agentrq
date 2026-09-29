@@ -454,6 +454,39 @@ func TestRecordSessionKillIgnoresAnUnreadableUser(t *testing.T) {
 	}
 }
 
+func TestRecordMachineCommandCountsThePerson(t *testing.T) {
+	for _, action := range []entity.Action{entity.ActionMachineRestart, entity.ActionMachineUpdate} {
+		env := newMachineTelemetryEnv(t)
+
+		env.controller.RecordMachineCommand(t.Context(), entity.RecordMachineCommandRequest{
+			UserID:    testUserIDStr,
+			MachineID: 42,
+			Action:    action,
+		})
+
+		ev := env.only(t)
+		if ev.Action != action || ev.Actor != entity.ActorHuman {
+			t.Errorf("event = %+v", ev)
+		}
+		// A machine has no workspace; see docs/agents/telemetry.md.
+		if ev.WorkspaceID != 0 || ev.ResourceType != entity.ResourceMachine || ev.ResourceID != 42 {
+			t.Errorf("event = %+v", ev)
+		}
+	}
+}
+
+func TestRecordMachineCommandIgnoresAnUnreadableUser(t *testing.T) {
+	env := newMachineTelemetryEnv(t)
+
+	env.controller.RecordMachineCommand(t.Context(), entity.RecordMachineCommandRequest{
+		MachineID: 42, Action: entity.ActionMachineRestart,
+	})
+
+	if len(*env.events) != 0 {
+		t.Errorf("published %+v, want nothing", *env.events)
+	}
+}
+
 func TestRecordTerminalViewCountsBothEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -516,6 +549,8 @@ func TestMachineActionsStringify(t *testing.T) {
 		entity.ActionMachineTerminalOpen:    "machine_terminal_open",
 		entity.ActionMachineTerminalClose:   "machine_terminal_close",
 		entity.ActionMachineEnrolCodeCreate: "machine_enrol_code_create",
+		entity.ActionMachineRestart:         "machine_restart",
+		entity.ActionMachineUpdate:          "machine_update",
 	} {
 		if got := action.String(); got != name {
 			t.Errorf("%d: got %q, want %q", action, got, name)
@@ -539,6 +574,8 @@ func TestMachineActionsAreDistinct(t *testing.T) {
 		entity.ActionMachineTerminalOpen,
 		entity.ActionMachineTerminalClose,
 		entity.ActionMachineEnrolCodeCreate,
+		entity.ActionMachineRestart,
+		entity.ActionMachineUpdate,
 	} {
 		if seen[a] {
 			t.Errorf("%v (%s) is used twice", a, a.String())

@@ -83,8 +83,12 @@ every session on this machine and restart them"*, and only a person can mean
 that.
 
 ```
-verify → download → test → *write the note* → kill → swap → restart
+verify → download → test → *write the note* → stop → swap → restart
 ```
+
+A restart from the panel (`restart`) is the same handover without the first
+three steps or the swap. Both are sent only to a daemon whose hello lists the
+`restart` or `update` capability and that is at least `MinRemoteControlVersion`.
 
 Everything before the note is reversible; everything after it is not. Four
 things hold this together:
@@ -115,17 +119,31 @@ is a test that holds the file open and does exactly that, including asserting
 that deleting it still fails.
 
 Who restarts depends on how it was installed: under systemd or launchd it exits
-and the service manager starts the replacement, otherwise it re-executes
-itself. Which one is read from the environment the supervisor sets, and an
+with status 75 and the service manager starts the replacement, otherwise it
+re-executes itself. Not 0: the units shipped here restart on failure only, so
+that a deliberate stop stays stopped, and an exit of 0 left the machine with no
+daemon. Which one is read from the environment the supervisor sets, and an
 uncertain answer is the one that leaves a daemon running.
 
 ## What "restore the sessions" means
 
 **Intent, not state.** What comes back are new processes with new
-pseudo-terminals: same kind, same folder, same arguments. The scrollback is
-gone, whatever the agent was part-way through is gone, and anything half-typed
-is gone. Every restored session is marked restored, in the report and therefore
-in the panel, so nobody is left wondering why their terminal is empty.
+pseudo-terminals: same kind, same folder, same arguments, same session id. The
+scrollback is gone and anything half-typed is gone. Every restored session is
+marked restored, in the report and therefore in the panel, so nobody is left
+wondering why their terminal is empty.
+
+A claude-code session is launched with `--session-id` set to a UUID derived from
+its session id, and restored with `--resume` of it when claude-code has saved
+that conversation, so the agent keeps its context. With nothing saved it starts
+fresh rather than failing.
+
+**The session rows have to outlive the restart.** The stopped sessions' ends are
+not reported, and the supervisor goes on listing them in heartbeats — and the
+next daemon in its hello — until they are started again, because the backend
+deletes the row of any session that ends or goes unlisted, and a restored agent
+with no row is one nothing can list or stop. If the restart fails, this daemon
+starts them again itself.
 
 The note is written to disk **before** anything is killed, because the process
 holding it in memory is the process about to be replaced. It carries no

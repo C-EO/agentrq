@@ -66,6 +66,9 @@ type Request struct {
 	// Fork runs a workspace fork in a folder of its own, made from Fork.From;
 	// Dir is ignored then. Nil for every other workspace.
 	Fork *wire.ForkSpec
+	// Resume picks a restored claude-code session's conversation back up,
+	// when there is one saved.
+	Resume bool
 
 	Cols uint16
 	Rows uint16
@@ -107,6 +110,9 @@ type Session struct {
 	// until it does. Kept so a finished session can be dropped once nobody
 	// is going to ask about it.
 	endedAt time.Time
+	// handedOver marks a session stopped by [Supervisor.HandOver], to be
+	// started again by the next daemon. Its end is not news to the backend.
+	handedOver bool
 
 	// ended closes once the session has reached a terminal state *and* that
 	// state has been recorded.
@@ -171,6 +177,9 @@ type Supervisor struct {
 
 	// Home is where the forks folder lives; empty means the user's home.
 	Home string
+	// ClaudeDir is where claude-code keeps its conversations; empty means
+	// $CLAUDE_CONFIG_DIR, or ~/.claude.
+	ClaudeDir string
 
 	// finishedRetention is how long a finished session stays answerable.
 	// A field rather than a constant so a test need not wait out the window.
@@ -179,6 +188,10 @@ type Supervisor struct {
 	mu       sync.Mutex
 	sessions map[uint64]*Session
 	profiles map[uint64]string // session id → profile
+	// returning are the sessions a handover stopped and a restart will start
+	// again. [Supervisor.Running] still names them, or a heartbeat between
+	// the stop and the restart would have the backend delete their rows.
+	returning map[uint64]bool
 }
 
 // New makes a supervisor.
@@ -190,6 +203,7 @@ func New(start Starter, perProfile, wholeMachine int) *Supervisor {
 		finishedRetention: FinishedRetention,
 		sessions:          map[uint64]*Session{},
 		profiles:          map[uint64]string{},
+		returning:         map[uint64]bool{},
 	}
 }
 
@@ -300,6 +314,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	s.sessions[req.ID] = sess
 	s.profiles[req.ID] = profile
+	delete(s.returning, req.ID)
 	s.mu.Unlock()
 
 	// From here, any failure has to release the reservation.
@@ -395,7 +410,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	// — a logger, a trace — survives; only the cancellation is dropped. What
 	// ends a session is Kill, the process itself, or StopAll at shutdown.
 	tty, err := s.start(context.WithoutCancel(ctx), pty.Spec{
-		Argv: cmd.Argv,
+		Argv: slices.Concat(cmd.Argv, s.conversationArgs(req)),
 		Dir:  req.Dir,
 		Cols: req.Cols,
 		Rows: req.Rows,
@@ -571,11 +586,19 @@ func (s *Supervisor) Count() int {
 func (s *Supervisor) Running() []uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ids := make([]uint64, 0, len(s.sessions))
+	ids := make([]uint64, 0, len(s.sessions)+len(s.returning))
 	for id, sess := range s.sessions {
 		if state, _, _ := sess.State(); !state.Terminal() {
 			ids = append(ids, id)
 		}
+	}
+	for id := range s.returning {
+		if sess, ok := s.sessions[id]; ok {
+			if state, _, _ := sess.State(); !state.Terminal() {
+				continue // a process that outlived the wait, listed above
+			}
+		}
+		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
@@ -622,6 +645,85 @@ func (s *Supervisor) StopAll(ctx context.Context, wait time.Duration) []uint64 {
 		}
 	}
 	return stopped
+}
+
+// HandOver stops every running session for a restart that will start them
+// again, and returns them.
+//
+// Unlike [Supervisor.StopAll] their ends are not reported, and [Running] keeps
+// naming them until they are started again or [Supervisor.Abandon] gives up:
+// the backend deletes the row of a session that ends, and a restored agent
+// with no row is one nothing can list or stop. Finished, they are dropped from
+// the map so the same ids can be started again.
+func (s *Supervisor) HandOver(ctx context.Context, wait time.Duration) []*Session {
+	live := s.Live()
+	s.mu.Lock()
+	for _, sess := range live {
+		sess.mu.Lock()
+		sess.handedOver = true
+		sess.mu.Unlock()
+		s.returning[sess.ID] = true
+	}
+	s.mu.Unlock()
+
+	for _, sess := range live {
+		_ = s.Kill(sess.ID)
+	}
+	deadline := time.After(wait)
+	for _, sess := range live {
+		select {
+		case <-sess.Ended():
+		case <-deadline:
+		case <-ctx.Done():
+		}
+	}
+
+	s.mu.Lock()
+	for _, sess := range live {
+		// Ended, not a terminal state: a kill is terminal the moment it is
+		// asked for, and dropping a process that is still there would leave
+		// it unlisted.
+		select {
+		case <-sess.Ended():
+			delete(s.sessions, sess.ID)
+			delete(s.profiles, sess.ID)
+		default:
+		}
+	}
+	s.mu.Unlock()
+	return live
+}
+
+// Expect names sessions a previous daemon handed over, from its note, until
+// they are started again: the first hello must list them or the backend
+// deletes the rows they come back to.
+func (s *Supervisor) Expect(ids ...uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range ids {
+		s.returning[id] = true
+	}
+}
+
+// Abandon stops naming sessions that are not coming back — the ones given,
+// or with none given all of them.
+func (s *Supervisor) Abandon(ids ...uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(ids) == 0 {
+		clear(s.returning)
+		return
+	}
+	for _, id := range ids {
+		delete(s.returning, id)
+	}
+}
+
+// HandedOver reports whether this session was stopped to be started again.
+func (sess *Session) HandedOver() bool {
+	sess.mu.RLock()
+	defer sess.mu.RUnlock()
+	return sess.handedOver
 }
 
 // Live lists the sessions still running, with what they were started with.

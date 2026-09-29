@@ -146,9 +146,9 @@ describe('the catalogue as a whole', () => {
         // overwrite replaces skills this workspace already had.
         'unshareWorkspaceSkill',
         'importWorkspaceSkills',
-        // Not a delete either, and the most destructive thing here: it ends
-        // every session on a machine and starts them again empty.
-        'approveMachineUpdate',
+        // Not deletes either, and the most destructive things here: each
+        // ends every session on a machine and starts them again empty.
+        'restartDaemon',
         // Not a delete, but it ends work in progress: disabling a machine
         // closes its connection at once, and stopping a session loses whatever
         // the agent had not saved.

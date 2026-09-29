@@ -14,7 +14,8 @@ import (
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
-// Restored starts again what an update stopped.
+// Restored reads what a restart stopped, to be started again, and has the
+// supervisor go on naming those sessions until then.
 //
 // **What comes back is intent, not state.** These are new processes with new
 // pseudo-terminals: same kind, same folder, same arguments. The scrollback is
@@ -38,8 +39,13 @@ func Restored(ctx context.Context, dir string, sup *supervisor.Supervisor, log *
 		return nil
 	}
 
-	log.Warn("restoring sessions after an update; their scrollback and in-flight work are gone",
-		"count", len(note.Sessions), "from", note.FromVersion)
+	log.Warn("restoring sessions after a restart; their scrollback and in-flight work are gone",
+		"reason", note.Reason, "count", len(note.Sessions), "from", note.FromVersion)
+	ids := make([]uint64, 0, len(note.Sessions))
+	for _, s := range note.Sessions {
+		ids = append(ids, s.ID)
+	}
+	sup.Expect(ids...)
 	return note.Sessions
 }
 
@@ -72,6 +78,7 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 	})
 	if err != nil {
 		l.Log.Warn("cannot restore a session", "session", s.ID, "error", err)
+		l.Supervisor.Abandon(s.ID)
 		report(supervisor.StateFailed, err.Error())
 		return
 	}
@@ -89,16 +96,33 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		},
 		Dir:            s.Dir,
 		ReuseMCPConfig: cmd.NeedsMCPConfig,
+		Resume:         true,
 		Cols:           s.Cols,
 		Rows:           s.Rows,
 	})
 	if err != nil {
 		l.Log.Warn("a session did not come back", "session", s.ID, "error", err)
+		l.Supervisor.Abandon(s.ID)
 		report(supervisor.StateFailed, err.Error())
 		return
 	}
 
 	report(supervisor.StateRunning, "")
+
+	// Its end is reported like a launched session's, or the row outlives the
+	// agent until the next heartbeat. Not when it is handed over again.
+	go func() {
+		<-sess.Ended()
+		if sess.HandedOver() {
+			return
+		}
+		state, code, _ := sess.State()
+		_ = conn.Control(wire.Control{Op: wire.OpSessionState, Body: mustJSON(wire.SessionState{
+			SessionID: s.ID,
+			State:     string(state),
+			ExitCode:  &code,
+		})})
+	}()
 
 	if tty := sess.PTY(); tty != nil {
 		cols, rows := s.Cols, s.Rows

@@ -294,26 +294,25 @@ export async function createEnrolmentCode() {
 }
 
 /**
- * Approve a machine's agentrqd update.
+ * Restart a machine's agentrqd, updating it first when given a version.
  *
- * The one request in the product that deliberately destroys work in progress:
- * the daemon stops every session on that machine, replaces itself, and starts
- * them again as new processes with empty terminals. The version is required so
- * that "yes" means yes to a particular release rather than to whatever the
- * release feed offers by the time the daemon looks.
+ * Every session on that machine is stopped and started again, as the same
+ * sessions in new terminals. The version, when there is one, must be the
+ * release the machine offered, so that "yes" means yes to that release rather
+ * than to whatever the feed offers by the time the daemon looks.
  *
- * Answers 202: the daemon has been asked, and its own next connection is what
- * says whether it came back.
+ * Answers 202: the daemon has been asked, and its next connection is what says
+ * it came back.
  */
-export async function approveMachineUpdate(machineId, version) {
-  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/update`, {
+export async function restartDaemon(machineId, version = '') {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/restart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ version })
+    body: JSON.stringify(version ? { version } : {})
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error?.message || body?.error || 'Failed to approve the update');
+    throw new Error(body?.error?.message || body?.error || 'Failed to restart the machine');
   }
   return true;
 }

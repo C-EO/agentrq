@@ -68,6 +68,8 @@ func TestMachineActionsPersistWithDistinctIDs(t *testing.T) {
 		name      string
 	}{
 		{entity.ActionMachineEnrolCodeCreate, model.ActionIDMachineEnrolCodeCreate, 0, "enrolment code created"},
+		{entity.ActionMachineRestart, model.ActionIDMachineRestart, 0, "machine restarted"},
+		{entity.ActionMachineUpdate, model.ActionIDMachineUpdate, 0, "machine updated"},
 		{entity.ActionMachineAdd, model.ActionIDMachineAdd, 0, "machine added"},
 		{entity.ActionMachineRemove, model.ActionIDMachineRemove, 0, "machine removed"},
 		{entity.ActionMachineDisable, model.ActionIDMachineDisable, 0, "machine disabled"},

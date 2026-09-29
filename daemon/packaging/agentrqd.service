@@ -26,10 +26,10 @@ ExecStart=%h/.local/bin/agentrqd serve
 Restart=on-failure
 RestartSec=5s
 
-# A self-update exits 0 and lets systemd start the replacement, which is why
-# this is on-failure rather than always: a deliberate stop should stay stopped.
-# systemd sets INVOCATION_ID, which is how the daemon knows to exit rather than
-# re-exec itself.
+# A restart or update from the panel exits 75 and lets systemd start the
+# daemon again, which is why this is on-failure rather than always: a
+# deliberate stop exits 0 and should stay stopped. systemd sets INVOCATION_ID,
+# which is how the daemon knows to exit rather than re-exec itself.
 
 # The agents it starts are the point, so this cannot be locked down the way a
 # single-purpose service can. These are the restrictions that do not conflict

@@ -25,11 +25,31 @@ import { isSessionLive } from './useMachineFormat'
  */
 export function updateConsequence(sessionCount) {
   const n = Number.isFinite(sessionCount) ? Math.max(0, sessionCount) : 0
-  if (n === 0) {
-    return 'This restarts the daemon on this machine. Nothing is running on it.'
+  if (n === 0) return 'Nothing is running on it.'
+  if (n === 1) return 'Stops 1 running session and starts it again. Unsaved work is lost.'
+  return `Stops ${n} running sessions and starts them again. Unsaved work is lost.`
+}
+
+/** The first agentrqd that can be restarted or updated from here; wire.MinRemoteControlVersion. */
+export const REMOTE_CONTROL_MIN_VERSION = '0.9.3'
+
+/**
+ * Whether a daemon's version is `min` or later, as wire.VersionAtLeast
+ * decides it: semver, a pre-release below its release, and anything that is
+ * not a release ("dev", empty) below everything.
+ */
+export function versionAtLeast(version, min) {
+  const parse = (s) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.]+)?$/.exec(String(s ?? ''))
+    return m ? { core: [+m[1], +m[2], +m[3]], pre: Boolean(m[4]) } : null
   }
-  const agents = n === 1 ? '1 running session' : `${n} running sessions`
-  return `This restarts the daemon on this machine, which stops ${agents} and starts them again. Anything an agent has not saved is lost.`
+  const v = parse(version)
+  const floor = parse(min)
+  if (!v || !floor) return false
+  for (let i = 0; i < 3; i++) {
+    if (v.core[i] !== floor.core[i]) return v.core[i] > floor.core[i]
+  }
+  return !v.pre
 }
 
 /**
@@ -60,7 +80,7 @@ export function useMachineDetail(deps = {}) {
     updateMachine = api.updateMachine,
     deleteMachine = api.deleteMachine,
     killSession = api.killSession,
-    approveMachineUpdate = api.approveMachineUpdate,
+    restartDaemon = api.restartDaemon,
   } = deps
 
   const machine = ref(null)
@@ -70,6 +90,9 @@ export function useMachineDetail(deps = {}) {
   const busy = ref(false)
 
   const liveSessions = computed(() => sessions.value.filter((s) => isSessionLive(s.status)))
+
+  // The server refuses an older daemon too; this is so the page says so first.
+  const canControl = computed(() => versionAtLeast(machine.value?.version, REMOTE_CONTROL_MIN_VERSION))
 
   // `quiet` re-reads without the loading line, for a refresh the person did not ask for.
   async function load({ quiet = false } = {}) {
@@ -156,24 +179,23 @@ export function useMachineDetail(deps = {}) {
     }
   }
 
+  // One command for both: an offered release is installed on the way, since
+  // installing it restarts the daemon anyway.
+  const updating = computed(() => Boolean(machine.value?.availableVersion))
+
   /**
-   * Say yes to the update this machine has offered.
-   *
-   * The version travels with the approval, so a release that appeared between
-   * the offer and the yes is refused rather than installed: somebody who
-   * agreed to lose their sessions for one version did not agree to lose them
-   * for another.
+   * Restart the daemon, updating it to the offered release when there is one.
+   * Every session is stopped and started again. Answered once the daemon has
+   * been asked; its next hello says it is back.
    */
-  async function approveUpdate() {
-    const version = machine.value?.availableVersion
-    if (!version) return false
+  async function restart() {
     busy.value = true
     error.value = ''
     try {
-      await approveMachineUpdate(machineId, version)
+      await restartDaemon(machineId, machine.value?.availableVersion || '')
       return true
     } catch (e) {
-      error.value = e?.message || 'Failed to approve the update'
+      error.value = e?.message || (updating.value ? 'Failed to update this machine' : 'Failed to restart this machine')
       return false
     } finally {
       busy.value = false
@@ -224,6 +246,7 @@ export function useMachineDetail(deps = {}) {
     machine,
     sessions,
     liveSessions,
+    canControl,
     loading,
     error,
     busy,
@@ -232,7 +255,8 @@ export function useMachineDetail(deps = {}) {
     setEnabled,
     remove,
     stop,
-    approveUpdate,
+    updating,
+    restart,
     handleEvent,
   }
 }

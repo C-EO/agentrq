@@ -52,6 +52,13 @@ func DetectMode(env func(string) string, goos string) Mode {
 	return ModeReexec
 }
 
+// ExitRestart is the status a daemon exits with for its service manager to
+// start it again: EX_TEMPFAIL, which reads as "try again" in a unit's log.
+const ExitRestart = 75
+
+// exit is os.Exit, swapped out by a test.
+var exit = os.Exit
+
 // Restart hands over to the new binary.
 //
 // On the supervisor path it does not return: the process exits and the service
@@ -61,9 +68,11 @@ func DetectMode(env func(string) string, goos string) Mode {
 // run.
 func Restart(mode Mode, path string, args []string) error {
 	if mode == ModeSupervisor {
-		// Zero, not an error code: this is a deliberate stop, and a unit with
-		// Restart=always treats a non-zero exit as a crash to be reported.
-		os.Exit(0)
+		// Non-zero: the units we ship restart on failure only, so that a
+		// deliberate stop stays stopped, and an exit of 0 here left the
+		// machine with no daemon at all.
+		exit(ExitRestart)
+		return nil
 	}
 
 	if runtime.GOOS == "windows" {
@@ -74,7 +83,7 @@ func Restart(mode Mode, path string, args []string) error {
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("update: cannot start the new binary: %w", err)
 		}
-		os.Exit(0)
+		exit(0)
 	}
 
 	// The process image is replaced, so the pid, the controlling terminal and

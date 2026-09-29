@@ -211,3 +211,27 @@ func TestDetectMode(t *testing.T) {
 		})
 	}
 }
+
+func TestRestartUnderASupervisorExitsForItToRestart(t *testing.T) {
+	var got int
+	exit = func(code int) { got = code }
+	t.Cleanup(func() { exit = os.Exit })
+
+	if err := Restart(ModeSupervisor, "/nonexistent", nil); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	// Zero would leave a Restart=on-failure unit, and a launchd job with
+	// SuccessfulExit=false, stopped for good.
+	if got != ExitRestart || got == 0 {
+		t.Fatalf("exit code = %d, want %d", got, ExitRestart)
+	}
+}
+
+func TestRestartByReexecReportsABinaryThatWillNotRun(t *testing.T) {
+	exit = func(code int) { t.Fatalf("exited with %d instead of reporting the failure", code) }
+	t.Cleanup(func() { exit = os.Exit })
+
+	if err := Restart(ModeReexec, filepath.Join(t.TempDir(), "missing"), nil); err == nil {
+		t.Fatal("Restart of a missing binary returned nil")
+	}
+}
