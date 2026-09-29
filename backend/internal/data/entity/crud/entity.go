@@ -355,9 +355,11 @@ type (
 	// TaskStateTransition is one change of a task's status. FromState is ""
 	// on the row written when the task was created.
 	TaskStateTransition struct {
-		FromState string
-		ToState   string
-		CreatedAt time.Time
+		FromState  string
+		ToState    string
+		Agent      string // the agent that made the change; "" when none did
+		AgentModel string
+		CreatedAt  time.Time
 	}
 
 	// TaskTiming is what a task's state transitions add up to. A state the
@@ -1376,6 +1378,31 @@ func GetOrigin(ctx context.Context) Origin {
 		return o
 	}
 	return OriginInvalid
+}
+
+// TaskAgent is the agent behind a request, as it named itself, and the model
+// it was running. ID and ModelID are their rows once registered; a status
+// change made under it records those.
+type TaskAgent struct {
+	Name    string
+	Model   string
+	ID      int64
+	ModelID int64
+}
+
+const TaskAgentContextKey contextKey = "task_agent"
+
+func WithTaskAgent(ctx context.Context, a TaskAgent) context.Context {
+	return context.WithValue(ctx, TaskAgentContextKey, a)
+}
+
+// GetTaskAgent is the agent WithTaskAgent attached, or the zero value.
+func GetTaskAgent(ctx context.Context) TaskAgent {
+	if ctx == nil {
+		return TaskAgent{}
+	}
+	a, _ := ctx.Value(TaskAgentContextKey).(TaskAgent)
+	return a
 }
 
 const (

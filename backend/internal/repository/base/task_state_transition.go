@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListTaskStateTransitions returns a task's status changes, oldest first.
@@ -23,16 +25,54 @@ func (r *repository) ListTaskStateTransitions(ctx context.Context, taskID int64)
 	return rows, err
 }
 
+// CreateAgents files agents' names in one statement. A name already filed is
+// left as it is: the ID is the name's hash, so the row can only ever say the
+// same thing.
+func (r *repository) CreateAgents(ctx context.Context, agents []model.Agent) error {
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&agents).Error
+}
+
+// CreateAgentModels files models' names, as CreateAgents files agents'.
+func (r *repository) CreateAgentModels(ctx context.Context, models []model.AgentModel) error {
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&models).Error
+}
+
+// ListAgents returns the agents with the given IDs, or every agent for nil.
+func (r *repository) ListAgents(ctx context.Context, ids []int64) ([]model.Agent, error) {
+	var rows []model.Agent
+	err := byIDs(r.conn(ctx), ids).Find(&rows).Error
+	return rows, err
+}
+
+// ListAgentModels returns the models with the given IDs, or every model for
+// nil.
+func (r *repository) ListAgentModels(ctx context.Context, ids []int64) ([]model.AgentModel, error) {
+	var rows []model.AgentModel
+	err := byIDs(r.conn(ctx), ids).Find(&rows).Error
+	return rows, err
+}
+
+func byIDs(db *gorm.DB, ids []int64) *gorm.DB {
+	if ids == nil {
+		return db
+	}
+	return db.Where("id IN ?", ids)
+}
+
 // recordTaskStateTransition is the only writer of a task's history. A move
 // into a closed state also records the task's latency, here rather than in
-// the callers, so no path can close a task without it.
+// the callers, so no path can close a task without it. The agent that made
+// the change, if any, comes from the context, already registered.
 func recordTaskStateTransition(tx *gorm.DB, t model.Task, from, to model.TaskState) error {
+	agent := entity.GetTaskAgent(tx.Statement.Context)
 	if err := tx.Create(&model.TaskStateTransition{
-		UserID:      t.UserID,
-		WorkspaceID: t.WorkspaceID,
-		TaskID:      t.ID,
-		FromState:   from,
-		ToState:     to,
+		UserID:       t.UserID,
+		WorkspaceID:  t.WorkspaceID,
+		TaskID:       t.ID,
+		FromState:    from,
+		ToState:      to,
+		AgentID:      agent.ID,
+		AgentModelID: agent.ModelID,
 	}).Error; err != nil {
 		return err
 	}

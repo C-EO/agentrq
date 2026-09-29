@@ -15,6 +15,7 @@ import {
   timelineTextClass,
   timelineTone,
   timelineTotals,
+  timelineWorkedLabel,
 } from '../src/composables/useTaskTimeline';
 
 const t0 = new Date('2026-09-27T10:00:00Z');
@@ -110,6 +111,30 @@ describe('colour', () => {
   });
 });
 
+describe('timelineWorkedLabel', () => {
+  const label = (transitions) => timelineWorkedLabel(transitions, timelineSegments(transitions, at(60)));
+
+  it('names the agent that last changed the status, and its model', () => {
+    expect(label([
+      tr('', 'notstarted', 0),
+      { ...tr('notstarted', 'ongoing', 1), agent: 'codex' },
+      { ...tr('ongoing', 'completed', 5), agent: 'gemini', agentModel: 'Gemini 3 Flash' },
+    ])).toBe('gemini (Gemini 3 Flash) worked');
+    expect(label([tr('', 'notstarted', 0), { ...tr('notstarted', 'ongoing', 1), agent: 'claude-code' }, tr('ongoing', 'completed', 5)]))
+      .toBe('claude-code worked');
+  });
+
+  it('says working while the task is ongoing', () => {
+    expect(label([tr('', 'notstarted', 0), { ...tr('notstarted', 'ongoing', 1), agent: 'claude-code' }])).toBe('claude-code working');
+    expect(label([tr('', 'ongoing', 0)])).toBe('Working');
+  });
+
+  it('keeps the plain label when no agent is named', () => {
+    expect(label([tr('', 'ongoing', 0), tr('ongoing', 'completed', 5)])).toBe('Worked');
+    expect(timelineWorkedLabel(null, [])).toBe('Worked');
+  });
+});
+
 describe('TaskTimeline', () => {
   let app;
   afterEach(() => { app?.unmount(); app = null; });
@@ -136,13 +161,13 @@ describe('TaskTimeline', () => {
         { fromState: '', toState: 'ongoing', createdAt: ago(60) },
         { fromState: 'ongoing', toState: 'blocked', createdAt: ago(40) },
         { fromState: 'blocked', toState: 'needsinput', createdAt: ago(30) },
-        { fromState: 'needsinput', toState: 'completed', createdAt: ago(20) },
+        { fromState: 'needsinput', toState: 'completed', createdAt: ago(20), agent: 'claude-code' },
       ],
     });
     await nextTick();
     const text = el.textContent;
     expect(el.querySelectorAll('li')).toHaveLength(4);
-    for (const s of ['ongoing', 'blocked', 'needs input', 'completed', 'Worked', '20m', 'Blocked', '10m', 'Needs input', 'Start→close', '40m']) {
+    for (const s of ['ongoing', 'blocked', 'needs input', 'completed', 'claude-code worked', '20m', 'Blocked', '10m', 'Needs input', 'Start→close', '40m']) {
       expect(text).toContain(s);
     }
   });

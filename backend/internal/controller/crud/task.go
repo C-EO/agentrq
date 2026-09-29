@@ -192,12 +192,18 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 	if err != nil {
 		return nil, err
 	}
+	agents, models, err := c.agentNames(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
 	transitions := make([]entity.TaskStateTransition, len(rows))
 	for i, r := range rows {
 		transitions[i] = entity.TaskStateTransition{
-			FromState: r.FromState.String(),
-			ToState:   r.ToState.String(),
-			CreatedAt: r.CreatedAt,
+			FromState:  r.FromState.String(),
+			ToState:    r.ToState.String(),
+			Agent:      agents[r.AgentID],
+			AgentModel: models[r.AgentModelID],
+			CreatedAt:  r.CreatedAt,
 		}
 	}
 	return &entity.GetTaskResponse{
@@ -205,6 +211,30 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 		StateTransitions: transitions,
 		Timing:           taskTiming(rows, time.Now()),
 	}, nil
+}
+
+// agentNames looks up the names of the agents and models a task's history
+// refers to, without a trip to the repository when it refers to none.
+func (c *controller) agentNames(ctx context.Context, rows []model.TaskStateTransition) (agents, models map[int64]string, err error) {
+	var agentIDs, modelIDs []int64
+	seenAgents, seenModels := make(map[int64]bool), make(map[int64]bool)
+	for _, r := range rows {
+		if r.AgentID != 0 && !seenAgents[r.AgentID] {
+			seenAgents[r.AgentID] = true
+			agentIDs = append(agentIDs, r.AgentID)
+		}
+		if r.AgentModelID != 0 && !seenModels[r.AgentModelID] {
+			seenModels[r.AgentModelID] = true
+			modelIDs = append(modelIDs, r.AgentModelID)
+		}
+	}
+	if len(agentIDs) == 0 {
+		return nil, nil, nil
+	}
+	if c.taskAgents == nil {
+		return nil, nil, nil
+	}
+	return c.taskAgents.Names(ctx, agentIDs, modelIDs)
 }
 
 // taskTiming is the entity form of model.TaskTimingOf, which the latency

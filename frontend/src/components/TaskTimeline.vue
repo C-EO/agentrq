@@ -38,7 +38,7 @@
       Total <span class="tabular-nums text-gray-700 dark:text-zinc-200">{{ formatDuration(totals.totalSeconds) }}</span>
     </div>
     <div v-else class="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500 whitespace-nowrap">
-      <span>Worked <span class="tabular-nums text-gray-700 dark:text-zinc-200">{{ formatDuration(totals.workedSeconds) }}</span></span>
+      <span>{{ workedLabel }} <span class="tabular-nums text-gray-700 dark:text-zinc-200">{{ formatDuration(totals.workedSeconds) }}</span></span>
       <span v-if="totals.blockedSeconds">· Blocked <span class="tabular-nums text-red-600 dark:text-red-400">{{ formatDuration(totals.blockedSeconds) }}</span></span>
       <span v-if="totals.needsInputSeconds">· Needs input <span class="tabular-nums text-yellow-600 dark:text-yellow-400">{{ formatDuration(totals.needsInputSeconds) }}</span></span>
       <span v-if="totals.startToCloseSeconds !== null">· Start→close <span class="tabular-nums text-gray-700 dark:text-zinc-200">{{ formatDuration(totals.startToCloseSeconds) }}</span></span>
@@ -50,7 +50,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
   formatDuration, formatTransitionTime, timelineDotClass, timelineLineClass, timelineSegments,
-  timelineStateLabel, timelineTextClass, timelineTone, timelineTotals,
+  timelineStateLabel, timelineTextClass, timelineTone, timelineTotals, timelineWorkedLabel,
 } from '../composables/useTaskTimeline';
 
 const COMPACT_DOTS = 6;
@@ -73,6 +73,7 @@ onUnmounted(() => clearInterval(timer));
 
 const segments = computed(() => timelineSegments(props.transitions, now.value));
 const totals = computed(() => timelineTotals(segments.value));
+const workedLabel = computed(() => timelineWorkedLabel(props.transitions, segments.value));
 // A phone has room for the latest few; the totals still count them all.
 const shown = computed(() => (props.compact ? segments.value.slice(-COMPACT_DOTS) : segments.value));
 

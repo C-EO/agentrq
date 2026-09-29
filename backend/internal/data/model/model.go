@@ -357,6 +357,22 @@ type (
 		CreatedAt time.Time
 	}
 
+	// Agent and AgentModel are lookup tables of the agents that changed a
+	// task's status, as they named themselves, and the models they reported
+	// running, keyed by xxhash64(name) reinterpreted as int64, so
+	// TaskStateTransition.AgentID and AgentModelID name one without repeating
+	// it on every row.
+	Agent struct {
+		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
+		Name      string `gorm:"type:varchar(16)"`
+		CreatedAt time.Time
+	}
+	AgentModel struct {
+		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
+		Name      string `gorm:"type:varchar(32)"`
+		CreatedAt time.Time
+	}
+
 	// Machine is one enrolled computer, as seen by one account.
 	//
 	// A physical box enrolled against two accounts is two rows, because the

@@ -31,7 +31,7 @@ func deleteTaskDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db

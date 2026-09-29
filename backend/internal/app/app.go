@@ -31,6 +31,7 @@ import (
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	"github.com/agentrq/agentrq/backend/internal/controller/sitetools"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
+	"github.com/agentrq/agentrq/backend/internal/controller/taskagent"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -51,6 +52,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
+	"github.com/agentrq/agentrq/backend/internal/service/kv"
 	"github.com/agentrq/agentrq/backend/internal/service/latencyaggregator"
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -131,7 +133,10 @@ type (
 		bus       *eventbus.Bus
 		pubsub    pubsub.Service
 		telemetry telemetry.Controller
-		cancel    context.CancelFunc
+		// taskAgents writes the agent and model names still pending on
+		// shutdown.
+		taskAgents taskagent.Controller
+		cancel     context.CancelFunc
 	}
 )
 
@@ -236,6 +241,10 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("idgen: %w", err)
 	}
 	repo := base.New(db)
+	taskAgentCtrl, err := startTaskAgents(appCtx, repo)
+	if err != nil {
+		return nil, err
+	}
 	bus := eventbus.New()
 
 	cfg.Storage.StorageDir = storageDir(cfg.Storage)
@@ -316,6 +325,7 @@ func New(cfg Config) (*App, error) {
 		PubSub:       pubsubSvc,
 		Limiter:      rateLimiter,
 		SkillImport:  skillimport.New(),
+		TaskAgents:   taskAgentCtrl,
 	})
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
@@ -430,6 +440,7 @@ func New(cfg Config) (*App, error) {
 				}
 				return updated, err
 			},
+			taskAgentCtrl.Register,
 			func(ctx context.Context, taskID int64) (model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				return repo.GetTask(ctx, workspaceID, taskID, uid)
@@ -993,7 +1004,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1339,7 +1350,20 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if a.telemetry != nil {
 		a.telemetry.Close()
 	}
+	if a.taskAgents != nil {
+		a.taskAgents.Close()
+	}
 	return a.server.Shutdown(ctx)
+}
+
+// startTaskAgents starts the controller that names the agents in a task's
+// history, with every name already in kv before the first request needs one.
+func startTaskAgents(ctx context.Context, repo base.Repository) (taskagent.Controller, error) {
+	ctrl := taskagent.New(taskagent.Params{Repository: repo, KV: kv.New()})
+	if err := ctrl.Start(ctx); err != nil {
+		return nil, fmt.Errorf("load agent and model names: %w", err)
+	}
+	return ctrl, nil
 }
 
 // publicFilesFirst hands a public file request to Fiber before the mux sees
@@ -1364,6 +1388,8 @@ func migratedModels() []any {
 		&model.Message{},
 		&model.Telemetry{},
 		&model.MCPClient{},
+		&model.Agent{},
+		&model.AgentModel{},
 		&model.User{},
 		&model.SlackWorkspaceLink{},
 		&model.SlackTaskThread{},

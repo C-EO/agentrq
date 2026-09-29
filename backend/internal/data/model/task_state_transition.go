@@ -61,5 +61,10 @@ type TaskStateTransition struct {
 	TaskID      int64 `gorm:"index:idx_task_state_transitions_task_id"`
 	FromState   TaskState
 	ToState     TaskState
-	CreatedAt   time.Time
+	// AgentID is the Agent that made the change, as it named itself, and
+	// AgentModelID the AgentModel it was running; 0 when a person or the
+	// server made it, or the agent never said.
+	AgentID      int64 `gorm:"not null;default:0"`
+	AgentModelID int64 `gorm:"not null;default:0"`
+	CreatedAt    time.Time
 }
