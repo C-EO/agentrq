@@ -99,6 +99,15 @@ describe('merge wording', () => {
     expect(mergeConfirmMessage(fork, 'ops')).toMatch(/, its tasks move back to ops,/);
   });
 
+  it('says the folder is deleted, and its branch kept, when asked to delete it', () => {
+    const f = { ...fork, taskCount: 3, workingDirectory: '/home/me/.agentrq/forks/f1' };
+    expect(mergeConfirmMessage(f, 'ops', true)).toBe(
+      "The fork's agent is stopped, 3 tasks move back to ops, and the fork is removed. Its folder on the machine is deleted, and its git branch is kept: /home/me/.agentrq/forks/f1"
+    );
+    // Nothing to delete on a fork that never ran.
+    expect(mergeConfirmMessage({ ...fork, taskCount: 1 }, 'ops', true)).toMatch(/It has no folder on a machine yet\.$/);
+  });
+
   it('reports the moved count', () => {
     expect(mergedMessage(2, 'ops')).toBe('Merged into ops: 2 tasks moved back');
     expect(mergedMessage(1, 'ops')).toBe('Merged into ops: 1 task moved back');
@@ -188,12 +197,19 @@ describe('useForkActions: merging', () => {
     expect(actions.state.merging).toEqual({ ...fork, taskCount: 3 });
 
     const res = await actions.confirmMerge();
-    expect(deps.mergeFork).toHaveBeenCalledWith('f1');
+    expect(deps.mergeFork).toHaveBeenCalledWith('f1', { deleteFolder: false });
     expect(store.fetchWorkspaces).toHaveBeenCalled();
     expect(toasts.notifySuccess).toHaveBeenCalledWith('Merged into ops: 2 tasks moved back');
     expect(router.push).toHaveBeenCalledWith('/workspaces/p1');
     expect(res.movedTasks).toBe(2);
     expect(actions.state.merging).toBe(null);
+  });
+
+  it('asks for the folder to be deleted when told to', async () => {
+    const { actions, deps } = setup();
+    await actions.startMerge(fork);
+    await actions.confirmMerge(true);
+    expect(deps.mergeFork).toHaveBeenCalledWith('f1', { deleteFolder: true });
   });
 
   it('counts only the statuses it is given', async () => {

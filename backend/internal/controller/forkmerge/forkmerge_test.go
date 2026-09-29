@@ -39,6 +39,8 @@ type fakeCrud struct {
 	mergeErr  error
 	machineOK bool
 	steps     []string
+	folders   []string // machines that ran the fork
+	foldErr   error
 }
 
 func (f *fakeCrud) step(s string) {
@@ -63,6 +65,13 @@ func (f *fakeCrud) ActiveSessionForWorkspace(_ context.Context, req entity.Activ
 		return nil, errors.New("asked about the wrong workspace")
 	}
 	return f.session, nil
+}
+
+func (f *fakeCrud) SessionMachinesForWorkspace(_ context.Context, req entity.ActiveSessionRequest) ([]string, error) {
+	if req.WorkspaceID != monoflake.ID(forkID).String() || req.UserID != userID {
+		return nil, errors.New("asked about the wrong workspace")
+	}
+	return f.folders, f.foldErr
 }
 
 func (f *fakeCrud) GetMachine(_ context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error) {
@@ -294,5 +303,119 @@ func TestMerge_DefaultWait(t *testing.T) {
 	m := &Merger{Crud: c, Machines: reg, Servers: &servers{}, Bus: eventbus.New()}
 	if _, err := m.Merge(context.Background(), request()); err != nil {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func withFolders(c *fakeCrud) *fakeCrud {
+	c.folders = []string{monoflake.ID(machineID).String()}
+	c.machineOK = true
+	return c
+}
+
+func deleteRequest() entity.MergeForkRequest {
+	rq := request()
+	rq.DeleteFolder = true
+	return rq
+}
+
+// The daemon is told to delete the folder once the fork is merged, and only by
+// the fork's id.
+func TestMerge_DeleteFolder(t *testing.T) {
+	c := withFolders(&fakeCrud{})
+	d := &killingDaemon{crud: c}
+	reg := machinectrl.NewRegistry("pod-a")
+	reg.Add(machineID, d)
+	reg.SetCapabilities(machineID, d, []string{wire.CapabilityForkCleanup})
+
+	if _, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), deleteRequest()); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.frames) != 1 || d.frames[0].Op != wire.OpRemoveForkDir ||
+		!strings.Contains(string(d.frames[0].Body), monoflake.ID(forkID).String()) {
+		t.Errorf("frames = %+v, want one removeForkDir naming the fork", d.frames)
+	}
+}
+
+// Without the flag the folder is left, as before.
+func TestMerge_LeavesTheFolderByDefault(t *testing.T) {
+	c := withFolders(&fakeCrud{})
+	d := &killingDaemon{crud: c}
+	reg := machinectrl.NewRegistry("pod-a")
+	reg.Add(machineID, d)
+	reg.SetCapabilities(machineID, d, []string{wire.CapabilityForkCleanup})
+
+	if _, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), request()); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.frames) != 0 {
+		t.Errorf("frames = %+v, want none", d.frames)
+	}
+}
+
+// A fork that never ran anywhere has no folder to delete.
+func TestMerge_DeleteFolderWithNoMachines(t *testing.T) {
+	c := &fakeCrud{}
+	if _, err := merger(c, nil, &servers{}, 0).Merge(context.Background(), deleteRequest()); err != nil || c.got() != "check,merge" {
+		t.Errorf("err %v, steps %v", err, c.steps)
+	}
+}
+
+// Once merged nothing says where the folder was, so a machine that cannot be
+// told stops the merge, and nothing has moved.
+func TestMerge_DeleteFolderRefusedWhenAMachineCannotBeTold(t *testing.T) {
+	for name, tc := range map[string]struct {
+		connect bool
+		caps    []string
+		named   bool
+		want    string
+	}{
+		"offline":         {false, nil, true, "laptop"},
+		"old daemon":      {true, nil, true, "laptop"},
+		"machine unknown": {false, nil, false, "a machine that ran it"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := withFolders(&fakeCrud{})
+			c.machineOK = tc.named
+			reg := machinectrl.NewRegistry("pod-a")
+			if tc.connect {
+				d := &killingDaemon{crud: c}
+				reg.Add(machineID, d)
+				reg.SetCapabilities(machineID, d, tc.caps)
+			}
+			_, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), deleteRequest())
+			var fe *entity.ForkError
+			if !errors.As(err, &fe) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want a fork error naming %q", err, tc.want)
+			}
+			if c.got() != "check" {
+				t.Errorf("steps = %s, want the check only", c.got())
+			}
+		})
+	}
+	if machinectrl.CanRemoveForkDir(nil, machineID) {
+		t.Error("a nil registry can remove a folder")
+	}
+}
+
+func TestMerge_DeleteFolderRefusedOnALookupError(t *testing.T) {
+	c := withFolders(&fakeCrud{foldErr: errors.New("db down")})
+	if _, err := merger(c, nil, &servers{}, 0).Merge(context.Background(), deleteRequest()); err == nil || c.got() != "check" {
+		t.Errorf("err = %v steps = %s", err, c.got())
+	}
+}
+
+// A machine that drops off after the merge only keeps its folder.
+func TestMerge_DeleteFolderThatCannotBeSentStillMerges(t *testing.T) {
+	c := withFolders(&fakeCrud{})
+	d := &killingDaemon{crud: c, fail: true}
+	reg := machinectrl.NewRegistry("pod-a")
+	reg.Add(machineID, d)
+	reg.SetCapabilities(machineID, d, []string{wire.CapabilityForkCleanup})
+
+	if _, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), deleteRequest()); err != nil {
+		t.Errorf("err = %v, want the merge to stand", err)
+	}
+	if c.got() != "check,merge" {
+		t.Errorf("steps = %s", c.got())
 	}
 }

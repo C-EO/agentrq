@@ -228,6 +228,9 @@ type (
 	MergeForkRequest struct {
 		UserID      string
 		WorkspaceID int64
+		// DeleteFolder also removes the fork's folder from each machine that
+		// ran it. Without it the folder is left where it is.
+		DeleteFolder bool
 	}
 
 	MergeForkResponse struct {

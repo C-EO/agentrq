@@ -774,7 +774,7 @@
                     <div data-test="merge-card" class="p-6 border border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-800/30 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
                       <div class="flex-1 min-w-0">
                         <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100 break-words">Merge into {{ forkParentName }}</h4>
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1 font-medium">Stops this fork's agent, moves every task back to {{ forkParentName }} with its whole thread, and removes the fork. Its folder is left as it is.</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1 font-medium">Stops this fork's agent, moves every task back to {{ forkParentName }} with its whole thread, and removes the fork. Its folder is left as it is, unless you choose to delete it.</p>
                         <p v-if="mergeBlocked" data-test="merge-blocked" class="text-[11px] text-amber-700 dark:text-amber-400 mt-2 font-semibold">Not yet: {{ mergeBlocked }}.</p>
                       </div>
                       <button type="button" @click="forkActions.startMerge(forkListEntry)" :disabled="!!mergeBlocked"
@@ -868,7 +868,7 @@
       @confirm="doArchive"
     />
     <MergeForkModal :fork="forkActions.state.merging" :parent-name="forkParentName" :busy="forkActions.state.busy"
-                    @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge()" />
+                    @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge($event)" />
     <DeleteModal
       :show="showDeleteConfirm"
       title="Purge Workspace"

@@ -26,6 +26,7 @@ type SessionController interface {
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
+	SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
 	RecordSessionKill(ctx context.Context, req entity.RecordSessionKillRequest)
 }
@@ -249,6 +250,25 @@ func (c *controller) ActiveSessionForWorkspace(ctx context.Context, req entity.A
 	}
 	v := toSessionView(s)
 	return &v, nil
+}
+
+// SessionMachinesForWorkspace names the machines that ever ran a session of a
+// workspace, as base62 ids.
+func (c *controller) SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	wid := monoflake.IDFromBase62(req.WorkspaceID).Int64()
+	if uid == 0 || wid == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	ids, err := c.repository.SessionMachinesForWorkspace(ctx, wid, uid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = monoflake.ID(id).String()
+	}
+	return out, nil
 }
 
 // ReconcileSessions ends the sessions a machine is no longer running.

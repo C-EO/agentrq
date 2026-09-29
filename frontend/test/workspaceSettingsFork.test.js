@@ -136,7 +136,7 @@ describe('a fork\'s settings page', () => {
     expect(text(dialog.querySelector('[data-test=merge-message]'))).toMatch(/1 task moves back to ops/)
     ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
     await settle()
-    expect(mergeFork).toHaveBeenCalledWith('f1')
+    expect(mergeFork).toHaveBeenCalledWith('f1', { deleteFolder: false })
     expect(push).toHaveBeenCalledWith('/workspaces/p1')
   })
 

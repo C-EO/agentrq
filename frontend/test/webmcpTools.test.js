@@ -294,7 +294,8 @@ describe('each tool calls the interface the way the UI does', () => {
     ['deleteWorkspace', { workspaceId: 'ws1' }, 'deleteWorkspace', ['ws1']],
     ['forkWorkspace', { workspaceId: 'ws1' }, 'forkWorkspace', ['ws1', { name: '' }]],
     ['forkWorkspace', { workspaceId: 'ws1', name: 'try' }, 'forkWorkspace', ['ws1', { name: 'try' }]],
-    ['mergeFork', { workspaceId: 'ws2' }, 'mergeFork', ['ws2']],
+    ['mergeFork', { workspaceId: 'ws2' }, 'mergeFork', ['ws2', { deleteFolder: false }]],
+    ['mergeFork', { workspaceId: 'ws2', deleteFolder: true }, 'mergeFork', ['ws2', { deleteFolder: true }]],
     ['getWorkspaceToken', { workspaceId: 'ws1' }, 'getWorkspaceToken', ['ws1']],
     ['getWorkspaceStats', { workspaceId: 'ws1' }, 'fetchWorkspaceStats', ['ws1', '7d', 0, 0]],
     [

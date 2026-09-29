@@ -53,6 +53,10 @@ type (
 		Name string `json:"name"`
 	}
 
+	MergeForkRequest struct {
+		DeleteFolder bool `json:"deleteFolder"`
+	}
+
 	MergeForkResponse struct {
 		ParentID   string `json:"parentId"`
 		MovedTasks int    `json:"movedTasks"`

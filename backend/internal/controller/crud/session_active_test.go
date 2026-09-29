@@ -161,3 +161,33 @@ func TestTheStateIsWrittenBeforeTheRowGoes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSessionMachinesForWorkspace(t *testing.T) {
+	env := newTestController(t)
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+	env.repo.EXPECT().SessionMachinesForWorkspace(gomock.Any(), int64(7), uid).Return([]int64{3, 4}, nil)
+
+	got, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{
+		UserID: testUserBase62, WorkspaceID: monoflake.ID(7).String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != monoflake.ID(3).String() || got[1] != monoflake.ID(4).String() {
+		t.Errorf("machines = %v", got)
+	}
+}
+
+func TestSessionMachinesForWorkspaceFailures(t *testing.T) {
+	env := newTestController(t)
+	if _, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{}); err == nil {
+		t.Error("an empty request was accepted")
+	}
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+	env.repo.EXPECT().SessionMachinesForWorkspace(gomock.Any(), int64(7), uid).Return(nil, errors.New("database is down"))
+	if _, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{
+		UserID: testUserBase62, WorkspaceID: monoflake.ID(7).String(),
+	}); err == nil {
+		t.Error("a failed query was swallowed")
+	}
+}

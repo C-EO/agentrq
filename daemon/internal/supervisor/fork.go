@@ -91,6 +91,52 @@ func PrepareForkDir(home, from, id string) (dir string, created bool, err error)
 	return dir, true, nil
 }
 
+// RemoveForkDir deletes the folder PrepareForkDir made for a fork, and nothing
+// else. A worktree is removed through git, so the repository forgets it; its
+// branch stays, holding the fork's commits. A folder already gone is done.
+func RemoveForkDir(home, id string) error {
+	if !forkIDPattern.MatchString(id) {
+		return fmt.Errorf("%w: id=%q", ErrBadFork, id)
+	}
+	if !filepath.IsAbs(home) {
+		return fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+	}
+	target := filepath.Join(home, ".agentrq", "forks", id)
+	if _, err := os.Lstat(target); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+
+	// The repository the worktree belongs to, read before the folder goes.
+	// Only when the folder is the worktree's own top: a copy that sits inside
+	// somebody's repository (a home folder under git) is not one.
+	var repo string
+	if out, err := runGit(target, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"); err == nil {
+		if top, common, ok := strings.Cut(strings.TrimSpace(out), "\n"); ok && sameFolder(top, target) {
+			repo = filepath.Dir(common)
+		}
+	}
+	if repo != "" {
+		if _, err := runGit(repo, "worktree", "remove", "--force", "--", target); err == nil {
+			return nil
+		}
+	}
+	if err := os.RemoveAll(target); err != nil {
+		return fmt.Errorf("supervisor: remove fork folder %s: %w", target, err)
+	}
+	if repo != "" {
+		// The folder is gone; drop the worktree entry it left behind.
+		_, _ = runGit(repo, "worktree", "prune")
+	}
+	return nil
+}
+
+// sameFolder reports whether two paths name one folder, links and all.
+func sameFolder(a, b string) bool {
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
+}
+
 // addWorktree checks out HEAD of the repository at root into target on the
 // fork's branch. A branch left by an earlier fork of the same id is checked
 // out again rather than refused; -f covers its worktree still being

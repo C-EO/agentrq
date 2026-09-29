@@ -15,6 +15,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // How long a merge waits, by default, for the daemon to report the fork's
@@ -29,6 +30,7 @@ type (
 	Crud interface {
 		CheckForkMerge(ctx context.Context, req entity.MergeForkRequest) error
 		ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
+		SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 		GetMachine(ctx context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error)
 		GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 		MergeFork(ctx context.Context, req entity.MergeForkRequest) (*entity.MergeForkResponse, error)
@@ -57,6 +59,12 @@ func (m *Merger) Merge(ctx context.Context, rq entity.MergeForkRequest) (*entity
 	if err := m.Crud.CheckForkMerge(ctx, rq); err != nil {
 		return nil, err
 	}
+	// Found while the fork still exists: once it is merged nothing says which
+	// machines held its folder.
+	folders, err := m.folderMachines(ctx, rq)
+	if err != nil {
+		return nil, err
+	}
 	if err := m.stopAgent(ctx, rq); err != nil {
 		return nil, err
 	}
@@ -65,6 +73,13 @@ func (m *Merger) Merge(ctx context.Context, rq entity.MergeForkRequest) (*entity
 		return nil, err
 	}
 	m.Servers.Remove(rq.WorkspaceID)
+	for _, id := range folders {
+		// The merge is done, so a machine that drops off now only keeps its
+		// folder, which the machine page can still show.
+		if err := machinectrl.RemoveForkDir(m.Machines, id, rq.WorkspaceID); err != nil {
+			zlog.Warn().Err(err).Int64("machine", id).Msg("[fork] the folder was not removed")
+		}
+	}
 
 	// Each task leaves the fork and appears in the parent, as a move does.
 	parentID := monoflake.IDFromBase62(rs.ParentID).Int64()
@@ -79,6 +94,36 @@ func (m *Merger) Merge(ctx context.Context, rq entity.MergeForkRequest) (*entity
 		})
 	}
 	return rs, nil
+}
+
+// folderMachines lists the machines whose copy of the fork's folder a merge
+// was asked to delete, and refuses the merge when one of them cannot be told:
+// after it the fork is gone, and so is the way to find the folder.
+func (m *Merger) folderMachines(ctx context.Context, rq entity.MergeForkRequest) ([]int64, error) {
+	if !rq.DeleteFolder {
+		return nil, nil
+	}
+	ids, err := m.Crud.SessionMachinesForWorkspace(ctx, entity.ActiveSessionRequest{
+		UserID:      rq.UserID,
+		WorkspaceID: monoflake.ID(rq.WorkspaceID).String(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		machineID := monoflake.IDFromBase62(id).Int64()
+		if !machinectrl.CanRemoveForkDir(m.Machines, machineID) {
+			name := "a machine that ran it"
+			if mr, err := m.Crud.GetMachine(ctx, entity.GetMachineRequest{UserID: rq.UserID, MachineID: id}); err == nil && mr.Machine.Name != "" {
+				name = mr.Machine.Name
+			}
+			return nil, entity.NewForkError(entity.ErrForkAgentRunning, "the fork's folder is on "+name+
+				", which is offline or runs an agentrqd that cannot delete it — merge without deleting the folder, or bring the machine back")
+		}
+		out = append(out, machineID)
+	}
+	return out, nil
 }
 
 // stopAgent kills the fork's running agent, if it has one, and waits for the

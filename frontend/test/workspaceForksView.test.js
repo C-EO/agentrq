@@ -177,9 +177,52 @@ describe('the sidebar', () => {
     )
     ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
     await settle()
-    expect(mergeFork).toHaveBeenCalledWith('f1')
+    expect(mergeFork).toHaveBeenCalledWith('f1', { deleteFolder: false })
     expect(useToasts().toasts.value.at(-1).message).toBe('Merged into ops: 2 tasks moved back')
     expect(push).toHaveBeenCalledWith('/workspaces/p1')
+  })
+
+  it('deletes the folder when the box is ticked, and starts unticked every time', async () => {
+    const { el } = sidebar()
+    await settle()
+    const open = async () => {
+      el.querySelector('[data-test=sidebar-fork] a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      await settle()
+      menuButtons()[0].click()
+      await settle()
+      return document.body.querySelector('[aria-labelledby=merge-modal-title]')
+    }
+    let dialog = await open()
+    const box = dialog.querySelector('[data-test=merge-delete-folder]')
+    expect(box.checked).toBe(false)
+    box.click()
+    await settle()
+    expect(text(dialog.querySelector('[data-test=merge-message]'))).toMatch(/Its folder on the machine is deleted, and its git branch is kept: \/home\/me/)
+    ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Cancel').click()
+    await settle()
+
+    dialog = await open()
+    expect(dialog.querySelector('[data-test=merge-delete-folder]').checked).toBe(false)
+    dialog.querySelector('[data-test=merge-delete-folder]').click()
+    await settle()
+    ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
+    await settle()
+    expect(mergeFork).toHaveBeenLastCalledWith('f1', { deleteFolder: true })
+  })
+
+  it('offers no checkbox for a fork with no folder yet', async () => {
+    const list = [PARENT, { ...FORK, workingDirectory: '' }, WEB, SUPERVISOR]
+    const { el } = mount(SidebarWorkspaces, { workspaces: list }, list)
+    await settle()
+    el.querySelector('[data-test=sidebar-fork] a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    menuButtons()[0].click()
+    await settle()
+    const dialog = document.body.querySelector('[aria-labelledby=merge-modal-title]')
+    expect(dialog.querySelector('[data-test=merge-delete-folder]')).toBe(null)
+    ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
+    await settle()
+    expect(mergeFork).toHaveBeenLastCalledWith('f1', { deleteFolder: false })
   })
 
   it('shows a 409 from the merge as the server wrote it', async () => {

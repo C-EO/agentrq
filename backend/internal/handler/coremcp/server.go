@@ -183,7 +183,8 @@ type ForkWorkspaceParams struct {
 }
 
 type MergeForkParams struct {
-	WorkspaceID string `json:"workspaceId" jsonschema:"The fork to merge back (base62)"`
+	WorkspaceID  string `json:"workspaceId" jsonschema:"The fork to merge back (base62)"`
+	DeleteFolder bool   `json:"deleteFolder,omitempty" jsonschema:"Also delete the fork's folder on its machine. Its git branch is kept. Refused if that machine is offline. Default false"`
 }
 
 type GetWorkspaceParams struct {
@@ -332,7 +333,7 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listWorkspaces", Description: "List all workspaces for the authenticated user", Annotations: mcphint.Read("List workspaces")}, s.handleListWorkspaces)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "createWorkspace", Description: "Create a new workspace", Annotations: mcphint.Write("Create a workspace")}, s.handleCreateWorkspace)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "forkWorkspace", Description: "Fork a workspace: a workspace of its own, with its own queue and agent, that shares the parent's settings, memory and skills and is merged back when its tasks are done. Move tasks into it to have a second agent work on them. A fork, the supervisor workspace and an archived workspace cannot be forked", Annotations: mcphint.Write("Fork a workspace")}, s.handleForkWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "mergeFork", Description: "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the parent with its thread, and the fork is removed. Its folder on the machine is left. Refused while any task in the fork is not completed or rejected", Annotations: mcphint.Write("Merge a fork back")}, s.handleMergeFork)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "mergeFork", Description: "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the parent with its thread, and the fork is removed. Its folder on the machine is left unless deleteFolder is true. Refused while any task in the fork is not completed or rejected", Annotations: mcphint.Write("Merge a fork back")}, s.handleMergeFork)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspace", Description: "Get a workspace by ID", Annotations: mcphint.Read("Get a workspace")}, s.handleGetWorkspace)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateWorkspace", Description: "Update a workspace", Annotations: mcphint.Update("Update a workspace")}, s.handleUpdateWorkspace)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspaceStats", Description: "Get statistics for a workspace", Annotations: mcphint.Read("Workspace statistics")}, s.handleGetWorkspaceStats)
@@ -437,8 +438,9 @@ func (s *WorkspaceServer) handleForkWorkspace(ctx context.Context, req *mcp.Call
 func (s *WorkspaceServer) handleMergeFork(ctx context.Context, req *mcp.CallToolRequest, args MergeForkParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "mergeFork", parseID(args.WorkspaceID))
 	res, err := s.forks.Merge(ctx, entity.MergeForkRequest{
-		UserID:      getUserID(ctx),
-		WorkspaceID: parseID(args.WorkspaceID),
+		UserID:       getUserID(ctx),
+		WorkspaceID:  parseID(args.WorkspaceID),
+		DeleteFolder: args.DeleteFolder,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil

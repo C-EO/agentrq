@@ -101,12 +101,15 @@ export function mergeBlockedReason(fork) {
 }
 
 /** What the merge confirmation says will happen. */
-export function mergeConfirmMessage(fork, parent) {
+export function mergeConfirmMessage(fork, parent, deleteFolder = false) {
   const n = fork?.taskCount;
   const tasks = typeof n === 'number' ? `${n} ${n === 1 ? 'task moves' : 'tasks move'}` : 'its tasks move';
-  const folder = fork?.workingDirectory
-    ? `Its folder on the machine is left as it is: ${fork.workingDirectory}`
-    : 'It has no folder on a machine yet.';
+  let folder = 'It has no folder on a machine yet.';
+  if (fork?.workingDirectory) {
+    folder = deleteFolder
+      ? `Its folder on the machine is deleted, and its git branch is kept: ${fork.workingDirectory}`
+      : `Its folder on the machine is left as it is: ${fork.workingDirectory}`;
+  }
   return `The fork's agent is stopped, ${tasks} back to ${parent}, and the fork is removed. ${folder}`;
 }
 
@@ -197,13 +200,13 @@ export function useForkActions({
   }
 
   /** Merges, then goes to the parent. A refusal is shown as the server wrote it. */
-  async function confirmMerge() {
+  async function confirmMerge(deleteFolder = false) {
     const fork = state.merging;
     if (!fork || state.busy) return null;
     state.busy = true;
     const parent = parentName(fork, store.workspaces);
     try {
-      const res = await mergeFork(fork.id);
+      const res = await mergeFork(fork.id, { deleteFolder });
       state.merging = null;
       await store.fetchWorkspaces();
       toasts.notifySuccess(mergedMessage(res?.movedTasks, parent));

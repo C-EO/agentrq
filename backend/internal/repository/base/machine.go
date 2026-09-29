@@ -230,6 +230,16 @@ func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID,
 	return s, nil
 }
 
+// SessionMachinesForWorkspace lists the machines that ever ran a session of a
+// workspace, finished or not: a fork leaves its folder on each of them.
+func (r *repository) SessionMachinesForWorkspace(ctx context.Context, workspaceID, userID int64) ([]int64, error) {
+	var ids []int64
+	err := r.conn(ctx).Model(&model.Session{}).
+		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+		Distinct().Order("machine_id").Pluck("machine_id", &ids).Error
+	return ids, err
+}
+
 // UpdateSessionState records what the daemon reported.
 //
 // A narrow update rather than a full save: state reports arrive while a person
