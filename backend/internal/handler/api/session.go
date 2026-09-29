@@ -5,7 +5,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -177,36 +179,16 @@ func (h *handler) killSession() fiber.Handler {
 		}
 
 		machineID := monoflake.IDFromBase62(rs.Session.MachineID).Int64()
-		if h.machineRegistry == nil {
-			c.Status(http.StatusServiceUnavailable)
-			return c.Send(mapper.FromMessageToHTTPResponse(
-				"machine connections are not available on this server", http.StatusServiceUnavailable))
-		}
-		if _, err := h.machineRegistry.Get(machineID); err != nil {
-			c.Status(http.StatusConflict)
-			return c.Send(mapper.FromMessageToHTTPResponse(
-				"that machine is not connected", http.StatusConflict))
-		}
-
-		body, err := json.Marshal(wire.KillSession{
-			SessionID: uint64(monoflake.IDFromBase62(rs.Session.ID).Int64()),
-		})
-		if err != nil {
-			e, status := mapper.FromErrorToHTTPResponse(err)
+		if err := h.stopSession(ctx, machineID, rs.Session.ID); err != nil {
+			status, msg := http.StatusBadGateway, err.Error()
+			switch {
+			case errors.Is(err, errNoMachineConnections):
+				status = http.StatusServiceUnavailable
+			case errors.Is(err, machinectrl.ErrNotConnected):
+				status, msg = http.StatusConflict, "that machine is not connected"
+			}
 			c.Status(status)
-			return c.Send(e)
-		}
-		frame, err := wire.ControlFrame(wire.Control{Op: wire.OpKillSession, Body: body})
-		if err != nil {
-			e, status := mapper.FromErrorToHTTPResponse(err)
-			c.Status(status)
-			return c.Send(e)
-		}
-		if err := h.machineRegistry.Send(machineID, frame); err != nil {
-			zlog.Error().Err(err).Str("session", rs.Session.ID).Msg("[session] could not reach the machine")
-			c.Status(http.StatusBadGateway)
-			return c.Send(mapper.FromMessageToHTTPResponse(
-				"could not reach that machine", http.StatusBadGateway))
+			return c.Send(mapper.FromMessageToHTTPResponse(msg, status))
 		}
 
 		// Counted only once the request is on its way to the machine. A kill
@@ -221,4 +203,31 @@ func (h *handler) killSession() fiber.Handler {
 		c.Status(http.StatusAccepted)
 		return nil
 	}
+}
+
+var (
+	errNoMachineConnections = errors.New("machine connections are not available on this server")
+	errMachineUnreachable   = errors.New("could not reach that machine")
+)
+
+// stopSession asks the daemon holding a session to kill it. It returns once
+// the request is on its way, not once the agent is dead: the daemon reports
+// that on the session row.
+func (h *handler) stopSession(_ context.Context, machineID int64, sessionID string) error {
+	if h.machineRegistry == nil {
+		return errNoMachineConnections
+	}
+	if _, err := h.machineRegistry.Get(machineID); err != nil {
+		return err
+	}
+	// Neither can fail: a plain struct, and a control message with its op.
+	body, _ := json.Marshal(wire.KillSession{
+		SessionID: uint64(monoflake.IDFromBase62(sessionID).Int64()),
+	})
+	frame, _ := wire.ControlFrame(wire.Control{Op: wire.OpKillSession, Body: body})
+	if err := h.machineRegistry.Send(machineID, frame); err != nil {
+		zlog.Error().Err(err).Str("session", sessionID).Msg("[session] could not reach the machine")
+		return errMachineUnreachable
+	}
+	return nil
 }

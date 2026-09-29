@@ -58,6 +58,16 @@ func (m *mockCrudWorkspaceFork) MergeFork(_ context.Context, req entity.MergeFor
 	}, nil
 }
 
+// The pre-check and the agent lookup a merge makes first; the merge tests in
+// workspace_fork_merge_test.go answer them otherwise.
+func (m *mockCrudWorkspaceFork) CheckForkMerge(context.Context, entity.MergeForkRequest) error {
+	return nil
+}
+
+func (m *mockCrudWorkspaceFork) ActiveSessionForWorkspace(context.Context, entity.ActiveSessionRequest) (*entity.SessionView, error) {
+	return nil, nil
+}
+
 func (m *mockCrudWorkspaceFork) ListWorkspaces(context.Context, entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error) {
 	return &entity.ListWorkspacesResponse{Workspaces: m.list}, nil
 }

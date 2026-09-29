@@ -1991,6 +1991,10 @@ var (
 	ErrForkInherited = errors.New("setting is inherited")
 	// ErrNotAFork: only a fork can be merged.
 	ErrNotAFork = errors.New("workspace is not a fork")
+	// ErrForkAgentRunning: a merge is refused while the fork's agent cannot
+	// be stopped, or it would keep working, token on disk, for a workspace
+	// that is gone.
+	ErrForkAgentRunning = errors.New("fork's agent is still running")
 )
 
 // ForkError is one of the Err* kinds above with the sentence a person sees.

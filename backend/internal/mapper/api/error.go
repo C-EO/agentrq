@@ -63,7 +63,7 @@ func FromMessageToHTTPResponse(message string, code int) []byte {
 // succeed as asked.
 func forkErrorStatus(kind error) int {
 	switch kind {
-	case entity.ErrHasForks, entity.ErrForkUnfinished, entity.ErrForkNoDelete:
+	case entity.ErrHasForks, entity.ErrForkUnfinished, entity.ErrForkNoDelete, entity.ErrForkAgentRunning:
 		return http.StatusConflict
 	}
 	return http.StatusUnprocessableEntity
