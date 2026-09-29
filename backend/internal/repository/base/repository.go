@@ -29,6 +29,8 @@ type Repository interface {
 	ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error)
 	DeleteWorkspace(ctx context.Context, id int64, userID int64) error
 	UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+	// SetWorkingDirectory writes a workspace's folder and nothing else.
+	SetWorkingDirectory(ctx context.Context, id, userID int64, dir string) error
 	// ArchiveWorkspace saves p, which carries its ArchivedAt, and deletes the
 	// triggers and workflow steps that create tasks in it, in one transaction.
 	ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
@@ -300,6 +302,15 @@ func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (mo
 		return model.Workspace{}, err
 	}
 	return p, nil
+}
+
+// SetWorkingDirectory is a narrow update rather than a full save: a fork's
+// folder is recorded while its parent may be saving the settings it copies to
+// the fork, and writing every column would put the old ones back.
+func (r *repository) SetWorkingDirectory(ctx context.Context, id, userID int64, dir string) error {
+	return r.conn(ctx).Model(&model.Workspace{}).
+		Where("id = ? AND user_id = ?", id, userID).
+		Updates(map[string]any{"working_directory": dir, "updated_at": time.Now()}).Error
 }
 
 func (r *repository) ListForks(ctx context.Context, parentID, userID int64) ([]model.Workspace, error) {
