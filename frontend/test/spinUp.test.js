@@ -35,10 +35,11 @@ describe('canSpinUp', () => {
 
 describe('names and failures', () => {
   it('names the fork after the task, cut to fit', () => {
-    expect(spinUpName(task)).toBe('Fix the login page');
+    expect(spinUpName(task)).toBe('fix-the-login-page');
     expect(spinUpName({ title: 'x'.repeat(300) })).toHaveLength(MAX_WORKSPACE_NAME);
-    expect(spinUpName({ title: '   ' })).toBe('spin up');
-    expect(spinUpName(null)).toBe('spin up');
+    expect(spinUpName({ title: '   ' })).toBe('spin-up');
+    expect(spinUpName({ title: '¿¡' })).toBe('spin-up');
+    expect(spinUpName(null)).toBe('spin-up');
   });
 
   it('says which step failed, and that the fork is there when it is', () => {
@@ -51,7 +52,7 @@ describe('names and failures', () => {
 function setup(over = {}) {
   const deps = {
     fetchMachines: vi.fn(() => Promise.resolve({ machines: [M1, M2] })),
-    forkWorkspace: vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'Fix the login page' } })),
+    forkWorkspace: vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'fix-the-login-page' } })),
     moveTask: vi.fn(() => Promise.resolve({})),
     launchAgent: vi.fn(() => Promise.resolve({ session: { id: 's1' } })),
     recordTelemetry: vi.fn(),
@@ -127,11 +128,11 @@ describe('useSpinUp: running', () => {
     await spin.open(task, parent);
     const result = await spin.run();
 
-    expect(deps.forkWorkspace).toHaveBeenCalledWith('p1', { name: 'Fix the login page' });
+    expect(deps.forkWorkspace).toHaveBeenCalledWith('p1', { name: 'fix-the-login-page' });
     expect(deps.moveTask).toHaveBeenCalledWith('p1', 't1', 'f1');
     expect(deps.launchAgent).toHaveBeenCalledWith('f1', { machineId: 'm1', kind: 'claude-code', cols: 80, rows: 24 });
     expect(deps.recordTelemetry).toHaveBeenCalledWith('ui_spin_up', 'p1');
-    expect(result).toEqual({ task, fork: { id: 'f1', name: 'Fix the login page' }, session: { id: 's1' } });
+    expect(result).toEqual({ task, fork: { id: 'f1', name: 'fix-the-login-page' }, session: { id: 's1' } });
     expect(lastLaunchChoice('p1')).toEqual({ machineId: 'm1', kind: 'claude-code' });
     expect(lastLaunchChoice('f1')).toEqual({ machineId: 'm1', kind: 'claude-code' });
     expect(spin.state.task).toBe(null);
@@ -160,9 +161,9 @@ describe('useSpinUp: running', () => {
     });
     await spin.open(task, parent);
     const result = await spin.run();
-    expect(result).toEqual({ task, fork: { id: 'f1', name: 'Fix the login page' }, failedStep: 'move' });
-    expect(spin.error.value).toBe('Forked Fix the login page, but could not move the task into the fork: task not found');
-    expect(spin.forked.value).toEqual({ id: 'f1', name: 'Fix the login page' });
+    expect(result).toEqual({ task, fork: { id: 'f1', name: 'fix-the-login-page' }, failedStep: 'move' });
+    expect(spin.error.value).toBe('Forked fix-the-login-page, but could not move the task into the fork: task not found');
+    expect(spin.forked.value).toEqual({ id: 'f1', name: 'fix-the-login-page' });
     expect(spin.canRun.value).toBe(false);
     expect(deps.launchAgent).not.toHaveBeenCalled();
     expect(deps.recordTelemetry).not.toHaveBeenCalled();

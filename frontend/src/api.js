@@ -85,7 +85,7 @@ export async function deleteWorkspace(id) {
 
 // A workspace fork: a workspace of its own, with its own queue and agent, that
 // inherits the parent's settings and is merged back into it. With no name the
-// server calls it "<parent> fork".
+// server calls it "<parent>-fork".
 export async function forkWorkspace(workspaceId, { name = '' } = {}) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/forks`, {
     method: 'POST',

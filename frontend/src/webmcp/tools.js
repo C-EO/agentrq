@@ -203,7 +203,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'the supervisor workspace and an archived workspace cannot be forked.',
       properties: {
         workspaceId: WORKSPACE_ID,
-        name: str('Name for the fork. Defaults to "<parent> fork".'),
+        name: str('Name for the fork, in kebab-case like other workspace names. Defaults to "<parent>-fork".'),
       },
       required: ['workspaceId'],
       run: ({ workspaceId, name = '' }) => api.forkWorkspace(workspaceId, { name }),

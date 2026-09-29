@@ -44,7 +44,7 @@ const updateTaskOrder = vi.fn(() => Promise.resolve({}))
 const fetchTasks = vi.fn((_ws, { status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
 const fetchGlobalTasks = vi.fn(({ status }) => Promise.resolve({ tasks: byStatus[status] || [] }))
 const moveTask = vi.fn(() => Promise.resolve({}))
-const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'Task n1' } }))
+const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'task-n1' } }))
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
 let workspaceList = []
 const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
@@ -426,7 +426,7 @@ describe('Spin up on a card', () => {
     forkWorkspace.mockClear()
     launchAgent.mockClear()
     // What the list reads back once the fork exists.
-    workspaceList = [WS1, { id: 'f1', name: 'Task n1', forkOfId: 'ws1' }]
+    workspaceList = [WS1, { id: 'f1', name: 'task-n1', forkOfId: 'ws1' }]
     byStatus = { notstarted: [task('n1', 'notstarted')], 'completed,rejected': [task('d1', 'completed')] }
   })
 
@@ -447,7 +447,7 @@ describe('Spin up on a card', () => {
     expect(pop.textContent).toMatch(/On pi, your only machine that is online/)
     ;[...pop.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
-    expect(forkWorkspace).toHaveBeenCalledWith('ws1', { name: 'Task n1' })
+    expect(forkWorkspace).toHaveBeenCalledWith('ws1', { name: 'task-n1' })
     expect(moveTask).toHaveBeenCalledWith('ws1', 'n1', 'f1')
     expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ machineId: 'm1', kind: 'claude-code' }))
     expect(push).toHaveBeenCalledWith('/sessions/s1')
@@ -464,9 +464,9 @@ describe('Spin up on a card', () => {
     ;[...pop.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
     expect(pop.querySelector('[data-test=spin-up-error]').textContent).toBe(
-      'Forked Task n1, but could not move the task into the fork: task not found'
+      'Forked task-n1, but could not move the task into the fork: task not found'
     )
-    expect(pop.textContent).toMatch(/Open Task n1/)
+    expect(pop.textContent).toMatch(/Open task-n1/)
     expect(launchAgent).not.toHaveBeenCalled()
     expect(card('Task n1')).toBeTruthy()
     expect(push).not.toHaveBeenCalled()
@@ -474,11 +474,11 @@ describe('Spin up on a card', () => {
 
   it('keeps a spun-up card on the all-workspaces board, under the fork', async () => {
     route.params = {}
-    const { card } = await mount({ workspaces: [WS1, { id: 'f1', name: 'Task n1', forkOfId: 'ws1' }] })
+    const { card } = await mount({ workspaces: [WS1, { id: 'f1', name: 'task-n1', forkOfId: 'ws1' }] })
     card('Task n1').querySelector('[title="Spin up in a fork"]').click()
     await settle()
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
-    expect(card('Task n1').querySelector('[data-test=card-workspace]').textContent).toMatch(/Task n1/)
+    expect(card('Task n1').querySelector('[data-test=card-workspace]').textContent).toMatch(/task-n1/)
   })
 })

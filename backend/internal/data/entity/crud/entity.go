@@ -209,7 +209,7 @@ type (
 	ForkWorkspaceRequest struct {
 		UserID      string
 		WorkspaceID int64
-		// Name is optional; blank means "<parent> fork".
+		// Name is optional; blank means "<parent>-fork".
 		Name string
 	}
 

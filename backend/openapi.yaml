@@ -365,7 +365,7 @@ paths:
                 name:
                   type: string
                   maxLength: 128
-                  description: Defaults to "<parent> fork".
+                  description: In kebab-case, like other workspace names. Defaults to "<parent>-fork".
       responses:
         '201':
           description: Created

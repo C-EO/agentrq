@@ -15,6 +15,9 @@
 
 import { reactive } from 'vue';
 import * as api from '../api';
+import { useFormat } from './useFormat';
+
+const { toKebabCase } = useFormat();
 
 /** The account-wide workspace, which is never forked. */
 export const SUPERVISOR_WORKSPACE = 'supervisor';
@@ -40,10 +43,16 @@ export function fitName(name, max = MAX_WORKSPACE_NAME) {
   return chars.slice(0, max).join('').trim();
 }
 
-/** What the name prompt starts on: the server's own default, "<parent> fork". */
+/** A name as the workspace form makes one: kebab-case, cut to fit. */
+export function kebabName(name, max = MAX_WORKSPACE_NAME) {
+  return toKebabCase(fitName(toKebabCase(String(name ?? '')), max));
+}
+
+/** What the name prompt starts on: the server's own default, "<parent>-fork". */
 export function defaultForkName(parentName) {
-  const suffix = ' fork';
-  return fitName(parentName, MAX_WORKSPACE_NAME - suffix.length) + suffix;
+  const suffix = '-fork';
+  const base = kebabName(parentName, MAX_WORKSPACE_NAME - suffix.length);
+  return base ? base + suffix : 'fork';
 }
 
 /** The parent's name for a fork: the list carries it, the store is the fallback. */
@@ -149,7 +158,7 @@ export function useForkActions({
     if (!parent || state.busy) return null;
     state.busy = true;
     try {
-      const res = await forkWorkspace(parent.id, { name: fitName(name) });
+      const res = await forkWorkspace(parent.id, { name: kebabName(name) });
       const fork = res?.workspace;
       state.forking = null;
       await store.fetchWorkspaces();

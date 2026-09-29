@@ -9,7 +9,7 @@ import { ref, computed, watch } from 'vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { forkWorkspace } from '../api';
-import { canFork, fitName, MAX_WORKSPACE_NAME, workspaceTree } from '../composables/useWorkspaceForks';
+import { canFork, kebabName, MAX_WORKSPACE_NAME, workspaceTree } from '../composables/useWorkspaceForks';
 import ForkIcon from './ForkIcon.vue';
 
 const props = defineProps({
@@ -23,12 +23,18 @@ const emit = defineEmits(['close', 'confirm']);
 /** The destination that is not there yet: a fork made for this move. */
 const NEW_FORK = '__new_fork__';
 
-const { toKebabCase } = useFormat();
+const { toKebabCase, liveKebabCase } = useFormat();
 const workspaceStore = useWorkspaceStore();
 const destinationWorkspaceId = ref('');
 const newForkName = ref('');
 const forking = ref(false);
 const forkError = ref('');
+
+// Named as the workspace form names a workspace: kebab-case as it is typed.
+watch(newForkName, (value) => {
+  const formatted = liveKebabCase(value);
+  if (formatted !== value) newForkName.value = formatted;
+});
 
 const isCurrent = (w) => String(w.id) === String(props.currentWorkspaceId);
 const current = computed(() => workspaceStore.getWorkspace(props.currentWorkspaceId));
@@ -58,7 +64,7 @@ watch(() => props.show, (visible) => {
       workspaceStore.fetchWorkspaces();
     }
     destinationWorkspaceId.value = '';
-    newForkName.value = fitName(props.taskTitle);
+    newForkName.value = kebabName(props.taskTitle);
     forkError.value = '';
   }
 });
@@ -78,7 +84,7 @@ async function confirmMove() {
   forking.value = true;
   forkError.value = '';
   try {
-    const res = await forkWorkspace(props.currentWorkspaceId, { name: fitName(newForkName.value) });
+    const res = await forkWorkspace(props.currentWorkspaceId, { name: kebabName(newForkName.value) });
     await workspaceStore.fetchWorkspaces();
     emit('confirm', res.workspace.id);
   } catch (err) {
@@ -172,7 +178,7 @@ async function confirmMove() {
             </div>
 
             <div class="bg-gray-50/50 dark:bg-zinc-800/50 px-6 py-5 sm:px-8 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 dark:border-zinc-800">
-              <button type="button" @click="confirmMove" :disabled="!destinationWorkspaceId || forking || (destinationWorkspaceId === NEW_FORK && !newForkName.trim())"
+              <button type="button" @click="confirmMove" :disabled="!destinationWorkspaceId || forking || (destinationWorkspaceId === NEW_FORK && !kebabName(newForkName))"
                 class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-black dark:bg-white text-[10px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 sm:w-auto">
                 {{ forking ? 'Forking…' : destinationWorkspaceId === NEW_FORK ? 'Fork and move' : 'Move' }}
               </button>
