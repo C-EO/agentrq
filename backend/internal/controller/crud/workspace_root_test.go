@@ -378,3 +378,24 @@ func TestGetAttachment_WorkspaceLookupFails(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
+
+// A fork of a parent with clear-context turned off has it off too, in the
+// database and not only in the answer: every task made in the fork reads it.
+func TestForkKeepsTheParentsClearContextOff(t *testing.T) {
+	e := newForkTaskEnv(t)
+	if err := e.db.Model(&model.Workspace{}).Where("id = ?", fkParent).Update("clear_context_default", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs, err := e.c.ForkWorkspace(e.ctx, entity.ForkWorkspaceRequest{UserID: testUserIDStr, WorkspaceID: fkParent, Name: "billing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored model.Workspace
+	if err := e.db.First(&stored, rs.Workspace.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.ClearContextDefault || rs.Workspace.ClearContextDefault {
+		t.Errorf("fork clearContextDefault: stored %v, answered %v, want false like its parent",
+			stored.ClearContextDefault, rs.Workspace.ClearContextDefault)
+	}
+}

@@ -234,8 +234,23 @@ func (r *repository) conn(ctx context.Context) *gorm.DB {
 
 // ── Workspaces ──────────────────────────────────────────────────────────────────
 
+// CreateWorkspace stores a new workspace as given. GORM leaves a zero value
+// out of the INSERT when its column has a default, and reads the default back
+// into p, so a false ClearContextDefault would become the column's true; it
+// is written back in the same transaction.
 func (r *repository) CreateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
-	if err := r.conn(ctx).Create(&p).Error; err != nil {
+	clearContext := p.ClearContextDefault
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&p).Error; err != nil {
+			return err
+		}
+		if clearContext {
+			return nil
+		}
+		p.ClearContextDefault = false
+		return tx.Model(&model.Workspace{}).Where("id = ?", p.ID).Update("clear_context_default", false).Error
+	})
+	if err != nil {
 		return model.Workspace{}, err
 	}
 	return p, nil
