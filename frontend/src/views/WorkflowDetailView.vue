@@ -26,6 +26,7 @@ import {
 import { columnOffsets, enforceEdgeGaps, nodeWidth } from '../composables/useWorkflowLayout';
 import DeleteModal from '../components/DeleteModal.vue';
 import LoadingState from '../components/LoadingState.vue';
+import LoadMoreButton from '../components/LoadMoreButton.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -1269,12 +1270,7 @@ onWebMCPChange(async () => {
             <span class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500 font-mono">{{ workspaceName(t.workspaceId) }}</span>
           </router-link>
 
-          <button
-            v-if="hasMoreTasks"
-            @click="loadMoreTasks"
-            class="w-full py-2 text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 border border-gray-100 dark:border-zinc-800 rounded-xl hover:border-gray-200 dark:hover:border-zinc-700 transition-all">
-            Load more ({{ tasks.length - visibleTaskCount }} remaining)
-          </button>
+          <LoadMoreButton v-if="hasMoreTasks" @click="loadMoreTasks" />
         </div>
       </div>
     </div>

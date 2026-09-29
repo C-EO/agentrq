@@ -115,11 +115,7 @@
             No tasks
           </div>
 
-          <!-- Load more -->
-          <button v-if="hasMore[col.id]" @click.stop="loadColumn(col.id, true)"
-                  class="w-full py-1.5 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 text-[10px] font-semibold hover:border-gray-300 dark:hover:border-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800/50 transition-all">
-            Load More
-          </button>
+          <LoadMoreButton v-if="hasMore[col.id]" @click="loadColumn(col.id, true)" />
         </div>
       </div>
     </div>
@@ -170,6 +166,7 @@ import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 import { taskAccentClass } from '../composables/useTaskStatusStyle';
 import { getOrder, sortColumn, orderBetween } from '../composables/useKanbanOrder';
+import LoadMoreButton from '../components/LoadMoreButton.vue';
 
 const route = useRoute();
 const router = useRouter();
