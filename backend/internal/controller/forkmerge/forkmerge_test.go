@@ -14,6 +14,7 @@ import (
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/daemon/wire"
 	"github.com/mustafaturan/monoflake"
@@ -35,6 +36,7 @@ type fakeCrud struct {
 	checkErr  error
 	session   *entity.SessionView
 	status    string // what the session row says now
+	gone      bool   // the session row has been deleted
 	sessErr   error
 	mergeErr  error
 	machineOK bool
@@ -87,6 +89,9 @@ func (f *fakeCrud) GetSession(_ context.Context, req entity.GetSessionRequest) (
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.gone {
+		return nil, base.ErrNotFound
+	}
 	return &entity.GetSessionResponse{Session: entity.SessionView{ID: req.SessionID, Status: f.status}}, nil
 }
 
@@ -94,6 +99,12 @@ func (f *fakeCrud) setStatus(s string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.status = s
+}
+
+func (f *fakeCrud) deleteSession() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gone = true
 }
 
 func (f *fakeCrud) MergeFork(context.Context, entity.MergeForkRequest) (*entity.MergeForkResponse, error) {
@@ -110,6 +121,7 @@ func (f *fakeCrud) MergeFork(context.Context, entity.MergeForkRequest) (*entity.
 type killingDaemon struct {
 	crud   *fakeCrud
 	report string // the state the daemon reports; empty reports nothing
+	delete bool   // the report deletes the session row, as a real ending does
 	fail   bool
 	frames []wire.Control
 }
@@ -124,7 +136,9 @@ func (d *killingDaemon) Send(fr wire.Frame) error {
 	}
 	d.frames = append(d.frames, c)
 	d.crud.step("kill")
-	if d.report != "" {
+	if d.delete {
+		go d.crud.deleteSession()
+	} else if d.report != "" {
 		go d.crud.setStatus(d.report)
 	}
 	return nil
@@ -182,6 +196,22 @@ func TestMerge_KillsTheAgentFirst(t *testing.T) {
 	}
 	if ev := string(<-parentEvents); !strings.Contains(ev, "task.created") {
 		t.Errorf("parent event = %s", ev)
+	}
+}
+
+// The session row of an agent that ended is deleted, usually before the merge
+// first looks: a row that is gone is an agent that is dead.
+func TestMerge_SessionRowDeleted(t *testing.T) {
+	c := &fakeCrud{session: forkSession(), status: machinectrl.SessionRunning, machineOK: true}
+	reg := machinectrl.NewRegistry("pod-a")
+	reg.Add(machineID, &killingDaemon{crud: c, delete: true})
+
+	rs, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), request())
+	if err != nil || rs.MovedTasks != 1 {
+		t.Fatalf("rs = %+v, err = %v", rs, err)
+	}
+	if got := c.got(); got != "check,kill,merge" {
+		t.Errorf("steps = %s", got)
 	}
 }
 
