@@ -98,8 +98,14 @@ export async function forkWorkspace(workspaceId, { name = '' } = {}) {
 
 // Moves every task of a fork back into its parent and removes the fork.
 // Answers { parentId, movedTasks }; refused (409) while a task is unfinished.
-export async function mergeFork(workspaceId) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/merge`, { method: 'POST' });
+// With deleteFolder the fork's folder is deleted from its machine too, and the
+// merge is refused (409) when that machine cannot be told.
+export async function mergeFork(workspaceId, { deleteFolder = false } = {}) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deleteFolder })
+  });
   if (!res.ok) throw await refusal(res, 'Failed to merge fork');
   return res.json();
 }

@@ -367,3 +367,96 @@ func TestConfigPointsElsewhere(t *testing.T) {
 		t.Error("an unreadable file was taken for this fork's")
 	}
 }
+
+func TestRemovingAForkOfARepositoryKeepsItsBranch(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a": "1"})
+	home := t.TempDir()
+	dir, _, err := PrepareForkDir(home, root, forkID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "untracked"), "work")
+
+	if err := RemoveForkDir(home, forkID); err != nil {
+		t.Fatalf("RemoveForkDir: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {
+		t.Errorf("the folder is still there: %v", err)
+	}
+	if out, _ := runGit(root, "worktree", "list"); strings.Contains(out, forkID) {
+		t.Errorf("the repository still lists the worktree:\n%s", out)
+	}
+	if out, _ := runGit(root, "branch", "--list", ForkBranch(forkID)); !strings.Contains(out, ForkBranch(forkID)) {
+		t.Error("the fork's branch went with its folder")
+	}
+}
+
+func TestRemovingACopyDeletesIt(t *testing.T) {
+	from := t.TempDir()
+	writeFile(t, filepath.Join(from, "a"), "1")
+	home := t.TempDir()
+	if _, _, err := PrepareForkDir(home, from, forkID); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveForkDir(home, forkID); err != nil {
+		t.Fatalf("RemoveForkDir: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {
+		t.Errorf("the copy is still there: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(from, "a")); err != nil {
+		t.Errorf("the original was touched: %v", err)
+	}
+}
+
+// A home folder under git must not be taken for the fork's repository.
+func TestRemovingACopyInsideARepositoryLeavesTheRepositoryAlone(t *testing.T) {
+	home := gitRepo(t, map[string]string{"dotfile": "x"})
+	from := t.TempDir()
+	writeFile(t, filepath.Join(from, "a"), "1")
+	if _, _, err := PrepareForkDir(home, from, forkID); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveForkDir(home, forkID); err != nil {
+		t.Fatalf("RemoveForkDir: %v", err)
+	}
+	if readFile(t, filepath.Join(home, "dotfile")) != "x" {
+		t.Error("the enclosing repository lost a file")
+	}
+}
+
+func TestRemovingAForkWhoseFolderIsGoneIsDone(t *testing.T) {
+	if err := RemoveForkDir(t.TempDir(), forkID); err != nil {
+		t.Errorf("RemoveForkDir = %v, want nil", err)
+	}
+}
+
+func TestRemovingAWorktreeGitCannotRemoveFallsBackToDeletingIt(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a": "1"})
+	home := t.TempDir()
+	if _, _, err := PrepareForkDir(home, root, forkID); err != nil {
+		t.Fatal(err)
+	}
+	// A locked worktree is refused by `git worktree remove --force`.
+	if out, err := runGit(root, "worktree", "lock", filepath.Join(home, ".agentrq", "forks", forkID)); err != nil {
+		t.Fatalf("lock: %v %s", err, out)
+	}
+	if err := RemoveForkDir(home, forkID); err != nil {
+		t.Fatalf("RemoveForkDir: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".agentrq", "forks", forkID)); !os.IsNotExist(err) {
+		t.Errorf("the folder is still there: %v", err)
+	}
+}
+
+func TestRemovingAForkIsRefusedWhenItsNamesAreNotAcceptable(t *testing.T) {
+	for name, c := range map[string]struct{ home, id string }{
+		"id with a slash": {t.TempDir(), "../x"},
+		"empty id":        {t.TempDir(), ""},
+		"relative home":   {"home", forkID},
+	} {
+		if err := RemoveForkDir(c.home, c.id); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

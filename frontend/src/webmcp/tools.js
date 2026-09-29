@@ -245,13 +245,17 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       name: 'mergeFork',
       description:
         "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the " +
-        "parent with its thread, and the fork is removed. Its folder on the machine is left. " +
+        "parent with its thread, and the fork is removed. Its folder on the machine is left unless " +
+        "deleteFolder is true, which deletes it and keeps its git branch. " +
         'Refused while any task in the fork is not completed or rejected.',
-      properties: { workspaceId: str('The fork to merge.') },
+      properties: {
+        workspaceId: str('The fork to merge.'),
+        deleteFolder: bool("Also delete the fork's folder on its machine. Defaults to false."),
+      },
       required: ['workspaceId'],
       destructive: true,
       screen: after((a, r) => (r?.parentId ? `/workspaces/${seg(r.parentId)}` : workspacePage(a))),
-      run: ({ workspaceId }) => api.mergeFork(workspaceId),
+      run: ({ workspaceId, deleteFolder = false }) => api.mergeFork(workspaceId, { deleteFolder }),
     }),
     tool({
       name: 'getWorkspaceToken',

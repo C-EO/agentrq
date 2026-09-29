@@ -121,6 +121,15 @@ func TestMergeFork_UsesTheSharedMerge(t *testing.T) {
 	}
 }
 
+func TestMergeFork_DeleteFolder(t *testing.T) {
+	m := &fakeMerger{}
+	s := &WorkspaceServer{forks: m}
+	toolResult(s.handleMergeFork(authedContext(), nil, MergeForkParams{WorkspaceID: b62(forkID), DeleteFolder: true}))
+	if !m.req.DeleteFolder {
+		t.Errorf("request = %+v, want DeleteFolder", m.req)
+	}
+}
+
 func TestMergeFork_Refused(t *testing.T) {
 	m := &fakeMerger{err: entity.NewForkError(entity.ErrForkUnfinished, "2 tasks in this fork are not finished")}
 	r := toolResult((&WorkspaceServer{forks: m}).handleMergeFork(authedContext(), nil, MergeForkParams{WorkspaceID: b62(forkID)}))

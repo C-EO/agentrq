@@ -48,7 +48,9 @@ Right-click the fork and choose **Merge into `<parent>`**. A merge:
 
 A merge is refused while any task in the fork is unfinished, that is, in any status other than `completed` or `rejected`. The menu item is disabled and says how many tasks are unfinished. A scheduled (`cron`) task does not hold a merge up: it moves back to the parent and keeps its schedule. A merge is also refused if the fork's agent is on a machine that is offline, because the agent cannot be stopped from here.
 
-A merge does not touch files. The fork's worktree or copy stays where it is, and the merge dialog shows its path, so you can merge its branch, copy files out of it, or delete it yourself.
+A merge leaves the fork's files alone unless you ask otherwise. The worktree or copy stays where it is, and the merge dialog shows its path, so you can merge its branch, copy files out of it, or delete it yourself.
+
+To have the merge delete the folder too, tick **Delete the fork's folder on the machine** in the merge dialog. `agentrqd` removes the worktree or the copy and keeps the git branch, so the fork's commits are not lost. Uncommitted changes in the folder go with it. The merge is refused, before anything moves, if a machine that ran the fork is offline or runs an `agentrqd` that cannot delete the folder yet; merge without the box ticked, or bring the machine back.
 
 A fork cannot be deleted or archived. Merging is the only way to remove it, so its tasks are never lost with it. For the same reason, a workspace that has forks cannot be deleted or archived until they are merged.
 
@@ -59,6 +61,6 @@ The account-wide supervisor server has two tools for forks:
 | Tool | What it does |
 |---|---|
 | `forkWorkspace` | `{workspaceId, name?}`. Makes a fork and returns it, with its `forkOfId` |
-| `mergeFork` | `{workspaceId}`. Merges a fork back, stopping its agent first, and returns `{parentId, movedTasks}` |
+| `mergeFork` | `{workspaceId, deleteFolder?}`. Merges a fork back, stopping its agent first, and returns `{parentId, movedTasks}`. `deleteFolder` also deletes the fork's folder on its machine |
 
 `listWorkspaces` and `getWorkspace` show a fork's `forkOfId`. A browser agent driving the web app has the same two tools over [WebMCP](WEBMCP.md).

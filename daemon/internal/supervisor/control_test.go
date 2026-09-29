@@ -6,6 +6,7 @@ package supervisor
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -182,7 +183,7 @@ func TestAnUnknownOpIsIgnoredRatherThanFatal(t *testing.T) {
 func TestMalformedControlBodiesAreErrors(t *testing.T) {
 	s := New((&recordingStarter{}).start, 0, 0)
 	rep := &recordingReporter{}
-	for _, op := range []wire.Op{wire.OpStartSession, wire.OpKillSession} {
+	for _, op := range []wire.Op{wire.OpStartSession, wire.OpKillSession, wire.OpRemoveForkDir} {
 		c := wire.Control{Op: op, Body: json.RawMessage("{not json")}
 		if err := s.Handle(t.Context(), "work", c, rep); err == nil {
 			t.Errorf("Handle(%s) accepted a malformed body", op)
@@ -214,5 +215,33 @@ func TestAnExitIsReportedWithoutBeingAsked(t *testing.T) {
 	got := rep.waitFor(t, string(StateExited))
 	if got.ExitCode == nil || *got.ExitCode != 5 {
 		t.Errorf("exit code = %v, want 5", got.ExitCode)
+	}
+}
+
+func TestRemoveForkDirOpDeletesTheForksFolder(t *testing.T) {
+	home := t.TempDir()
+	s := New((&recordingStarter{}).start, 0, 0)
+	s.Home = home
+	target := filepath.Join(home, ".agentrq", "forks", forkID)
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	c := control(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: forkID})
+	if err := s.Handle(t.Context(), "work", c, &recordingReporter{}); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Errorf("the fork's folder is still there: %v", err)
+	}
+}
+
+func TestRemoveForkDirOpNeedsAHome(t *testing.T) {
+	s := New((&recordingStarter{}).start, 0, 0)
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	c := control(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: forkID})
+	if err := s.Handle(t.Context(), "work", c, &recordingReporter{}); err == nil {
+		t.Error("Handle accepted a daemon with no home folder")
 	}
 }

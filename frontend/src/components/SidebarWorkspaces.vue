@@ -132,7 +132,7 @@ function onWorkspaceMenuSelect(key) {
                    @close="forkActions.cancelFork()" @confirm="forkActions.confirmFork($event)" />
     <MergeForkModal :fork="forkActions.state.merging" :parent-name="parentName(forkActions.state.merging, workspaces)"
                     :busy="forkActions.state.busy"
-                    @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge()" />
+                    @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge($event)" />
     </Teleport>
   </div>
 </template>

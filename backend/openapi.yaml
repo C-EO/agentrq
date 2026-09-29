@@ -393,6 +393,19 @@ paths:
         and removes the fork. Refused while any task in the fork is not
         finished (completed or rejected); a scheduled task moves back with
         its schedule.
+
+        The request body is optional. With `deleteFolder: true` the fork's
+        folder is also deleted from each machine that ran it (a git worktree
+        is removed and its branch kept). The merge is refused (409) when such
+        a machine is offline or runs an agentrqd that cannot delete the folder.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deleteFolder: { type: boolean, default: false }
       responses:
         '200':
           description: Merged
@@ -405,7 +418,7 @@ paths:
                   movedTasks: { type: integer }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: A task in the fork is not finished
+          description: A task in the fork is not finished, or its folder cannot be deleted right now
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

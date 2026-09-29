@@ -48,6 +48,17 @@ func (s *Supervisor) Handle(ctx context.Context, profile string, c wire.Control,
 			State:     string(StateKilled),
 		})
 
+	case wire.OpRemoveForkDir:
+		var req wire.RemoveForkDir
+		if err := json.Unmarshal(c.Body, &req); err != nil {
+			return fmt.Errorf("supervisor: parse removeForkDir: %w", err)
+		}
+		home, err := s.home()
+		if err != nil {
+			return err
+		}
+		return RemoveForkDir(home, req.ForkID)
+
 	default:
 		// An op from a newer backend is ignored rather than fatal. Dropping
 		// the connection over an unrecognised message would make every new

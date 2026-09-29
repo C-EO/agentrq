@@ -7,7 +7,7 @@
 <!-- Confirming a merge: what stops, what moves, what is removed, and the folder
      that is left behind. Laid out like the Move Task dialog. -->
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ForkIcon from './ForkIcon.vue';
 import { mergeConfirmMessage } from '../composables/useWorkspaceForks';
 
@@ -18,7 +18,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'confirm']);
-const message = computed(() => mergeConfirmMessage(props.fork, props.parentName));
+const deleteFolder = ref(false);
+// Each merge starts with the folder kept; deleting it is never carried over.
+watch(() => props.fork, () => { deleteFolder.value = false; });
+const hasFolder = computed(() => !!props.fork?.workingDirectory);
+const message = computed(() => mergeConfirmMessage(props.fork, props.parentName, deleteFolder.value));
 </script>
 
 <template>
@@ -39,12 +43,17 @@ const message = computed(() => mergeConfirmMessage(props.fork, props.parentName)
                   Merge into {{ parentName }}
                 </h3>
                 <p data-test="merge-message" class="mt-2 text-[14px] leading-relaxed text-gray-500 dark:text-zinc-400 font-medium break-words">{{ message }}</p>
+                <label v-if="hasFolder" class="mt-4 flex items-start gap-2.5 cursor-pointer">
+                  <input v-model="deleteFolder" data-test="merge-delete-folder" type="checkbox" :disabled="busy"
+                         class="mt-0.5 shrink-0 rounded-sm border-gray-300 dark:border-zinc-600" />
+                  <span class="text-[13px] leading-snug font-semibold text-gray-700 dark:text-zinc-300">Delete the fork's folder on the machine</span>
+                </label>
               </div>
             </div>
           </div>
 
           <div class="bg-gray-50/50 dark:bg-zinc-800/50 px-6 py-5 sm:px-8 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 dark:border-zinc-800">
-            <button type="button" @click="emit('confirm')" :disabled="busy"
+            <button type="button" @click="emit('confirm', hasFolder && deleteFolder)" :disabled="busy"
                     class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-black dark:bg-white text-[10px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 sm:w-auto">
               {{ busy ? 'Merging…' : 'Merge' }}
             </button>

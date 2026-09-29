@@ -39,6 +39,8 @@ type mergeCrud struct {
 	sessErr   error
 	machineOK bool
 	steps     []string
+	machines  []string
+	merged    entity.MergeForkRequest
 }
 
 func (m *mergeCrud) step(s string) {
@@ -57,6 +59,10 @@ func (m *mergeCrud) ActiveSessionForWorkspace(_ context.Context, req entity.Acti
 		return nil, errors.New("asked about the wrong workspace")
 	}
 	return m.session, nil
+}
+
+func (m *mergeCrud) SessionMachinesForWorkspace(context.Context, entity.ActiveSessionRequest) ([]string, error) {
+	return m.machines, nil
 }
 
 func (m *mergeCrud) GetMachine(_ context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error) {
@@ -83,6 +89,7 @@ func (m *mergeCrud) setStatus(s string) {
 
 func (m *mergeCrud) MergeFork(_ context.Context, req entity.MergeForkRequest) (*entity.MergeForkResponse, error) {
 	m.step("merge")
+	m.merged = req
 	return &entity.MergeForkResponse{ParentID: monoflake.ID(wfParentID).String(), MovedTasks: 1,
 		Tasks: []entity.Task{{ID: 7, WorkspaceID: wfParentID}}}, nil
 }
@@ -201,5 +208,46 @@ func TestMergeFork_MachineOffline(t *testing.T) {
 		if strings.Join(c.steps, ",") != "check" || len(mgr.removed) != 0 {
 			t.Errorf("%s: steps %v, removed %v: nothing may move", name, c.steps, mgr.removed)
 		}
+	}
+}
+
+// {"deleteFolder":true} reaches the merge, and the daemon is told to delete
+// the folder.
+func TestMergeFork_DeleteFolder(t *testing.T) {
+	c := &mergeCrud{machineOK: true, machines: []string{monoflake.ID(mfMachineID).String()}}
+	d := &killingDaemon{crud: c}
+	reg := machinectrl.NewRegistry("pod-a")
+	reg.Add(mfMachineID, d)
+	reg.SetCapabilities(mfMachineID, d, []string{wire.CapabilityForkCleanup})
+
+	status, body := send(t, mergeApp(c, reg, &fakeMCPManager{}), http.MethodPost, mergeURL(), `{"deleteFolder":true}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body %s", status, body)
+	}
+	if !c.merged.DeleteFolder {
+		t.Errorf("request = %+v, want DeleteFolder", c.merged)
+	}
+	if len(d.frames) != 1 || d.frames[0].Op != wire.OpRemoveForkDir {
+		t.Errorf("frames = %+v, want one removeForkDir", d.frames)
+	}
+}
+
+// An offline machine holding the folder refuses the merge with a 409.
+func TestMergeFork_DeleteFolderRefusedOffline(t *testing.T) {
+	c := &mergeCrud{machineOK: true, machines: []string{monoflake.ID(mfMachineID).String()}}
+	status, body := send(t, mergeApp(c, machinectrl.NewRegistry("pod-a"), &fakeMCPManager{}), http.MethodPost, mergeURL(), `{"deleteFolder":true}`)
+	if status != http.StatusConflict || !strings.Contains(body, "laptop") {
+		t.Errorf("status = %d, body %s", status, body)
+	}
+	if got := strings.Join(c.steps, ","); got != "check" {
+		t.Errorf("steps = %s", got)
+	}
+}
+
+func TestMergeFork_MalformedBody(t *testing.T) {
+	c := &mergeCrud{}
+	status, _ := send(t, mergeApp(c, nil, &fakeMCPManager{}), http.MethodPost, mergeURL(), `{not json`)
+	if status != http.StatusUnprocessableEntity || len(c.steps) != 0 {
+		t.Errorf("status = %d, steps %v", status, c.steps)
 	}
 }

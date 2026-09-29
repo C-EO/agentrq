@@ -19,6 +19,7 @@ const (
 	OpHeartbeat       Op = "heartbeat"       // daemon → backend, liveness + metrics
 	OpStartSession    Op = "startSession"    // backend → daemon
 	OpKillSession     Op = "killSession"     // backend → daemon
+	OpRemoveForkDir   Op = "removeForkDir"   // backend → daemon, a merge asked for the folder to go
 	OpSessionState    Op = "sessionState"    // daemon → backend
 	OpAttach          Op = "attach"          // backend → daemon
 	OpDetach          Op = "detach"          // backend → daemon
@@ -79,6 +80,11 @@ type Hello struct {
 // CapabilityFork is a daemon that honours [StartSession.Fork]. Without it a
 // fork would run in its parent's folder and connect as the parent.
 const CapabilityFork = "fork"
+
+// CapabilityForkCleanup is a daemon that honours [OpRemoveForkDir]. An older
+// one ignores the op, so a merge that asks for the folder to go is refused
+// unless this is listed.
+const CapabilityForkCleanup = "removeForkDir"
 
 // CapabilityRestart is a daemon that honours [OpRestart], and CapabilityUpdate
 // one that can also install an [OpUpdateNow]. An older daemon ignores the op,
@@ -303,6 +309,13 @@ func (s StartSession) Redacted() StartSession {
 // KillSession asks the daemon to end one.
 type KillSession struct {
 	SessionID uint64 `json:"sessionId"`
+}
+
+// RemoveForkDir asks the daemon to delete a merged fork's folder. It names the
+// fork and nothing else: the daemon works out the folder itself, so the server
+// can never point it at another one.
+type RemoveForkDir struct {
+	ForkID string `json:"forkId"`
 }
 
 // AcpAgent is one entry from `acp-gateway --list-agents --json`: an id the

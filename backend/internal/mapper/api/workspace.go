@@ -353,7 +353,14 @@ func FromHTTPRequestToMergeForkRequestEntity(c *fiber.Ctx) *entity.MergeForkRequ
 	if id == 0 {
 		return nil
 	}
-	return &entity.MergeForkRequest{WorkspaceID: id}
+	// The body is optional: a merge with none leaves the folder alone.
+	var body view.MergeForkRequest
+	if len(c.Body()) > 0 {
+		if err := json.Unmarshal(c.Body(), &body); err != nil {
+			return nil
+		}
+	}
+	return &entity.MergeForkRequest{WorkspaceID: id, DeleteFolder: body.DeleteFolder}
 }
 
 func FromMergeForkResponseEntityToHTTPResponse(rs *entity.MergeForkResponse) []byte {
