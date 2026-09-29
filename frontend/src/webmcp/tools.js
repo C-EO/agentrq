@@ -28,6 +28,8 @@
  * surface is.
  */
 
+import { MIN_FORK_VERSION } from '../composables/useMachineFormat.js'
+
 /** JSON Schema fragments, named once so the catalogue reads as intent. */
 const str = (description) => ({ type: 'string', description })
 const bool = (description) => ({ type: 'boolean', description })
@@ -36,6 +38,8 @@ const int = (description) => ({ type: 'integer', description })
 const WORKSPACE_ID = str('The workspace ID (base62), as it appears in the URL.')
 const TASK_ID = str('The task ID (base62), as it appears in the URL.')
 const MACHINE_ID = str('The machine ID (base62), as it appears in the URL.')
+// What the machines pages show in red next to an old version.
+const DAEMON_VERSION_NOTE = ` An agentrqd older than ${MIN_FORK_VERSION} should be updated to use new features such as workspace forks.`
 
 /**
  * Build a WebMCP tool descriptor.
@@ -689,13 +693,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'listMachines',
       description:
-        'Computers enrolled against this account that can host agents, with whether each is online and what it has left.',
+        'Computers enrolled against this account that can host agents, with whether each is online and what it has left.' +
+        DAEMON_VERSION_NOTE,
       readOnly: true,
       run: () => api.fetchMachines(),
     }),
     tool({
       name: 'getMachine',
-      description: 'One machine: its state, and its memory, CPU and disk.',
+      description: 'One machine: its state, and its memory, CPU and disk.' + DAEMON_VERSION_NOTE,
       properties: { machineId: MACHINE_ID },
       required: ['machineId'],
       readOnly: true,

@@ -19,6 +19,8 @@ import {
   formatBytes,
   formatPercent,
   memoryUsedPercent,
+  daemonOutdated,
+  DAEMON_OUTDATED_HINT,
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
@@ -243,7 +245,14 @@ async function copy(text, what) {
                 >
               </div>
               <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1 truncate">
-                {{ m.os }}/{{ m.arch }} · agentrqd {{ m.version || '—' }}
+                {{ m.os }}/{{ m.arch }} ·
+                <span :class="{ 'text-red-600 dark:text-red-400 font-bold': daemonOutdated(m.version) }"
+                  >agentrqd {{ m.version || '—' }}</span
+                >
+              </p>
+              <!-- Written out rather than a tooltip, so a phone can read it. -->
+              <p v-if="daemonOutdated(m.version)" class="text-[11px] text-red-600 dark:text-red-400 mt-0.5">
+                {{ DAEMON_OUTDATED_HINT }}
               </p>
             </div>
             <div class="text-right shrink-0">

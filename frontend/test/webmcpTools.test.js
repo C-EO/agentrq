@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { createToolCatalogue } from '../src/webmcp/tools';
 import * as api from '../src/api';
+import { MIN_FORK_VERSION } from '../src/composables/useMachineFormat';
 
 /**
  * An input carrying every field any tool asks for, so one object can drive the
@@ -74,6 +75,15 @@ describe('the catalogue as a whole', () => {
 
   it('offers a substantial set of tools', () => {
     expect(catalogue.length).toBeGreaterThan(40);
+  });
+
+  // The machines pages show an old agentrqd in red; an agent reading the
+  // same machines should be told the same thing.
+  it('says which agentrqd is too old wherever a machine version comes back', () => {
+    for (const name of ['listMachines', 'getMachine']) {
+      const t = catalogue.find((c) => c.name === name);
+      expect(t.description, name).toContain(`older than ${MIN_FORK_VERSION} should be updated`);
+    }
   });
 
   it('names every tool exactly once', () => {

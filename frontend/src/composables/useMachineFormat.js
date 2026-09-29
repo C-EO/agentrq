@@ -163,3 +163,39 @@ export function sessionSummary(session) {
   if (session?.restored) parts.push('restored')
   return parts.join(' · ')
 }
+
+/**
+ * The first agentrqd that runs a workspace fork. The server's copy is
+ * `wire.MinForkVersion`, and a test fails when the two disagree.
+ */
+export const MIN_FORK_VERSION = '0.9.3'
+
+const RELEASE = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.]+)?$/
+
+/**
+ * Whether a daemon's version is `min` or later, compared as semver (0.9.10 is
+ * later than 0.9.3), and a pre-release below its release: the same answer
+ * `wire.VersionAtLeast` gives, so the page and the server refuse alike.
+ * Null when the version is not a release at all ("dev", or empty).
+ */
+export function versionAtLeast(version, min) {
+  const v = RELEASE.exec(version ?? '')
+  if (!v) return null
+  const m = RELEASE.exec(min)
+  for (let i = 1; i <= 3; i++) {
+    if (Number(v[i]) !== Number(m[i])) return Number(v[i]) > Number(m[i])
+  }
+  return !v[4]
+}
+
+/**
+ * Whether a machine's agentrqd is too old for the newest features, and so
+ * reads in red. An unknown version is not: it may be a development build, and
+ * red would say something about it nobody knows.
+ */
+export function daemonOutdated(version) {
+  return versionAtLeast(version, MIN_FORK_VERSION) === false
+}
+
+/** What the red version says to do about it. */
+export const DAEMON_OUTDATED_HINT = `Update agentrqd to use new features such as workspace forks, which need ${MIN_FORK_VERSION} or newer.`
