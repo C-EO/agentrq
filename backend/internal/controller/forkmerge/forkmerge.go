@@ -8,11 +8,13 @@ package forkmerge
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -156,6 +158,11 @@ func (m *Merger) stopAgent(ctx context.Context, rq entity.MergeForkRequest) erro
 	deadline := time.Now().Add(wait)
 	for {
 		rs, err := m.Crud.GetSession(ctx, entity.GetSessionRequest{UserID: rq.UserID, SessionID: s.ID})
+		if errors.Is(err, base.ErrNotFound) {
+			// The row of a session that ended is deleted, usually before
+			// the first look: gone means dead.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
