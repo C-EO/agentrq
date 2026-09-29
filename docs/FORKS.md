@@ -50,7 +50,7 @@ A merge is refused while any task in the fork is unfinished, that is, in any sta
 
 A merge leaves the fork's files alone unless you ask otherwise. The worktree or copy stays where it is, and the merge dialog shows its path, so you can merge its branch, copy files out of it, or delete it yourself.
 
-To have the merge delete the folder too, tick **Delete the fork's folder on the machine** in the merge dialog. `agentrqd` removes the worktree or the copy and keeps the git branch, so the fork's commits are not lost. Uncommitted changes in the folder go with it. The merge is refused, before anything moves, if a machine that ran the fork is offline or runs an `agentrqd` that cannot delete the folder yet; merge without the box ticked, or bring the machine back.
+To have the merge delete the folder too, tick **Delete the fork's folder on the machine** in the merge dialog. `agentrqd` removes the worktree or the copy and keeps the git branch, so the fork's commits are not lost. Uncommitted changes in the folder go with it. The merge is refused, before anything moves, if a machine that ran the fork is offline or runs an `agentrqd` that cannot delete the folder yet; merge without the box ticked, or bring the machine back. A fork last launched before AgentRQ kept a record of its machines is refused too, because nothing says where its folder is; merge it without the box ticked and delete the folder by hand.
 
 A fork cannot be deleted or archived. Merging is the only way to remove it, so its tasks are never lost with it. For the same reason, a workspace that has forks cannot be deleted or archived until they are merged.
 

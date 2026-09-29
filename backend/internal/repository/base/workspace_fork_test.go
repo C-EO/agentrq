@@ -35,7 +35,7 @@ func forkDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}); err != nil {
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()
@@ -90,6 +90,9 @@ func TestMergeForkIntoParent_MovesEverythingAndDeletesTheFork(t *testing.T) {
 	if err := db.Create(&model.SiteShare{ID: 9, UserID: wfUser, WorkspaceID: wfFork, Origin: "https://a.example"}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := repo.RecordForkFolder(context.Background(), wfFork, 5, wfUser); err != nil {
+		t.Fatal(err)
+	}
 
 	moved, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
 	if err != nil {
@@ -129,6 +132,9 @@ func TestMergeForkIntoParent_MovesEverythingAndDeletesTheFork(t *testing.T) {
 	db.Model(&model.SiteShare{}).Where("workspace_id = ?", wfFork).Count(&ws)
 	if ws != 0 {
 		t.Error("the fork's site share survived its merge")
+	}
+	if n := countIn(t, db, &model.ForkFolder{}, wfFork); n != 0 {
+		t.Error("the record of the fork's folder survived its merge")
 	}
 }
 

@@ -1382,6 +1382,7 @@ func migratedModels() []any {
 		&model.Machine{},
 		&model.EnrolmentCode{},
 		&model.Session{},
+		&model.ForkFolder{},
 		&model.HourlyTelemetry{},
 		&model.DailyTelemetry{},
 		&model.MonthlyTelemetry{},

@@ -61,7 +61,7 @@ func (m *mergeCrud) ActiveSessionForWorkspace(_ context.Context, req entity.Acti
 	return m.session, nil
 }
 
-func (m *mergeCrud) SessionMachinesForWorkspace(context.Context, entity.ActiveSessionRequest) ([]string, error) {
+func (m *mergeCrud) ForkFolderMachines(context.Context, entity.ActiveSessionRequest) ([]string, error) {
 	return m.machines, nil
 }
 
