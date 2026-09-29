@@ -177,6 +177,9 @@ type Supervisor struct {
 
 	// Home is where the forks folder lives; empty means the user's home.
 	Home string
+	// RemoveDir deletes a fork's folder; nil is [RemoveForkDir]. A field so
+	// a test can hold a removal open.
+	RemoveDir func(home, forkID string) error
 	// ClaudeDir is where claude-code keeps its conversations; empty means
 	// $CLAUDE_CONFIG_DIR, or ~/.claude.
 	ClaudeDir string

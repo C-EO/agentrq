@@ -526,6 +526,38 @@ func TestListAcpAgentsDoesNotBlockTheSocket(t *testing.T) {
 	}
 }
 
+// Deleting a fork's folder runs git and removes a whole tree, so it runs on
+// its own goroutine: a control message sent while one is still going must
+// still be answered, or every terminal on the machine would freeze behind it.
+func TestRemoveForkDirDoesNotBlockTheSocket(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	release := make(chan struct{})
+	removed := make(chan string, 1)
+	h.sup.Home = t.TempDir()
+	h.sup.RemoveDir = func(_, forkID string) error {
+		<-release
+		removed <- forkID
+		return errors.New("already gone")
+	}
+	b.send(t, controlFrame(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: "f1"}))
+
+	b.send(t, controlFrame(t, wire.OpKillSession, wire.KillSession{SessionID: 999}))
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpSessionState)) > 0 },
+		"an unrelated control message was stuck behind the folder removal")
+
+	close(release)
+	select {
+	case id := <-removed:
+		if id != "f1" {
+			t.Errorf("removed fork %q, want f1", id)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the folder removal never ran")
+	}
+}
+
 // The models lookup carries the agent and the workspace directory both ways —
 // the daemon needs both to ask, and the reply names which agent it answered
 // for, since a client can have more than one outstanding.

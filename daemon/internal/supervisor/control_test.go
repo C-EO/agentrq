@@ -236,6 +236,25 @@ func TestRemoveForkDirOpDeletesTheForksFolder(t *testing.T) {
 	}
 }
 
+// The removal is the one a test can put in its place, given the home and the
+// fork's id.
+func TestRemoveForkDirOpUsesTheSupervisorsRemover(t *testing.T) {
+	s := New((&recordingStarter{}).start, 0, 0)
+	s.Home = t.TempDir()
+	var gotHome, gotID string
+	s.RemoveDir = func(home, forkID string) error {
+		gotHome, gotID = home, forkID
+		return nil
+	}
+	c := control(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: forkID})
+	if err := s.Handle(t.Context(), "work", c, &recordingReporter{}); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if gotHome != s.Home || gotID != forkID {
+		t.Errorf("removed (%q, %q), want (%q, %q)", gotHome, gotID, s.Home, forkID)
+	}
+}
+
 func TestRemoveForkDirOpNeedsAHome(t *testing.T) {
 	s := New((&recordingStarter{}).start, 0, 0)
 	t.Setenv("HOME", "")
