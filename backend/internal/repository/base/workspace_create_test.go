@@ -61,3 +61,35 @@ func TestCreateWorkspace_Errors(t *testing.T) {
 		t.Error("the workspace was kept when writing its setting back failed")
 	}
 }
+
+// Recording a fork's folder writes the folder and nothing else, so a parent
+// save that lands meanwhile keeps the settings it copied to the fork.
+func TestSetWorkingDirectory_WritesOnlyTheFolder(t *testing.T) {
+	db := workspaceDB(t)
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+	stale, err := repo.GetWorkspace(ctx, 7, memUserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The parent's save reaches the fork after it was read.
+	if err := db.Model(&model.Workspace{}).Where("id = ?", 7).Update("allow_all_commands", true).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.SetWorkingDirectory(ctx, stale.ID, memUserID, "/home/u/.agentrq/forks/7"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := repo.GetWorkspace(ctx, 7, memUserID)
+	if got.WorkingDirectory != "/home/u/.agentrq/forks/7" || !got.AllowAllCommands || !got.UpdatedAt.After(stale.UpdatedAt) {
+		t.Errorf("stored %+v: want the folder set and the parent's setting kept", got)
+	}
+	if err := repo.SetWorkingDirectory(ctx, 9, memUserID, "/elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+	var other model.Workspace
+	db.First(&other, 9)
+	if other.WorkingDirectory != "" {
+		t.Error("another account's workspace was written")
+	}
+}

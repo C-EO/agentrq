@@ -320,8 +320,5 @@ func (c *controller) RecordForkDirectory(ctx context.Context, req entity.RecordF
 	if ws.WorkingDirectory == dir {
 		return nil
 	}
-	ws.WorkingDirectory = dir
-	ws.UpdatedAt = time.Now()
-	_, err = c.repository.UpdateWorkspace(ctx, ws)
-	return err
+	return c.repository.SetWorkingDirectory(ctx, ws.ID, uid, dir)
 }
