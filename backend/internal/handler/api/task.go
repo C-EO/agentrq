@@ -92,7 +92,9 @@ func (h *handler) createTask() fiber.Handler {
 
 		// If human created the task, notify the LLM via MCP channel
 		// ONLY if status is NOT 'cron' (don't notify for template creation)
-		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
+		// and the task is assigned to the agent: a task the human made for
+		// themselves is theirs to do, and pushing it started the agent on it.
+		if rq.Task.CreatedBy == "human" && rs.Task.Assignee == "agent" && rs.Task.Status != "cron" {
 			if h.agentHasRoom(ctx, rq.Task.WorkspaceID, rq.UserID, rs.Task.ID) {
 				h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
 			}

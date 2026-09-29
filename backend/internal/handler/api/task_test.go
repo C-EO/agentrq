@@ -443,6 +443,43 @@ func TestCreateTask_PushesEvenWhenAnotherTaskIsAlreadyPending(t *testing.T) {
 	}
 }
 
+// The reported bug (task 0jWEFPFSVzF): a task the human created for themselves
+// was pushed to the agent anyway, and the agent started working on it.
+func TestCreateTask_DoesNotPushATaskAssignedToTheHuman(t *testing.T) {
+	app := fiber.New()
+	created := entity.Task{ID: 60, WorkspaceID: 1, CreatedBy: "human", Assignee: "human", Status: "notstarted", Title: "Mine to do"}
+	crudCtrl := &mockCrudCreateTask{
+		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			return &entity.CreateTaskResponse{Task: created}, nil
+		},
+		listTasksFunc: func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+			return &entity.ListTasksResponse{Tasks: []entity.Task{created}}, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+
+	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.createTask()(c)
+	})
+
+	body := `{"task":{"title":"Mine to do","createdBy":"human","assignee":"human"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	if len(srv.calls) != 0 {
+		t.Fatalf("agent was contacted for a human task: %v", srv.calls)
+	}
+}
+
 // Still held back while the agent is actually working: that one is not a
 // starvation risk, because the poller offers the queue again the moment the
 // ongoing task is done.
