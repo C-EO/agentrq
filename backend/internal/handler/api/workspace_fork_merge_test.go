@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -110,7 +111,8 @@ func (d *killingDaemon) Close() error { return nil }
 
 func mergeApp(c *mergeCrud, reg *machinectrl.Registry, mgr *fakeMCPManager) *fiber.App {
 	app := fiber.New()
-	h := &handler{crud: c, mcpManager: mgr, bus: eventbus.New(), machineRegistry: reg, router: app.Group("")}
+	forks := &forkmerge.Merger{Crud: c, Machines: reg, Servers: mgr, Bus: eventbus.New(), StopWait: time.Second, StopPoll: 5 * time.Millisecond}
+	h := &handler{crud: c, forks: forks, router: app.Group("")}
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("user_id", monoflake.ID(100).String())
 		return ctx.Next()
@@ -128,19 +130,11 @@ func forkSession() *entity.SessionView {
 	}
 }
 
-func fastForkStop(t *testing.T, wait time.Duration) {
-	t.Helper()
-	oldWait, oldPoll := _forkAgentStopWait, _forkAgentStopPoll
-	_forkAgentStopWait, _forkAgentStopPoll = wait, 5*time.Millisecond
-	t.Cleanup(func() { _forkAgentStopWait, _forkAgentStopPoll = oldWait, oldPoll })
-}
-
 func mergeURL() string { return "/workspaces/" + monoflake.ID(wfForkID).String() + "/merge" }
 
 // The fork's agent is killed on its machine, and the tasks move only once the
 // daemon says it is dead.
 func TestMergeFork_KillsTheAgentFirst(t *testing.T) {
-	fastForkStop(t, time.Second)
 	c := &mergeCrud{session: forkSession(), status: machinectrl.SessionRunning, machineOK: true}
 	d := &killingDaemon{crud: c, report: machinectrl.SessionKilled}
 	reg := machinectrl.NewRegistry("pod-a")
@@ -166,17 +160,9 @@ func TestMergeFork_KillsTheAgentFirst(t *testing.T) {
 	}
 }
 
-// With no agent running there is nothing to stop.
-func TestMergeFork_NoAgent(t *testing.T) {
-	c := &mergeCrud{}
-	reg := machinectrl.NewRegistry("pod-a")
-	status, _ := send(t, mergeApp(c, reg, &fakeMCPManager{}), http.MethodPost, mergeURL(), "")
-	if status != http.StatusOK || strings.Join(c.steps, ",") != "check,merge" {
-		t.Errorf("status %d, steps %v", status, c.steps)
-	}
-}
-
-// A merge that is going to be refused leaves the agent running.
+// A merge that is going to be refused leaves the agent running, and the
+// refusal reaches the page as a 409 with its reason. The stop itself is
+// tested in forkmerge.
 func TestMergeFork_UnfinishedDoesNotKill(t *testing.T) {
 	c := &mergeCrud{
 		checkErr: entity.NewForkError(entity.ErrForkUnfinished, "1 task in this fork is not finished"),
@@ -204,9 +190,7 @@ func TestMergeFork_MachineOffline(t *testing.T) {
 		machineOK bool
 		want      string
 	}{
-		"not connected":       {machinectrl.NewRegistry("pod-a"), true, "the fork's agent is on laptop, which is offline"},
-		"no machine name":     {machinectrl.NewRegistry("pod-a"), false, "the fork's agent is on its machine, which is offline"},
-		"no machine registry": {nil, true, "the fork's agent is on laptop, which is offline"},
+		"not connected": {machinectrl.NewRegistry("pod-a"), true, "the fork's agent is on laptop, which is offline"},
 	} {
 		c := &mergeCrud{session: forkSession(), status: machinectrl.SessionRunning, machineOK: tc.machineOK}
 		mgr := &fakeMCPManager{}
@@ -217,49 +201,5 @@ func TestMergeFork_MachineOffline(t *testing.T) {
 		if strings.Join(c.steps, ",") != "check" || len(mgr.removed) != 0 {
 			t.Errorf("%s: steps %v, removed %v: nothing may move", name, c.steps, mgr.removed)
 		}
-	}
-}
-
-// A daemon that takes the kill but never reports it dead is not merged past.
-func TestMergeFork_AgentDoesNotStop(t *testing.T) {
-	fastForkStop(t, 30*time.Millisecond)
-	c := &mergeCrud{session: forkSession(), status: machinectrl.SessionRunning, machineOK: true}
-	reg := machinectrl.NewRegistry("pod-a")
-	reg.Add(mfMachineID, &killingDaemon{crud: c})
-
-	status, body := send(t, mergeApp(c, reg, &fakeMCPManager{}), http.MethodPost, mergeURL(), "")
-	if status != http.StatusConflict || !strings.Contains(body, "has not stopped yet") {
-		t.Fatalf("status = %d, body %s", status, body)
-	}
-	if strings.Join(c.steps, ",") != "check,kill" {
-		t.Errorf("steps = %v", c.steps)
-	}
-}
-
-// The session row cannot be read back: the merge stops there.
-func TestMergeFork_SessionUnreadable(t *testing.T) {
-	c := &mergeCrud{session: forkSession(), sessErr: errors.New("db down"), machineOK: true}
-	reg := machinectrl.NewRegistry("pod-a")
-	reg.Add(mfMachineID, &killingDaemon{crud: c})
-	if status, _ := send(t, mergeApp(c, reg, &fakeMCPManager{}), http.MethodPost, mergeURL(), ""); status != http.StatusInternalServerError {
-		t.Errorf("status = %d", status)
-	}
-	if strings.Join(c.steps, ",") != "check,kill" {
-		t.Errorf("steps = %v", c.steps)
-	}
-}
-
-// The request is gone while waiting: the wait ends with it.
-func TestStopForkAgent_ContextCancelled(t *testing.T) {
-	fastForkStop(t, time.Minute)
-	c := &mergeCrud{session: forkSession(), status: machinectrl.SessionRunning, machineOK: true}
-	reg := machinectrl.NewRegistry("pod-a")
-	reg.Add(mfMachineID, &killingDaemon{crud: c})
-	h := &handler{crud: c, machineRegistry: reg}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	err := h.stopForkAgent(ctx, entity.MergeForkRequest{UserID: monoflake.ID(100).String(), WorkspaceID: wfForkID})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("err = %v", err)
 	}
 }

@@ -64,6 +64,10 @@ Each line says what the note will stop you getting wrong.
   website's WebMCP tools through the Chrome extension. Why it is native WebMCP
   and top frame only, why the nonce must be gone before page scripts run, and
   why calls never cross backend instances.
+- **[Workspace forks](docs/agents/forks.md)** — a fork copies the parent's
+  settings but reads its memory, skills and files from the parent. REST and
+  CoreMCP share one merge, which stops the fork's agent first. A fork never
+  starts on an agentrqd without the `fork` capability.
 - **[Telemetry](docs/agents/telemetry.md)** — a new action is four places or it
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one

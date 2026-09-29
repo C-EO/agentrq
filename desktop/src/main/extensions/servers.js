@@ -74,6 +74,8 @@ export const WORKSPACE_TOOLS = Object.freeze([
 export const SUPERVISOR_TOOLS = Object.freeze([
   'listWorkspaces',
   'createWorkspace',
+  'forkWorkspace',
+  'mergeFork',
   'getWorkspace',
   'updateWorkspace',
   'getWorkspaceStats',

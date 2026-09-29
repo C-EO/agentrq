@@ -39,6 +39,10 @@ AI Agent 通过 MCP 连接到工作区：读取任务、更新状态、回复消
 
 Workspace 是一个独立的任务空间，通常对应一个项目、仓库或目标。它包含名称、任务说明、Agent 可读取的上下文、MCP 连接地址、令牌和权限设置。每个 Workspace 都有自己的 Workspace MCP endpoint，Agent 连接后只能看到该工作区内的信息。
 
+### Workspace Fork
+
+Workspace Fork（工作区分叉）让第二个 Agent 并行处理某个 Workspace 的部分任务。在侧边栏右键 Workspace 选择 **Fork workspace**，或在任务上点 **Spin up**（一步完成分叉、移入任务并启动 Agent）。分叉有自己的任务队列和 Agent，与父工作区共享记忆、技能和设置，并在父文件夹的 git worktree 或副本中运行。任务完成后将其合并回父工作区：Agent 会先被停止，所有任务连同对话一起回到父工作区。详见 [docs/FORKS.md](docs/FORKS.md)。
+
 ### Task
 
 Task 是 AgentRQ 的基本工作单元。任务可以分配给 human 或 agent，状态包括 `notstarted`、`ongoing`、`completed`、`rejected`、`blocked` 和 `cron`。任务内有对话历史、附件、优先级和权限控制信息。
@@ -348,7 +352,7 @@ Supervisor Agent 可连接全局 CoreMCP：
 }
 ```
 
-CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看和管理多个 Workspace。
+CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看和管理多个 Workspace。用 `forkWorkspace` 分叉一个 Workspace，用 `mergeFork` 将分叉合并回父工作区。
 
 ## 官方扩展与集成
 

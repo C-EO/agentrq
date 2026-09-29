@@ -20,8 +20,10 @@ import (
 )
 
 type Params struct {
-	Crud     crud.Controller
-	TokenSvc auth.TokenService
+	Crud crud.Controller
+	// ForkMerger merges a fork back, stopping its agent first.
+	ForkMerger ForkMerger
+	TokenSvc   auth.TokenService
 	// CIMD resolves Client ID Metadata Document URLs. Optional: a default
 	// network-backed resolver is used when nil.
 	CIMD    auth.CIMDResolver
@@ -69,8 +71,10 @@ func New(p Params) (Handler, error) {
 		cimd = auth.NewCIMDResolver()
 	}
 
+	srv := NewServer(p.Crud, p.BaseURL, p.PubSub)
+	srv.forks = p.ForkMerger
 	h := &handler{
-		coremcpServer: NewServer(p.Crud, p.BaseURL, p.PubSub),
+		coremcpServer: srv,
 		tokenSvc:      p.TokenSvc,
 		cimd:          cimd,
 		baseURL:       p.BaseURL,
