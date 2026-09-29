@@ -608,6 +608,9 @@ const (
 	// A workspace fork made, and merged back into its parent.
 	ActionIDWorkspaceForkCreate
 	ActionIDWorkspaceForkMerge
+	// Spin up from a task row, reported by the browser: a fork, a move and a
+	// launch that were one decision.
+	ActionIDUISpinUp
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

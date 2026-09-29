@@ -9,7 +9,7 @@ import {
   machineChoiceEligibility,
   useWorkspaceAgentLaunch,
 } from '../src/composables/useWorkspaceAgentLaunch.js'
-import { KINDS } from '../src/composables/useAgentLaunch.js'
+import { KINDS, lastLaunchChoice } from '../src/composables/useAgentLaunch.js'
 
 const OFFLINE_WORKSPACE = {
   id: 'ws1',
@@ -31,6 +31,7 @@ function harness(over = {}) {
   )
   const deps = {
     workspace,
+    ...(over.parent ? { parent: ref(over.parent) } : {}),
     fetchMachines: vi.fn().mockResolvedValue({
       machines: over.machines ?? [{ ...READY_MACHINE }],
     }),
@@ -444,5 +445,27 @@ describe('useWorkspaceAgentLaunch: launching', () => {
     expect(l.selected.value).toBeNull()
     l.machineId.value = 'm2'
     expect(l.selected.value.name).toBe('laptop')
+  })
+})
+
+describe('a fork, and remembering the launch', () => {
+  const FORK = { id: 'f1', name: 'Ops fork', agentConnected: false, forkOfId: 'ws1', workingDirectory: '' }
+
+  it('is judged by its parent\'s folder', async () => {
+    const ok = harness({ workspace: FORK, parent: OFFLINE_WORKSPACE })
+    await ok.l.load()
+    expect(ok.l.blockers.value).toEqual([])
+    const bad = harness({ workspace: FORK, parent: { ...OFFLINE_WORKSPACE, workingDirectory: '' } })
+    await bad.l.load()
+    expect(bad.l.blockers.value[0].reason).toMatch(/made from Ops's/)
+  })
+
+  it('remembers the machine and kind for the workspace', async () => {
+    localStorage.clear()
+    const { l } = harness()
+    await l.load()
+    await l.launch()
+    expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
+    localStorage.clear()
   })
 })

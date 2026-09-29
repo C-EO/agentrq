@@ -69,10 +69,39 @@ export async function getWorkspace(id) {
   return res.json();
 }
 
+// A refusal that says why — a parent that still has forks, a fork that is
+// merged rather than deleted — is worth showing as the server wrote it. A 5xx
+// says only "internal server error", which is worth less than the fallback.
+async function refusal(res, fallback) {
+  const body = res.status < 500 ? await res.json().catch(() => null) : null;
+  return new Error(body?.error?.message || fallback);
+}
+
 export async function deleteWorkspace(id) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error('Failed to delete workspace');
+  if (!res.ok) throw await refusal(res, 'Failed to delete workspace');
   return true;
+}
+
+// A workspace fork: a workspace of its own, with its own queue and agent, that
+// inherits the parent's settings and is merged back into it. With no name the
+// server calls it "<parent> fork".
+export async function forkWorkspace(workspaceId, { name = '' } = {}) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/forks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) throw await refusal(res, 'Failed to fork workspace');
+  return res.json();
+}
+
+// Moves every task of a fork back into its parent and removes the fork.
+// Answers { parentId, movedTasks }; refused (409) while a task is unfinished.
+export async function mergeFork(workspaceId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/merge`, { method: 'POST' });
+  if (!res.ok) throw await refusal(res, 'Failed to merge fork');
+  return res.json();
 }
 
 export async function fetchTasks(workspaceId, { status, filter, limit = 10, offset = 0 } = {}) {
@@ -179,7 +208,7 @@ export async function moveTask(workspaceId, taskId, destinationWorkspaceId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace: { value: destinationWorkspaceId } })
   });
-  if (!res.ok) throw new Error('Failed to move task');
+  if (!res.ok) throw await refusal(res, 'Failed to move task');
   return res.json();
 }
 
@@ -203,7 +232,7 @@ export async function deleteTask(workspaceId, taskId) {
 
 export async function archiveWorkspace(id) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/archive`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to archive workspace');
+  if (!res.ok) throw await refusal(res, 'Failed to archive workspace');
   return true;
 }
 
@@ -489,7 +518,7 @@ export async function updateWorkspace(id, workspace) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace })
   });
-  if (!res.ok) throw new Error('Failed to update workspace');
+  if (!res.ok) throw await refusal(res, 'Failed to update workspace');
   return res.json();
 }
 
@@ -993,6 +1022,7 @@ export const TELEMETRY_UI_COPY_LINK = 'ui_copy_link';
 export const TELEMETRY_UI_COPY_MARKDOWN = 'ui_copy_markdown';
 export const TELEMETRY_UI_COPY_CODE = 'ui_copy_code';
 export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
+export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 
 // Records one local-AI feature use. Never throws and never blocks the caller:
 // a metric is not worth failing a user's click over, so a rejected or

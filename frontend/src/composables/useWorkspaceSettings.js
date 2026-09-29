@@ -64,8 +64,55 @@ export function shouldShowSettingsActionBar(tab, workspaceOrArchived = null) {
   if (workspaceOrArchived && Boolean(workspaceOrArchived.archivedAt)) {
     return false;
   }
+  // Everything on these two tabs is inherited by a fork, so there is nothing
+  // on them a fork can save.
+  if (workspaceOrArchived?.forkOfId && FORK_INHERITED_TABS.includes(tab)) {
+    return false;
+  }
   return true;
 }
+
+/** The tabs whose every field a fork takes from its parent. */
+export const FORK_INHERITED_TABS = Object.freeze(['automations', 'notifications']);
+
+/**
+ * The fields a fork takes from its parent, as the server's
+ * `Workspace.ForkSettings()` lists them. A fork's update carries them exactly
+ * as the workspace came, since the server refuses any change to them there.
+ */
+export const FORK_INHERITED_FIELDS = Object.freeze([
+  'notificationSettings',
+  'autoAllowedTools',
+  'allowAllCommands',
+  'clearContextDefault',
+  'selfLearningLoopNote',
+  'inputSendDelaySeconds',
+]);
+
+/**
+ * What the settings form sends on save.
+ *
+ * For a fork the inherited fields are the workspace's own, untouched: the form
+ * fills in defaults the stored settings may not have (email as a channel, say),
+ * and a default the parent never had reads as a change, which the server
+ * refuses. Left out, a JSON setting is not touched at all.
+ *
+ * @param {object} form
+ * @param {object | null} workspace as loaded
+ */
+export function workspaceUpdatePayload(form, workspace) {
+  if (!workspace?.forkOfId) return form;
+  const payload = { ...form };
+  for (const field of FORK_INHERITED_FIELDS) {
+    const value = workspace[field] ?? UNSET[field];
+    if (value === undefined) delete payload[field];
+    else payload[field] = value;
+  }
+  return payload;
+}
+
+/** What an absent scalar setting means; the JSON ones are simply left out. */
+const UNSET = { allowAllCommands: false, clearContextDefault: false, selfLearningLoopNote: '', inputSendDelaySeconds: 0 };
 
 /**
  * The MCP server key the core (non-workspace-scoped) server is written under

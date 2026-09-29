@@ -163,6 +163,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return getWorkspace(workspaceId)?.agentConnected === true;
   }
 
+  /** The forks of this workspace, in list order. IDs compared as strings, as `findIndex` explains. */
+  function forksOf(workspaceId) {
+    if (workspaceId === undefined || workspaceId === null) return [];
+    const wanted = String(workspaceId);
+    return workspaces.value.filter(w => w.forkOfId && String(w.forkOfId) === wanted);
+  }
+
   function findIndex(workspaceId) {
     if (workspaceId === undefined || workspaceId === null) return -1;
     const wanted = String(workspaceId);
@@ -179,6 +186,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateAgentModels,
     updateAgentConcurrency,
     getWorkspace,
+    forksOf,
     isAgentConnected
   };
 });

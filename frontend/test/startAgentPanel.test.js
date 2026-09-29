@@ -19,6 +19,8 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { createApp, h } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { useWorkspaceStore } from '../src/stores/workspaceStore'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
@@ -30,6 +32,7 @@ vi.mock('../src/api', () => ({
   launchAgent: (...args) => launchAgent(...args),
   fetchAcpAgents: () => Promise.resolve({ agents: [] }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
+  fetchWorkspaces: () => Promise.resolve({ workspaces: [] }),
 }))
 
 const { default: StartAgentPanel } = await import('../src/components/StartAgentPanel.vue')
@@ -41,8 +44,11 @@ const SECOND = { id: 'm2', name: 'laptop', enabled: true, online: true }
 /** Let the mounted component's own load() resolve. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
 
-async function mount(props, list) {
+async function mount(props, list, workspaces = []) {
   machines = list
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useWorkspaceStore(pinia).workspaces = workspaces
   const el = document.createElement('div')
   document.body.appendChild(el)
   const availability = []
@@ -51,6 +57,7 @@ async function mount(props, list) {
       h(StartAgentPanel, { ...props, onAvailability: (v) => availability.push(v) }),
   })
   // Blockers render their fix as a link; the real router is mocked away.
+  app.use(pinia)
   app.component('RouterLink', {
     props: ['to'],
     setup: (p, { slots }) => () => h('a', {}, slots.default?.()),
@@ -150,5 +157,37 @@ describe('StartAgentPanel', () => {
     await settle()
     expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ machineId: 'm1' }))
     expect(push).toHaveBeenCalledWith('/sessions/sess-9')
+  })
+
+  describe('on a fork', () => {
+    // A fork's folder is made from its parent's on the first launch, so "no
+    // working directory" is not a reason to refuse it — its parent's is.
+    const FORK = { id: 'f1', name: 'ops fork', agentConnected: false, forkOfId: 'ws1', workingDirectory: '' }
+
+    it('says a folder will be made from the parent\'s, instead of refusing', async () => {
+      const { el, text } = await mount({ workspace: FORK, variant: 'card' }, [ONLINE], [WORKSPACE, FORK])
+      expect(el.querySelector('[data-test=fork-folder-note]').textContent).toBe(
+        'Runs in a folder of its own — a folder will be made from /srv/app'
+      )
+      expect(text()).not.toMatch(/no working directory/)
+      const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+      expect(go.disabled).toBe(false)
+    })
+
+    it('refuses when the parent has no folder to make it from, and links to the parent', async () => {
+      const parent = { ...WORKSPACE, workingDirectory: '' }
+      const { el, text } = await mount({ workspace: FORK, variant: 'card' }, [ONLINE], [parent, FORK])
+      expect(text()).toMatch(/This fork's folder is made from Ops's, and Ops has no working directory\./)
+      expect(text()).toMatch(/Set one in Ops's settings/)
+      expect(el.querySelector('button[disabled]')).toBeTruthy()
+    })
+
+    it('shows the server\'s refusal from a machine whose agentrqd is too old', async () => {
+      launchAgent.mockImplementationOnce(() => Promise.reject(new Error('update agentrqd on this machine to run a fork')))
+      const { el, text } = await mount({ workspace: FORK, variant: 'card' }, [ONLINE], [WORKSPACE, FORK])
+      ;[...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent)).click()
+      await settle()
+      expect(text()).toMatch(/update agentrqd on this machine to run a fork/)
+    })
   })
 })

@@ -1,0 +1,310 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/**
+ * Workspace forks on screen: the sidebar's tree and row menu, the fork and
+ * merge dialogs, the Move dialog's destinations, and the menu's keyboard use.
+ *
+ * The rules are `workspaceForks.test.js`'s and `workspaceContextMenu.test.js`'s;
+ * this is that the right ones reach the page and the right calls leave it.
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createApp, h, ref } from 'vue'
+import { createPinia } from 'pinia'
+
+const route = { path: '/workspaces/p1', params: { id: 'p1' }, query: {} }
+const push = vi.fn()
+vi.mock('vue-router', () => ({
+  useRoute: () => route,
+  useRouter: () => ({ push }),
+}))
+
+let workspaceList = []
+const fetchWorkspaces = vi.fn(() => Promise.resolve({ workspaces: workspaceList }))
+const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f9', name: 'ops fork' } }))
+const mergeFork = vi.fn(() => Promise.resolve({ parentId: 'p1', movedTasks: 2 }))
+const fetchTaskCounts = vi.fn(() => Promise.resolve({ ongoing: 0, notstarted: 0, scheduled: 0, completed: 2 }))
+vi.mock('../src/api', async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchWorkspaces: (...a) => fetchWorkspaces(...a),
+  forkWorkspace: (...a) => forkWorkspace(...a),
+  mergeFork: (...a) => mergeFork(...a),
+  fetchTaskCounts: (...a) => fetchTaskCounts(...a),
+}))
+
+const { default: SidebarWorkspaces } = await import('../src/components/SidebarWorkspaces.vue')
+const { default: MoveTaskModal } = await import('../src/components/MoveTaskModal.vue')
+const { default: ContextMenu } = await import('../src/components/ContextMenu.vue')
+const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
+const { useToasts } = await import('../src/composables/useToasts')
+
+const settle = () => new Promise((r) => setTimeout(r, 30))
+
+const PARENT = { id: 'p1', name: 'ops', workingDirectory: '/srv/ops' }
+const WEB = { id: 'w1', name: 'web' }
+const FORK = { id: 'f1', name: 'ops try', forkOfId: 'p1', forkOf: { id: 'p1', name: 'ops' }, unfinishedTasks: 0, workingDirectory: '/home/me/.agentrq/forks/f1' }
+const SUPERVISOR = { id: 's1', name: 'supervisor' }
+
+let apps = []
+function mount(component, props = {}, workspaces = [PARENT, FORK, WEB, SUPERVISOR]) {
+  workspaceList = workspaces.map((w) => ({ ...w }))
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const pinia = createPinia()
+  const app = createApp({ render: () => h(component, props) })
+  app.use(pinia)
+  useWorkspaceStore(pinia).workspaces = workspaces.map((w) => ({ ...w }))
+  app.component('RouterLink', {
+    props: ['to'],
+    setup: (p, { slots, attrs }) => () => h('a', { ...attrs, href: String(p.to) }, slots.default?.()),
+  })
+  app.mount(el)
+  apps.push(app)
+  return { el, store: useWorkspaceStore(pinia) }
+}
+
+const text = (node) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim()
+const menuButtons = () => [...document.body.querySelectorAll('[role=menu] button')]
+
+beforeEach(() => {
+  apps.forEach((a) => a.unmount())
+  apps = []
+  document.body.innerHTML = ''
+  localStorage.clear()
+  vi.clearAllMocks()
+})
+afterEach(() => {
+  apps.forEach((a) => a.unmount())
+  apps = []
+})
+
+describe('the sidebar', () => {
+  const sidebar = () => mount(SidebarWorkspaces, { workspaces: [PARENT, FORK, WEB, SUPERVISOR] })
+
+  it('lists each fork under its parent, indented, with the fork mark', async () => {
+    const { el } = sidebar()
+    await settle()
+    const rows = [...el.querySelectorAll('[data-test]')].map((r) => `${r.dataset.test}:${text(r.querySelector('span.truncate'))}`)
+    expect(rows).toEqual(['sidebar-workspace:ops', 'sidebar-fork:ops-try', 'sidebar-workspace:web', 'sidebar-workspace:supervisor'])
+    const fork = el.querySelector('[data-test=sidebar-fork] a')
+    expect(fork.className).toMatch(/pl-6/)
+    expect(fork.querySelector('svg circle')).toBeTruthy()
+  })
+
+  it('folds a parent\'s forks away, and remembers it', async () => {
+    const { el } = sidebar()
+    await settle()
+    const fold = el.querySelector('[aria-label="Hide forks"]')
+    fold.click()
+    await settle()
+    expect(el.querySelector('[data-test=sidebar-fork]')).toBe(null)
+    expect(el.querySelector('[aria-label="Show 1 forks"]').getAttribute('aria-expanded')).toBe('false')
+    expect(JSON.parse(localStorage.getItem('agentrq:sidebarCollapsedForks'))).toEqual(['p1'])
+
+    const again = mount(SidebarWorkspaces, { workspaces: [PARENT, FORK] }).el
+    await settle()
+    expect(again.querySelector('[data-test=sidebar-fork]')).toBe(null)
+    again.querySelector('[aria-label="Show 1 forks"]').click()
+    await settle()
+    expect(again.querySelector('[data-test=sidebar-fork]')).toBeTruthy()
+  })
+
+  it('offers Fork on a right-click, prompts on "<name> fork", forks and goes to it', async () => {
+    const { el } = sidebar()
+    await settle()
+    const row = el.querySelector('[data-test=sidebar-workspace] a')
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 40 }))
+    await settle()
+    expect(fetchWorkspaces).toHaveBeenCalled()
+    expect(menuButtons().map(text)).toEqual(['Fork workspace'])
+
+    menuButtons()[0].click()
+    await settle()
+    const input = document.body.querySelector('#fork-name')
+    expect(input.value).toBe('ops fork')
+    input.value = 'ops experiment'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    document.body.querySelector('[aria-labelledby=fork-modal-title] form').dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'ops experiment' })
+    expect(push).toHaveBeenCalledWith('/workspaces/f9')
+  })
+
+  it('offers Merge on a fork, disabled with the reason while a task is unfinished', async () => {
+    const blocked = { ...FORK, unfinishedTasks: 2 }
+    const { el } = mount(SidebarWorkspaces, { workspaces: [PARENT, blocked] }, [PARENT, blocked])
+    await settle()
+    el.querySelector('[data-test=sidebar-fork] a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    const [merge] = menuButtons()
+    expect([...merge.querySelectorAll('span')].map(text)).toEqual(['Merge into ops', '2 tasks are not finished'])
+    expect(merge.disabled).toBe(true)
+    merge.click()
+    await settle()
+    expect(document.body.querySelector('[aria-labelledby=merge-modal-title]')).toBe(null)
+  })
+
+  it('confirms a merge with what will happen, then says how many moved and goes to the parent', async () => {
+    const { el } = sidebar()
+    await settle()
+    el.querySelector('[data-test=sidebar-fork] a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    menuButtons()[0].click()
+    await settle()
+    const dialog = document.body.querySelector('[aria-labelledby=merge-modal-title]')
+    expect(text(dialog.querySelector('#merge-modal-title'))).toBe('Merge into ops')
+    expect(text(dialog.querySelector('[data-test=merge-message]'))).toBe(
+      "The fork's agent is stopped, 2 tasks move back to ops, and the fork is removed. Its folder on the machine is left as it is: /home/me/.agentrq/forks/f1"
+    )
+    ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
+    await settle()
+    expect(mergeFork).toHaveBeenCalledWith('f1')
+    expect(useToasts().toasts.value.at(-1).message).toBe('Merged into ops: 2 tasks moved back')
+    expect(push).toHaveBeenCalledWith('/workspaces/p1')
+  })
+
+  it('shows a 409 from the merge as the server wrote it', async () => {
+    mergeFork.mockImplementationOnce(() => Promise.reject(new Error('a task in this fork was reopened')))
+    const { el } = sidebar()
+    await settle()
+    el.querySelector('[data-test=sidebar-fork] a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    menuButtons()[0].click()
+    await settle()
+    ;[...document.body.querySelectorAll('[aria-labelledby=merge-modal-title] button')].find((b) => text(b) === 'Merge').click()
+    await settle()
+    expect(useToasts().toasts.value.at(-1).message).toBe('a task in this fork was reopened')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('opens the menu from the row\'s button and from Shift+F10, with the focus in it', async () => {
+    const { el } = sidebar()
+    await settle()
+    el.querySelector('[aria-label="web actions"]').click()
+    await settle()
+    expect(menuButtons().map(text)).toEqual(['Fork workspace'])
+    expect(document.activeElement).toBe(menuButtons()[0])
+
+    document.body.querySelector('[role=menu]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    expect(menuButtons()).toHaveLength(0)
+
+    el.querySelectorAll('[data-test=sidebar-workspace] a')[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }))
+    await settle()
+    expect(menuButtons().map(text)).toEqual(['Fork workspace'])
+    menuButtons()[0].click()
+    await settle()
+    expect(document.body.querySelector('#fork-name').value).toBe('web fork')
+  })
+
+  it('offers nothing on the supervisor workspace', async () => {
+    const { el } = sidebar()
+    await settle()
+    expect(el.querySelector('[aria-label="supervisor actions"]')).toBe(null)
+    const rows = el.querySelectorAll('[data-test=sidebar-workspace] a')
+    rows[rows.length - 1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    rows[rows.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }))
+    rows[rows.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    await settle()
+    expect(menuButtons()).toHaveLength(0)
+  })
+})
+
+describe('the context menu from the keyboard', () => {
+  it('moves the focus with the arrows, wrapping, and skips a disabled item', async () => {
+    const items = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B', disabled: true, detail: 'why' }, { key: 'c', label: 'C' }]
+    const onSelect = vi.fn()
+    const open = ref(false)
+    mount({ render: () => h(ContextMenu, { show: open.value, items, autofocus: true, onSelect }) })
+    // Opened after mount, as a real menu is.
+    open.value = true
+    await settle()
+    const [a, b, c] = menuButtons()
+    expect(document.activeElement).toBe(a)
+    expect(b.disabled).toBe(true)
+    expect([...b.querySelectorAll('span')].map(text)).toEqual(['B', 'why'])
+    const menu = document.body.querySelector('[role=menu]')
+    const key = (k) => menu.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+    key('ArrowDown')
+    expect(document.activeElement).toBe(c)
+    key('ArrowDown')
+    expect(document.activeElement).toBe(a)
+    key('ArrowUp')
+    expect(document.activeElement).toBe(c)
+    key('Tab')
+    expect(document.activeElement).toBe(c)
+    c.click()
+    expect(onSelect).toHaveBeenCalledWith('c')
+  })
+})
+
+describe('the Move dialog', () => {
+  const open = async (current, workspaces = [PARENT, FORK, WEB, SUPERVISOR]) => {
+    const onConfirm = vi.fn()
+    const show = ref(false)
+    const { el } = mount({ render: () => h(MoveTaskModal, { show: show.value, taskTitle: 'Fix login', currentWorkspaceId: current, onConfirm }) }, {}, workspaces)
+    show.value = true
+    await settle()
+    return { el, onConfirm, dialog: () => document.body.querySelector('[role=dialog]') }
+  }
+
+  it('lists forks under their parent, and the current workspace only as their heading', async () => {
+    const { dialog } = await open('p1')
+    const labels = [...dialog().querySelectorAll('.divide-y > *')].map(text)
+    expect(labels).toEqual(['ops (this workspace)', 'ops try', 'supervisor', 'web', 'New fork of this workspace…'])
+    expect(dialog().querySelector('[data-test=move-fork]').className).toMatch(/pl-7/)
+  })
+
+  it('forks, then moves into the new fork, named after the task', async () => {
+    const { dialog, onConfirm } = await open('p1')
+    dialog().querySelector('[data-test=move-new-fork]').click()
+    await settle()
+    const name = dialog().querySelector('#move-fork-name')
+    expect(name.value).toBe('Fix login')
+    const go = [...dialog().querySelectorAll('button')].find((b) => text(b) === 'Fork and move')
+    go.click()
+    await settle()
+    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'Fix login' })
+    expect(fetchWorkspaces).toHaveBeenCalled()
+    expect(onConfirm).toHaveBeenCalledWith('f9')
+  })
+
+  it('says why a fork could not be made, and moves nothing', async () => {
+    forkWorkspace.mockImplementationOnce(() => Promise.reject(new Error('rate limit exceeded')))
+    const { dialog, onConfirm } = await open('p1')
+    dialog().querySelector('[data-test=move-new-fork]').click()
+    await settle()
+    const name = dialog().querySelector('#move-fork-name')
+    name.value = '  '
+    name.dispatchEvent(new Event('input'))
+    await settle()
+    const go = [...dialog().querySelectorAll('button')].find((b) => text(b) === 'Fork and move')
+    expect(go.disabled).toBe(true)
+    name.value = 'x'
+    name.dispatchEvent(new Event('input'))
+    await settle()
+    go.click()
+    await settle()
+    expect(text(dialog())).toMatch(/rate limit exceeded/)
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('moves to a fork like to any workspace, and offers no new fork from a fork', async () => {
+    const { dialog, onConfirm } = await open('f1')
+    expect(dialog().querySelector('[data-test=move-new-fork]')).toBe(null)
+    const labels = [...dialog().querySelectorAll('.divide-y > *')].map(text)
+    expect(labels).toEqual(['ops', 'supervisor', 'web'])
+    ;[...dialog().querySelectorAll('.divide-y > button')][0].click()
+    await settle()
+    ;[...dialog().querySelectorAll('button')].find((b) => text(b) === 'Move').click()
+    expect(onConfirm).toHaveBeenCalledWith('p1')
+  })
+
+  it('has nothing to offer when there is nowhere else', async () => {
+    const { dialog } = await open('s1', [SUPERVISOR])
+    expect(text(dialog())).toMatch(/No other workspaces available/)
+  })
+})

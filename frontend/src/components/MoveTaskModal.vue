@@ -8,6 +8,9 @@
 import { ref, computed, watch } from 'vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
+import { forkWorkspace } from '../api';
+import { canFork, fitName, MAX_WORKSPACE_NAME, workspaceTree } from '../composables/useWorkspaceForks';
+import ForkIcon from './ForkIcon.vue';
 
 const props = defineProps({
   show: Boolean,
@@ -17,16 +20,37 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'confirm']);
 
+/** The destination that is not there yet: a fork made for this move. */
+const NEW_FORK = '__new_fork__';
+
 const { toKebabCase } = useFormat();
 const workspaceStore = useWorkspaceStore();
 const destinationWorkspaceId = ref('');
+const newForkName = ref('');
+const forking = ref(false);
+const forkError = ref('');
 
-const destinationOptions = computed(() =>
-  workspaceStore.workspaces
-    .filter(w => !w.archivedAt && String(w.id) !== String(props.currentWorkspaceId))
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+const isCurrent = (w) => String(w.id) === String(props.currentWorkspaceId);
+const current = computed(() => workspaceStore.getWorkspace(props.currentWorkspaceId));
+const canForkHere = computed(() => canFork(current.value));
+
+/**
+ * The destinations, forks under their parent as the sidebar draws them. The
+ * current workspace is not somewhere to move to, but it stays as a heading
+ * when it has forks, so they read as its forks.
+ */
+const destinationGroups = computed(() =>
+  workspaceTree(
+    workspaceStore.workspaces
+      .filter(w => !w.archivedAt)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+  )
+    .map(g => ({ ...g, forks: g.forks.filter(f => !isCurrent(f)) }))
+    .filter(g => !isCurrent(g.workspace) || g.forks.length > 0)
 );
+
+const hasDestinations = computed(() => destinationGroups.value.length > 0 || canForkHere.value);
 
 watch(() => props.show, (visible) => {
   if (visible) {
@@ -34,6 +58,8 @@ watch(() => props.show, (visible) => {
       workspaceStore.fetchWorkspaces();
     }
     destinationWorkspaceId.value = '';
+    newForkName.value = fitName(props.taskTitle);
+    forkError.value = '';
   }
 });
 
@@ -41,9 +67,25 @@ function closeModal() {
   emit('close');
 }
 
-function confirmMove() {
-  if (!destinationWorkspaceId.value) return;
-  emit('confirm', destinationWorkspaceId.value);
+async function confirmMove() {
+  if (!destinationWorkspaceId.value || forking.value) return;
+  if (destinationWorkspaceId.value !== NEW_FORK) {
+    emit('confirm', destinationWorkspaceId.value);
+    return;
+  }
+  // Forks first and moves second, as Spin up does. A fork that was made and
+  // then not moved into is still a fork, and the sidebar shows it.
+  forking.value = true;
+  forkError.value = '';
+  try {
+    const res = await forkWorkspace(props.currentWorkspaceId, { name: fitName(newForkName.value) });
+    await workspaceStore.fetchWorkspaces();
+    emit('confirm', res.workspace.id);
+  } catch (err) {
+    forkError.value = err.message;
+  } finally {
+    forking.value = false;
+  }
 }
 </script>
 
@@ -78,29 +120,61 @@ function confirmMove() {
                   </div>
 
                   <div class="mt-4">
-                    <div v-if="destinationOptions.length > 0"
+                    <div v-if="hasDestinations"
                          class="max-h-56 overflow-y-auto rounded-sm border border-gray-200 dark:border-zinc-700 divide-y divide-gray-100 dark:divide-zinc-800">
-                      <button v-for="w in destinationOptions" :key="w.id" type="button"
-                              @click="destinationWorkspaceId = w.id"
-                              class="w-full text-left px-3 py-2.5 text-[12px] font-medium transition-colors duration-150 focus:outline-none"
-                              :class="String(destinationWorkspaceId) === String(w.id)
+                      <template v-for="g in destinationGroups" :key="g.workspace.id">
+                        <div v-if="isCurrent(g.workspace)"
+                             class="px-3 py-2 text-[11px] font-medium text-gray-400 dark:text-zinc-500 bg-gray-50/60 dark:bg-zinc-800/40">
+                          {{ g.workspace.name }} <span class="text-[10px]">(this workspace)</span>
+                        </div>
+                        <button v-else type="button"
+                                @click="destinationWorkspaceId = g.workspace.id"
+                                class="w-full text-left px-3 py-2.5 text-[12px] font-medium transition-colors duration-150 focus:outline-none"
+                                :class="String(destinationWorkspaceId) === String(g.workspace.id)
+                                  ? 'bg-black dark:bg-white text-white dark:text-black'
+                                  : 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800'">
+                          {{ g.workspace.name }}
+                        </button>
+                        <button v-for="f in g.forks" :key="f.id" type="button" data-test="move-fork"
+                                @click="destinationWorkspaceId = f.id"
+                                class="w-full text-left pl-7 pr-3 py-2.5 text-[12px] font-medium transition-colors duration-150 focus:outline-none flex items-center gap-2 min-w-0"
+                                :class="String(destinationWorkspaceId) === String(f.id)
+                                  ? 'bg-black dark:bg-white text-white dark:text-black'
+                                  : 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800'">
+                          <ForkIcon class="w-3 h-3 shrink-0 opacity-60" />
+                          <span class="truncate">{{ f.name }}</span>
+                        </button>
+                      </template>
+                      <button v-if="canForkHere" type="button" data-test="move-new-fork"
+                              @click="destinationWorkspaceId = NEW_FORK"
+                              class="w-full text-left px-3 py-2.5 text-[12px] font-semibold transition-colors duration-150 focus:outline-none flex items-center gap-2"
+                              :class="destinationWorkspaceId === NEW_FORK
                                 ? 'bg-black dark:bg-white text-white dark:text-black'
-                                : 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800'">
-                        {{ w.name }}
+                                : 'bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800'">
+                        <ForkIcon class="w-3 h-3 shrink-0" />
+                        New fork of this workspace…
                       </button>
                     </div>
                     <p v-else class="mt-2 text-[11px] text-gray-500 dark:text-zinc-500">
                       No other workspaces available to move this task to.
                     </p>
+
+                    <div v-if="destinationWorkspaceId === NEW_FORK" class="mt-3">
+                      <label for="move-fork-name" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Fork name</label>
+                      <input id="move-fork-name" v-model="newForkName" type="text" :maxlength="MAX_WORKSPACE_NAME"
+                             spellcheck="false" autocapitalize="off" autocorrect="off"
+                             class="mt-1 w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-3 py-2 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-semibold text-gray-900 dark:text-zinc-100" />
+                    </div>
+                    <p v-if="forkError" class="mt-2 text-[11px] text-red-600 dark:text-red-400 font-medium">{{ forkError }}</p>
                   </div>
                 </div>
               </div>
             </div>
 
             <div class="bg-gray-50/50 dark:bg-zinc-800/50 px-6 py-5 sm:px-8 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 dark:border-zinc-800">
-              <button type="button" @click="confirmMove" :disabled="!destinationWorkspaceId"
+              <button type="button" @click="confirmMove" :disabled="!destinationWorkspaceId || forking || (destinationWorkspaceId === NEW_FORK && !newForkName.trim())"
                 class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-black dark:bg-white text-[10px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 sm:w-auto">
-                Move
+                {{ forking ? 'Forking…' : destinationWorkspaceId === NEW_FORK ? 'Fork and move' : 'Move' }}
               </button>
 
               <button type="button" @click="closeModal"

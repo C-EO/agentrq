@@ -88,6 +88,44 @@ export function rememberAcpGatewayChoice({ agent, model }) {
 }
 
 /**
+ * Where each workspace's last launch is remembered: the machine and the kind.
+ *
+ * The same kind of per-browser convenience as the gateway's agent and model,
+ * kept per workspace because "the machine this workspace runs on" is a fact
+ * about the workspace. Spin up reads it to start a fork the way its parent was
+ * last started.
+ */
+const LAST_LAUNCH_KEY = 'agentrq:lastLaunch'
+
+function readLaunches() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_LAUNCH_KEY) ?? 'null')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/** The machine and kind this workspace was last launched with, or null. */
+export function lastLaunchChoice(workspaceId) {
+  const choice = readLaunches()[String(workspaceId)]
+  if (!choice?.machineId || !KINDS.some((k) => k.id === choice.kind)) return null
+  return { machineId: choice.machineId, kind: choice.kind }
+}
+
+/** Remembers a launch's machine and kind for its workspace. */
+export function rememberLaunchChoice(workspaceId, { machineId, kind }) {
+  if (!workspaceId || !machineId) return
+  try {
+    const all = readLaunches()
+    all[String(workspaceId)] = { machineId, kind }
+    localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(all))
+  } catch {
+    // As with the gateway's choice: the next launch just asks again.
+  }
+}
+
+/**
  * What the daemon accepts as a model or agent name.
  *
  * Mirrors `safeParam` in the supervisor, which refuses anything that could
@@ -103,7 +141,7 @@ const SAFE_PARAM = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
  * stuck; "this workspace has no working directory set" tells them what to do,
  * which is why `fix` names the page that fixes it.
  */
-export function workspaceEligibility(workspace) {
+export function workspaceEligibility(workspace, parent = null) {
   if (!workspace) return { ok: false, reason: 'No workspace selected.' }
   if (workspace.agentConnected) {
     return {
@@ -115,6 +153,7 @@ export function workspaceEligibility(workspace) {
       reason: 'This workspace already has an agent connected.',
     }
   }
+  if (workspace.forkOfId && !workspace.workingDirectory) return forkFolderEligibility(parent)
   if (!workspace.workingDirectory) {
     return {
       ok: false,
@@ -125,6 +164,39 @@ export function workspaceEligibility(workspace) {
     }
   }
   return { ok: true }
+}
+
+/**
+ * A fork with no folder yet: the daemon makes one from the parent's on the
+ * first launch, so what matters is that the parent has a folder to make it
+ * from. With the parent unknown the server decides, and says so if not.
+ */
+function forkFolderEligibility(parent) {
+  if (parent && !parent.workingDirectory) {
+    return {
+      ok: false,
+      note: 'no folder set',
+      tone: 'warn',
+      reason: `This fork's folder is made from ${parent.name}'s, and ${parent.name} has no working directory.`,
+      fix: { label: `Set one in ${parent.name}'s settings`, to: `/workspaces/${parent.id}/settings` },
+    }
+  }
+  return { ok: true, forkFrom: parent?.workingDirectory ?? '' }
+}
+
+/** What a launch says about where it runs; a fork with no folder yet says where one will be made from. */
+export function launchFolderNote(workspace, parent = null) {
+  if (workspace?.workingDirectory) return workspace.workingDirectory
+  if (workspace?.forkOfId) {
+    return parent?.workingDirectory ? `a folder will be made from ${parent.workingDirectory}` : 'a folder will be made for this fork'
+  }
+  return ''
+}
+
+/** The parent of a fork among these workspaces, or null. */
+export function forkParent(workspace, workspaces) {
+  if (!workspace?.forkOfId) return null
+  return (workspaces ?? []).find((w) => String(w.id) === String(workspace.forkOfId)) ?? null
 }
 
 /**
@@ -143,12 +215,13 @@ export function workspaceEligibility(workspace) {
  */
 export function workspaceOptions(workspaces) {
   return (workspaces ?? []).map((w) => {
-    const eligibility = workspaceEligibility(w)
+    const parent = forkParent(w, workspaces)
+    const eligibility = workspaceEligibility(w, parent)
     return {
       id: w.id,
       name: w.name,
       ready: eligibility.ok,
-      note: eligibility.ok ? w.workingDirectory : eligibility.note,
+      note: eligibility.ok ? launchFolderNote(w, parent) : eligibility.note,
       tone: eligibility.ok ? null : eligibility.tone,
     }
   })
@@ -349,7 +422,7 @@ export function useAgentLaunch(deps = {}) {
   const blockers = computed(() =>
     [
       machineEligibility(machine?.value),
-      workspaceEligibility(selected.value),
+      workspaceEligibility(selected.value, forkParent(selected.value, workspaces.value)),
       sessionEligibility(workspaceId.value, sessions?.value),
       paramsEligibility(kind.value, params.value),
     ].filter((e) => !e.ok)
@@ -396,6 +469,7 @@ export function useAgentLaunch(deps = {}) {
         ...extra,
       })
       if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
+      rememberLaunchChoice(workspaceId.value, { machineId: machine.value.id, kind: kind.value })
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'

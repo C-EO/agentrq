@@ -28,6 +28,7 @@ import {
   launchParamsPayload,
   paramsEligibility,
   rememberAcpGatewayChoice,
+  rememberLaunchChoice,
   useAcpGatewaySuggestions,
   workspaceEligibility,
 } from './useAgentLaunch'
@@ -80,6 +81,9 @@ export function machineChoiceEligibility(machineId, machines) {
 export function useWorkspaceAgentLaunch(deps = {}) {
   const {
     workspace,
+    // The fork's parent, when the workspace is a fork: its folder is what a
+    // fork's is made from, so it decides whether the launch can work.
+    parent,
     fetchMachines = api.fetchMachines,
     launchAgent = api.launchAgent,
     measureTerminalSize = launchTerminalSize,
@@ -135,7 +139,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   const blockers = computed(() =>
     [
       machineChoiceEligibility(machineId.value, machines.value),
-      workspaceEligibility(workspace?.value),
+      workspaceEligibility(workspace?.value, parent?.value ?? null),
       paramsEligibility(kind.value, params.value),
     ].filter((e) => !e.ok)
   )
@@ -188,6 +192,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
         ...extra,
       })
       if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
+      rememberLaunchChoice(workspace.value.id, { machineId: machineId.value, kind: kind.value })
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'

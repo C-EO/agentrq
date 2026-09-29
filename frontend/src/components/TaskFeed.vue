@@ -40,6 +40,8 @@
       @select="onContextMenuSelect"
     />
 
+    <SpinUpPopover :spin="spinUp" @done="onSpinUpDone" />
+
     <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" :values="extensions.values"
                        @action="onExtensionAction" @input="extensions.setValue"
                        @submit="extensions.submit" @close="extensions.dismiss" />
@@ -87,6 +89,9 @@
 
                       <button v-if="canEditTask(t, isArchived)" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Edit Task">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      </button>
+                      <button v-if="canSpinUp(t, currentWorkspace)" @click.stop="openSpinUp($event, t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Spin up in a fork">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                       </button>
                       <button v-if="canDeleteTask(t, isArchived)" @click.stop="triggerDelete(t)" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all" title="Delete Task">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -156,6 +161,9 @@ import ContextMenu from './ContextMenu.vue';
 import LoadMoreButton from './LoadMoreButton.vue';
 import { canEditTask, canDeleteTask, taskEditPath } from '../composables/useTaskRowActions';
 import { useToasts } from '../composables/useToasts';
+import { canSpinUp, useSpinUp } from '../composables/useSpinUp';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import SpinUpPopover from './SpinUpPopover.vue';
 
 const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
 
@@ -201,6 +209,28 @@ const activeStatusMenuId = ref(null);
 const showDeleteModal = ref(false);
 const taskToDeleteId = ref(null);
 const taskToDeleteTitle = ref('');
+
+// Spin up forks this workspace, so it is offered only where one can be made:
+// the store's copy of the workspace is the one that says whether it is a fork.
+const workspaceStore = useWorkspaceStore();
+const currentWorkspace = computed(() => workspaceStore.getWorkspace(props.workspaceId));
+const spinUp = useSpinUp();
+
+function openSpinUp(event, task) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  spinUp.open(task, currentWorkspace.value, { x: rect.right, y: rect.bottom });
+}
+
+// The task left this workspace unless the move itself is what failed.
+function onSpinUpDone({ task, fork, failedStep }) {
+  if (!fork || failedStep === 'move') return;
+  const id = String(task.id);
+  for (const list of [ongoingTasks, notStartedTasks, scheduledTasks, pendingTasks, completedTasks]) {
+    list.value = list.value.filter(x => String(x.id) !== id);
+  }
+  emitUpdatedTasks();
+  loadCounts();
+}
 
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);

@@ -26,6 +26,7 @@ import {
   workspaceRoute,
 } from '../composables/useWorkspaceSwitcher';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import ForkIcon from './ForkIcon.vue';
 
 const props = defineProps({
   show: Boolean,
@@ -123,6 +124,10 @@ const isCurrent = (workspace) => isCurrentWorkspace(workspace, props.currentWork
                       :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-zinc-600'"
                       :title="ws.agentConnected ? 'Agent online' : 'Agent offline'"></span>
                 <span class="grow min-w-0 truncate text-[13px] font-medium text-gray-900 dark:text-zinc-100">{{ ws.name }}</span>
+                <span v-if="ws.forkOfId" class="shrink-0 flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-500 min-w-0 max-w-[40%]" data-test="switcher-fork">
+                  <ForkIcon class="w-3 h-3 shrink-0" />
+                  <span class="truncate">{{ ws.forkOf?.name ?? 'fork' }}</span>
+                </span>
                 <span v-if="ws.archivedAt" class="shrink-0 text-[9px] font-black uppercase tracking-widest text-amber-600/70 dark:text-amber-500/70">Archived</span>
                 <span v-else-if="isCurrent(ws)" class="shrink-0 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Current</span>
               </button>
