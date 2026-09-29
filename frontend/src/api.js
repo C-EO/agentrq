@@ -325,7 +325,7 @@ export async function approveMachineUpdate(machineId, version) {
  * sessions in new terminals. Answers 202: the daemon has been asked, and its
  * next connection is what says it came back.
  */
-export async function restartMachine(machineId) {
+export async function restartDaemon(machineId) {
   const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/restart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

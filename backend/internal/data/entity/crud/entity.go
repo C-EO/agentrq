@@ -1806,13 +1806,13 @@ type (
 		RunningVersion string
 	}
 
-	// RestartMachineRequest is a person asking a machine's daemon to restart,
+	// RestartDaemonRequest is a person asking a machine's daemon to restart,
 	// which stops its sessions and starts them again.
-	RestartMachineRequest struct {
+	RestartDaemonRequest struct {
 		UserID    string
 		MachineID string
 	}
-	RestartMachineResponse struct {
+	RestartDaemonResponse struct {
 		MachineID int64
 		// RunningVersion is what the machine last said it runs.
 		RunningVersion string

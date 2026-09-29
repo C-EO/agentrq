@@ -149,7 +149,7 @@ describe('the catalogue as a whole', () => {
         // Not deletes either, and the most destructive things here: each
         // ends every session on a machine and starts them again empty.
         'approveMachineUpdate',
-        'restartMachine',
+        'restartDaemon',
         // Not a delete, but it ends work in progress: disabling a machine
         // closes its connection at once, and stopping a session loses whatever
         // the agent had not saved.

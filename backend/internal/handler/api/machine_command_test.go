@@ -61,11 +61,11 @@ type commandCrud struct {
 	recorded []entity.RecordMachineCommandRequest
 }
 
-func (m *commandCrud) RestartMachine(_ context.Context, req entity.RestartMachineRequest) (*entity.RestartMachineResponse, error) {
+func (m *commandCrud) RestartDaemon(_ context.Context, req entity.RestartDaemonRequest) (*entity.RestartDaemonResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &entity.RestartMachineResponse{MachineID: monoflake.IDFromBase62(req.MachineID).Int64(), RunningVersion: m.running}, nil
+	return &entity.RestartDaemonResponse{MachineID: monoflake.IDFromBase62(req.MachineID).Int64(), RunningVersion: m.running}, nil
 }
 
 func (m *commandCrud) ApproveMachineUpdate(_ context.Context, req entity.ApproveMachineUpdateRequest) (*entity.ApproveMachineUpdateResponse, error) {
@@ -91,7 +91,7 @@ func commandApp(c crud.Controller, reg *machinectrl.Registry) *fiber.App {
 		ctx.Locals("user_id", "user-1")
 		return ctx.Next()
 	})
-	app.Post(_routePathMachineRestart, h.restartMachine())
+	app.Post(_routePathMachineRestart, h.restartDaemon())
 	app.Post(_routePathMachineUpdate, h.approveMachineUpdate())
 	return app
 }
@@ -119,7 +119,7 @@ func post(t *testing.T, app *fiber.App, path, body string) (int, string) {
 	return res.StatusCode, string(b)
 }
 
-func TestRestartMachineSendsTheRestartAndCountsIt(t *testing.T) {
+func TestRestartDaemonSendsTheRestartAndCountsIt(t *testing.T) {
 	reg, conn := connected(wire.CapabilityFork, wire.CapabilityRestart)
 	c := &commandCrud{running: "0.9.3"}
 

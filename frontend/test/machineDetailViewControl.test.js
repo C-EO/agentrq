@@ -19,7 +19,7 @@ vi.mock('../src/useEventBus', () => ({
 }))
 
 let machine
-const restartMachine = vi.fn()
+const restartDaemon = vi.fn()
 const approveMachineUpdate = vi.fn()
 
 vi.mock('../src/api', () => ({
@@ -33,7 +33,7 @@ vi.mock('../src/api', () => ({
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
   approveMachineUpdate: (...args) => approveMachineUpdate(...args),
-  restartMachine: (...args) => restartMachine(...args),
+  restartDaemon: (...args) => restartDaemon(...args),
   API_BASE_URL: '/api/v1',
 }))
 
@@ -62,7 +62,7 @@ const lastToast = () => useToasts().toasts.value.at(-1)
 
 beforeEach(() => {
   machine = { id: 'm1', name: 'pi', enabled: true, online: true, os: 'linux', arch: 'arm64', version: '0.9.3' }
-  restartMachine.mockReset().mockResolvedValue(true)
+  restartDaemon.mockReset().mockResolvedValue(true)
   approveMachineUpdate.mockReset().mockResolvedValue(true)
 })
 afterEach(() => {
@@ -78,19 +78,19 @@ describe('MachineDetailView: restarting the daemon', () => {
 
     expect(document.body.textContent).toContain('Restart agentrqd')
     expect(document.body.textContent).toContain('Nothing is running on it')
-    expect(restartMachine).not.toHaveBeenCalled()
+    expect(restartDaemon).not.toHaveBeenCalled()
 
     // The confirm button, which says what it does rather than "Delete".
     const confirm = [...document.body.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Restart').at(-1)
     confirm.click()
     await settle()
 
-    expect(restartMachine).toHaveBeenCalledWith('m1')
+    expect(restartDaemon).toHaveBeenCalledWith('m1')
     expect(lastToast().message).toContain('restarting')
   })
 
   it('says why when the machine refused', async () => {
-    restartMachine.mockRejectedValue(new Error('that machine is not connected'))
+    restartDaemon.mockRejectedValue(new Error('that machine is not connected'))
     const page = await mount()
     await page.click('Settings')
     await page.click('Restart')

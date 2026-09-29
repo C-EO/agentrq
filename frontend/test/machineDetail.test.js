@@ -26,7 +26,7 @@ function harness(over = {}) {
     deleteMachine: vi.fn().mockResolvedValue(true),
     killSession: vi.fn().mockResolvedValue(true),
     approveMachineUpdate: vi.fn().mockResolvedValue(true),
-    restartMachine: vi.fn().mockResolvedValue(true),
+    restartDaemon: vi.fn().mockResolvedValue(true),
     ...over,
   }
   return { deps, d: useMachineDetail(deps) }
@@ -301,7 +301,7 @@ describe('restarting', () => {
     await h.d.load()
     expect(h.d.canControl.value).toBe(true)
     expect(await h.d.restart()).toBe(true)
-    expect(h.deps.restartMachine).toHaveBeenCalledWith('m1')
+    expect(h.deps.restartDaemon).toHaveBeenCalledWith('m1')
     expect(h.d.busy.value).toBe(false)
   })
 
@@ -312,13 +312,13 @@ describe('restarting', () => {
   })
 
   it('reports a restart the server refused', async () => {
-    const h = harness({ restartMachine: vi.fn().mockRejectedValue(new Error('that machine is not connected')) })
+    const h = harness({ restartDaemon: vi.fn().mockRejectedValue(new Error('that machine is not connected')) })
     expect(await h.d.restart()).toBe(false)
     expect(h.d.error.value).toBe('that machine is not connected')
   })
 
   it('falls back to a message', async () => {
-    const h = harness({ restartMachine: vi.fn().mockRejectedValue({}) })
+    const h = harness({ restartDaemon: vi.fn().mockRejectedValue({}) })
     await h.d.restart()
     expect(h.d.error.value).toBe('Failed to restart this machine')
   })

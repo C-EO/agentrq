@@ -47,7 +47,7 @@ func (h *handler) registerMachineRoutes() {
 	h.router.Patch(_routePathMachines+"/:id", h.updateMachine())
 	h.router.Delete(_routePathMachines+"/:id", h.deleteMachine())
 	h.router.Post(_routePathMachineUpdate, h.approveMachineUpdate())
-	h.router.Post(_routePathMachineRestart, h.restartMachine())
+	h.router.Post(_routePathMachineRestart, h.restartDaemon())
 }
 
 // approveMachineUpdate tells a daemon to install the release it offered.
@@ -111,16 +111,16 @@ func (h *handler) approveMachineUpdate() fiber.Handler {
 	}
 }
 
-// restartMachine tells a daemon to restart, which stops every session on that
+// restartDaemon tells a daemon to restart, which stops every session on that
 // machine and starts them again. Answers 202: the daemon's next hello is what
 // says it came back.
-func (h *handler) restartMachine() fiber.Handler {
+func (h *handler) restartDaemon() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
 		ctx, cancel := newContext(c)
 		defer cancel()
 
-		m, err := h.crud.RestartMachine(ctx, entity.RestartMachineRequest{
+		m, err := h.crud.RestartDaemon(ctx, entity.RestartDaemonRequest{
 			UserID:    c.Locals("user_id").(string),
 			MachineID: c.Params("id"),
 		})

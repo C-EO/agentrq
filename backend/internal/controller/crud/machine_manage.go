@@ -32,7 +32,7 @@ type MachineManageController interface {
 	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
 	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
 	ApproveMachineUpdate(ctx context.Context, req entity.ApproveMachineUpdateRequest) (*entity.ApproveMachineUpdateResponse, error)
-	RestartMachine(ctx context.Context, req entity.RestartMachineRequest) (*entity.RestartMachineResponse, error)
+	RestartDaemon(ctx context.Context, req entity.RestartDaemonRequest) (*entity.RestartDaemonResponse, error)
 	RecordMachineCommand(ctx context.Context, req entity.RecordMachineCommandRequest)
 }
 
@@ -127,9 +127,9 @@ func (c *controller) ApproveMachineUpdate(ctx context.Context, req entity.Approv
 	return &entity.ApproveMachineUpdateResponse{MachineID: m.ID, Version: m.AvailableVersion, RunningVersion: m.Version}, nil
 }
 
-// RestartMachine reads the machine a restart is for, scoped to its owner. Like
+// RestartDaemon reads the machine a restart is for, scoped to its owner. Like
 // ApproveMachineUpdate it sends nothing: the socket lives in the handler.
-func (c *controller) RestartMachine(ctx context.Context, req entity.RestartMachineRequest) (*entity.RestartMachineResponse, error) {
+func (c *controller) RestartDaemon(ctx context.Context, req entity.RestartDaemonRequest) (*entity.RestartDaemonResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	id := monoflake.IDFromBase62(req.MachineID).Int64()
 	if uid == 0 || id == 0 {
@@ -139,7 +139,7 @@ func (c *controller) RestartMachine(ctx context.Context, req entity.RestartMachi
 	if err != nil {
 		return nil, err
 	}
-	return &entity.RestartMachineResponse{MachineID: m.ID, RunningVersion: m.Version}, nil
+	return &entity.RestartDaemonResponse{MachineID: m.ID, RunningVersion: m.Version}, nil
 }
 
 // RecordMachineCommand counts a restart or update a person sent a machine.

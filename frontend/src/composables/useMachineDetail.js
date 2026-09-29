@@ -83,7 +83,7 @@ export function useMachineDetail(deps = {}) {
     deleteMachine = api.deleteMachine,
     killSession = api.killSession,
     approveMachineUpdate = api.approveMachineUpdate,
-    restartMachine = api.restartMachine,
+    restartDaemon = api.restartDaemon,
   } = deps
 
   const machine = ref(null)
@@ -214,7 +214,7 @@ export function useMachineDetail(deps = {}) {
     busy.value = true
     error.value = ''
     try {
-      await restartMachine(machineId)
+      await restartDaemon(machineId)
       return true
     } catch (e) {
       error.value = e?.message || 'Failed to restart this machine'

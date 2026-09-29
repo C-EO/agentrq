@@ -117,7 +117,7 @@ func TestApprovingAnotherAccountsMachineIsNotFound(t *testing.T) {
 	}
 }
 
-func TestRestartMachine(t *testing.T) {
+func TestRestartDaemon(t *testing.T) {
 	uid := monoflake.IDFromBase62(testUserBase62).Int64()
 
 	t.Run("reads the owner's machine", func(t *testing.T) {
@@ -125,11 +125,11 @@ func TestRestartMachine(t *testing.T) {
 		env.repo.EXPECT().GetMachine(gomock.Any(), int64(5), uid).
 			Return(model.Machine{ID: 5, UserID: uid, Version: "0.9.3"}, nil)
 
-		rs, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{
+		rs, err := env.controller.RestartDaemon(t.Context(), entity.RestartDaemonRequest{
 			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
 		})
 		if err != nil {
-			t.Fatalf("RestartMachine: %v", err)
+			t.Fatalf("RestartDaemon: %v", err)
 		}
 		if rs.MachineID != 5 || rs.RunningVersion != "0.9.3" {
 			t.Errorf("got %+v", rs)
@@ -141,7 +141,7 @@ func TestRestartMachine(t *testing.T) {
 		env.repo.EXPECT().GetMachine(gomock.Any(), int64(5), uid).
 			Return(model.Machine{}, errors.New("not found"))
 
-		if _, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{
+		if _, err := env.controller.RestartDaemon(t.Context(), entity.RestartDaemonRequest{
 			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
 		}); err == nil {
 			t.Error("restarted another account's machine")
@@ -150,7 +150,7 @@ func TestRestartMachine(t *testing.T) {
 
 	t.Run("an unusable id", func(t *testing.T) {
 		env := newTestController(t)
-		if _, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{}); err == nil {
+		if _, err := env.controller.RestartDaemon(t.Context(), entity.RestartDaemonRequest{}); err == nil {
 			t.Error("a restart with no machine was accepted")
 		}
 	})
