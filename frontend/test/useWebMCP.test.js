@@ -11,6 +11,7 @@ import { routes } from '../src/app';
 import { connectWebMCP, describePage } from '../src/composables/useWebMCP';
 import { onWebMCPChange } from '../src/composables/useWebMCPChanges';
 import { WebMCPStatus } from '../src/webmcp/modelContext';
+import { useToasts } from '../src/composables/useToasts';
 
 const routerAt = (route) => ({
   push: vi.fn().mockResolvedValue(undefined),
@@ -171,6 +172,76 @@ describe('telling the open page about changes', () => {
     off();
 
     expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe('showing the screen a tool acts on', () => {
+  const toolNamed = (ctx, name) => ctx.registerTool.mock.calls.map(([t]) => t).find((t) => t.name === name);
+
+  async function connected(api, { draft = false } = {}) {
+    const ctx = { registerTool: vi.fn().mockResolvedValue(undefined) };
+    const router = {
+      push: vi.fn().mockResolvedValue(undefined),
+      resolve: (path) => ({ matched: [{}], fullPath: path }),
+      currentRoute: ref({ path: '/', fullPath: '/' }),
+    };
+    useToasts().toasts.value = [];
+    document.body.innerHTML = draft ? '<textarea>half a reply</textarea>' : '';
+    await connectWebMCP({ api, router, context: ctx });
+    return { ctx, router };
+  }
+
+  it('opens the machine before restarting its daemon, and toasts', async () => {
+    const order = [];
+    const api = { restartDaemon: vi.fn(async () => order.push('tool')) };
+    const { ctx, router } = await connected(api);
+    router.push.mockImplementation(async () => order.push('push'));
+
+    await toolNamed(ctx, 'restartDaemon').execute({ machineId: 'm1' }, {});
+
+    expect(order).toEqual(['push', 'tool']);
+    expect(router.push).toHaveBeenCalledWith('/machines/m1');
+    const toast = useToasts().toasts.value.at(-1);
+    expect(toast.message).toBe('Browser agent ran: restart daemon');
+    expect(toast.link).toBeNull();
+  });
+
+  it('opens the task a tool created once it exists', async () => {
+    const api = { createTask: vi.fn().mockResolvedValue({ task: { id: 't9' } }) };
+    const { ctx, router } = await connected(api);
+
+    await toolNamed(ctx, 'createTask').execute({ workspaceId: 'w1', title: 'x', body: 'y' }, {});
+
+    expect(router.push).toHaveBeenCalledWith('/workspaces/w1/tasks/t9');
+  });
+
+  it('holds the move over a draft, and the toast waits with a Show link', async () => {
+    const api = { restartDaemon: vi.fn().mockResolvedValue({}) };
+    const { ctx, router } = await connected(api, { draft: true });
+
+    await toolNamed(ctx, 'restartDaemon').execute({ machineId: 'm1' }, {});
+
+    expect(router.push).not.toHaveBeenCalled();
+    const toast = useToasts().toasts.value.at(-1);
+    expect(toast.link).toEqual({ path: '/machines/m1', label: 'Show' });
+    expect(toast.persistent).toBe(true);
+  });
+
+  it('leaves a read, and navigate itself, alone', async () => {
+    const api = { fetchMachines: vi.fn().mockResolvedValue({ machines: [] }) };
+    const { ctx, router } = await connected(api);
+
+    await toolNamed(ctx, 'listMachines').execute({}, {});
+
+    expect(router.push).not.toHaveBeenCalled();
+    expect(useToasts().toasts.value).toHaveLength(0);
+    expect(toolNamed(ctx, 'navigate')).not.toHaveProperty('screen');
+  });
+
+  it('does not offer the screen to the browser', async () => {
+    const { ctx } = await connected({});
+
+    expect(toolNamed(ctx, 'restartDaemon')).not.toHaveProperty('screen');
   });
 });
 

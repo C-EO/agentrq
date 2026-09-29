@@ -19,6 +19,8 @@
 import { createToolCatalogue } from '../webmcp/tools'
 import { registerTools } from '../webmcp/modelContext'
 import { notifyWebMCPChange } from './useWebMCPChanges'
+import { withScreen, hasUnsavedInput } from './useWebMCPScreen'
+import { useToasts } from './useToasts'
 
 /**
  * A description of where the person is, in the terms the tools speak.
@@ -84,7 +86,18 @@ export async function connectWebMCP({ api, router, context }) {
     // they happened to be on when they signed in.
     currentPage: () => describePage(router.currentRoute.value),
   })
-  const tools = catalogue.map(announceChanges)
+  const { addToast } = useToasts()
+  const screen = {
+    // A guard or a missing route must not fail a tool that has already done its
+    // work; the toast still says what happened.
+    go: (path) => router.push(path),
+    isCurrent: (path) => router.resolve(path).fullPath === router.currentRoute.value.fullPath,
+    hasUnsavedInput,
+    // A toast offering to show the screen waits to be dismissed: it is the only
+    // way to it, and four seconds is not long enough to finish typing.
+    notify: (message, link) => addToast(message, 'info', null, link ? 0 : null, link),
+  }
+  const tools = catalogue.map(announceChanges).map((t) => withScreen(t, screen))
 
   const result = await registerTools(tools, { context, signal: controller.signal })
   return { ...result, unregister: () => controller.abort() }

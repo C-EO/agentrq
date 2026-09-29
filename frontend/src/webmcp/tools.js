@@ -49,7 +49,7 @@ const DAEMON_VERSION_NOTE = ` An agentrqd older than ${MIN_FORK_VERSION} should 
  * left to each entry to remember: a tool that only reads is annotated as such,
  * and anything that removes data says so.
  */
-function tool({ name, description, properties = {}, required = [], readOnly = false, destructive = false, run }) {
+function tool({ name, description, properties = {}, required = [], readOnly = false, destructive = false, screen, run }) {
   return {
     name,
     description,
@@ -63,8 +63,31 @@ function tool({ name, description, properties = {}, required = [], readOnly = fa
       consequentialHint: !readOnly,
     },
     execute: run,
+    // Not part of what an agent sees: `withScreen` reads it and strips it.
+    ...(screen && { screen }),
   }
 }
+
+// An ID from an agent goes into a path, so it is encoded: "../x" must not
+// become a different page.
+const seg = (id) => encodeURIComponent(id ?? '')
+const workspacePage = ({ workspaceId }) => `/workspaces/${seg(workspaceId)}`
+const settingsPage = (tab) => ({ workspaceId }) => `/workspaces/${seg(workspaceId)}/settings${tab ? `?tab=${tab}` : ''}`
+const taskPage = ({ workspaceId, taskId }) => `/workspaces/${seg(workspaceId)}/tasks/${seg(taskId)}`
+const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
+const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
+const workflowPage = ({ workflowId }) => `/workflows/${seg(workflowId)}`
+
+/**
+ * The page a write tool acts on, so the person sees what the agent did.
+ *
+ * `before` is a function of the arguments and is followed before the tool runs;
+ * `after` also sees the result, for a page that exists only once the tool has
+ * made it. Every tool that is not read-only declares one — a test fails when
+ * one does not — except `navigate`, which is the move itself.
+ */
+const before = (page) => ({ before: page })
+const after = (page) => ({ after: page })
 
 /**
  * Everything the interface can do.
@@ -154,6 +177,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         workingDirectory: str('Optional absolute path agents run in.'),
       },
       required: ['name', 'description'],
+      screen: after((_, r) => (r?.workspace?.id ? `/workspaces/${seg(r.workspace.id)}` : '/')),
       run: ({ name, description, icon = '', selfLearningLoopNote = '', workingDirectory = '' }) =>
         api.createWorkspace(name, description, icon, selfLearningLoopNote, workingDirectory),
     }),
@@ -169,6 +193,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         workingDirectory: str('New working directory.'),
       },
       required: ['workspaceId'],
+      screen: before(settingsPage()),
       run: ({ workspaceId, ...fields }) => api.updateWorkspace(workspaceId, fields),
     }),
     tool({
@@ -180,6 +205,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workspaceId: WORKSPACE_ID },
       required: ['workspaceId'],
       destructive: true,
+      screen: before(workspacePage),
       run: ({ workspaceId }) => api.archiveWorkspace(workspaceId),
     }),
     tool({
@@ -187,6 +213,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Restore an archived workspace to the default list.',
       properties: { workspaceId: WORKSPACE_ID },
       required: ['workspaceId'],
+      screen: before(workspacePage),
       run: ({ workspaceId }) => api.unarchiveWorkspace(workspaceId),
     }),
     tool({
@@ -197,6 +224,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workspaceId: WORKSPACE_ID },
       required: ['workspaceId'],
       destructive: true,
+      screen: before(() => '/'),
       run: ({ workspaceId }) => api.deleteWorkspace(workspaceId),
     }),
     tool({
@@ -210,6 +238,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         name: str('Name for the fork, in kebab-case like other workspace names. Defaults to "<parent>-fork".'),
       },
       required: ['workspaceId'],
+      screen: after((a, r) => (r?.workspace?.id ? `/workspaces/${seg(r.workspace.id)}` : workspacePage(a))),
       run: ({ workspaceId, name = '' }) => api.forkWorkspace(workspaceId, { name }),
     }),
     tool({
@@ -221,6 +250,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workspaceId: str('The fork to merge.') },
       required: ['workspaceId'],
       destructive: true,
+      screen: after((a, r) => (r?.parentId ? `/workspaces/${seg(r.parentId)}` : workspacePage(a))),
       run: ({ workspaceId }) => api.mergeFork(workspaceId),
     }),
     tool({
@@ -363,6 +393,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['workspaceId', 'url'],
       // With overwrite, it replaces skills the workspace already had.
       destructive: true,
+      screen: before(settingsPage('skills')),
       run: ({ workspaceId, url, overwrite, skills }) => api.importWorkspaceSkills(workspaceId, url, overwrite, skills),
     }),
     tool({
@@ -371,6 +402,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.') },
       required: ['workspaceId', 'name'],
       destructive: true,
+      screen: before(settingsPage('skills')),
       run: ({ workspaceId, name }) => api.deleteWorkspaceSkill(workspaceId, name),
     }),
     tool({
@@ -391,6 +423,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         targetWorkspaceId: str('The workspace to share it into.'),
       },
       required: ['workspaceId', 'name', 'targetWorkspaceId'],
+      screen: before(settingsPage('skills')),
       run: ({ workspaceId, name, targetWorkspaceId }) => api.shareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
     }),
     tool({
@@ -403,6 +436,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       },
       required: ['workspaceId', 'name', 'targetWorkspaceId'],
       destructive: true,
+      screen: before(settingsPage('skills')),
       run: ({ workspaceId, name, targetWorkspaceId }) => api.unshareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
     }),
     tool({
@@ -414,6 +448,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         channelName: str('Slack channel name, for display.'),
       },
       required: ['workspaceId', 'channelId', 'channelName'],
+      screen: before(settingsPage('slack')),
       run: ({ workspaceId, channelId, channelName }) =>
         api.setWorkspaceSlackChannel(workspaceId, channelId, channelName),
     }),
@@ -422,6 +457,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Disconnect a workspace from its Slack channel.',
       properties: { workspaceId: WORKSPACE_ID },
       required: ['workspaceId'],
+      screen: before(settingsPage('slack')),
       run: ({ workspaceId }) => api.removeWorkspaceSlackChannel(workspaceId),
     }),
 
@@ -472,6 +508,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         ),
       },
       required: ['workspaceId', 'title', 'body'],
+      screen: after((a, r) => (r?.task?.id ? taskPage({ ...a, taskId: r.task.id }) : workspacePage(a))),
       run: ({
         workspaceId,
         title,
@@ -503,6 +540,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Send a message in a task conversation, as the signed-in user.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, text: str('The message.') },
       required: ['workspaceId', 'taskId', 'text'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, text }) => api.replyToTask(workspaceId, taskId, text),
     }),
     tool({
@@ -516,6 +554,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         text: str('Optional message to send with it.'),
       },
       required: ['workspaceId', 'taskId', 'action'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, action, text = '' }) =>
         api.respondToTask(workspaceId, taskId, action, text),
     }),
@@ -529,6 +568,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         messageId: str('The last message to copy into the new task.'),
       },
       required: ['workspaceId', 'taskId', 'messageId'],
+      screen: after((a, r) => (r?.task?.id ? taskPage({ ...a, taskId: r.task.id }) : taskPage(a))),
       run: ({ workspaceId, taskId, messageId }) => api.forkTask(workspaceId, taskId, messageId),
     }),
     tool({
@@ -537,6 +577,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'Set a task\'s status: notstarted, ongoing, completed, rejected, cron or blocked.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, status: str('The new status.') },
       required: ['workspaceId', 'taskId', 'status'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, status }) => api.updateTaskStatus(workspaceId, taskId, status),
     }),
     tool({
@@ -544,6 +585,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Hand a task to the agent or back to a human.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, assignee: str('"agent" or "human".') },
       required: ['workspaceId', 'taskId', 'assignee'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, assignee }) => api.updateTaskAssignee(workspaceId, taskId, assignee),
     }),
     tool({
@@ -551,6 +593,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Reorder a task on the board.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, order: int('The new position.') },
       required: ['workspaceId', 'taskId', 'order'],
+      screen: before(workspacePage),
       run: ({ workspaceId, taskId, order }) => api.updateTaskOrder(workspaceId, taskId, order),
     }),
     tool({
@@ -562,6 +605,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         destinationWorkspaceId: str('The workspace to move it into.'),
       },
       required: ['workspaceId', 'taskId', 'destinationWorkspaceId'],
+      screen: before((a) => taskPage({ workspaceId: a.destinationWorkspaceId, taskId: a.taskId })),
       run: ({ workspaceId, taskId, destinationWorkspaceId }) =>
         api.moveTask(workspaceId, taskId, destinationWorkspaceId),
     }),
@@ -576,6 +620,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         allowAllCommands: bool('Whether the agent may run commands unprompted.'),
       },
       required: ['workspaceId', 'taskId', 'allowAllCommands'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, allowAllCommands }) =>
         api.updateTaskAllowAllCommands(workspaceId, taskId, allowAllCommands),
     }),
@@ -584,6 +629,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Interrupt a running task. Refuses when whatever is connected has no stop.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },
       required: ['workspaceId', 'taskId'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId }) => api.stopTask(workspaceId, taskId),
     }),
     tool({
@@ -597,6 +643,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         modelId: str('The id of a model the agent listed as available.'),
       },
       required: ['workspaceId', 'modelId'],
+      screen: before(settingsPage()),
       run: ({ workspaceId, modelId }) => api.setAgentModel(workspaceId, modelId),
     }),
     tool({
@@ -611,6 +658,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         maxConcurrency: int('How many tasks to run at once, within the range the gateway reported.'),
       },
       required: ['workspaceId', 'maxConcurrency'],
+      screen: before(settingsPage()),
       run: ({ workspaceId, maxConcurrency }) => api.setAgentConcurrency(workspaceId, maxConcurrency),
     }),
     tool({
@@ -619,6 +667,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },
       required: ['workspaceId', 'taskId'],
       destructive: true,
+      screen: before(workspacePage),
       run: ({ workspaceId, taskId }) => api.deleteTask(workspaceId, taskId),
     }),
     tool({
@@ -633,6 +682,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         behavior: str('The verdict, such as "allow" or "deny".'),
       },
       required: ['workspaceId', 'taskId', 'requestId', 'behavior'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, requestId, behavior }) =>
         api.sendPermissionVerdict(workspaceId, taskId, requestId, behavior),
     }),
@@ -647,6 +697,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         content: { type: 'object', description: 'The answer, shaped by the question that was asked.' },
       },
       required: ['workspaceId', 'taskId', 'requestId', 'action'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, requestId, action, content = {} }) =>
         api.respondToElicitation(workspaceId, taskId, requestId, action, content),
     }),
@@ -665,6 +716,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         allowAllCommands: bool('Whether runs may execute commands unprompted.'),
       },
       required: ['workspaceId', 'taskId', 'title', 'body', 'assignee', 'cronSchedule'],
+      screen: before(taskPage),
       run: ({ workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands = false }) =>
         api.updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands),
     }),
@@ -736,6 +788,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Rename a machine. The name is what the machines list and the launcher show.',
       properties: { machineId: MACHINE_ID, name: str('The new name.') },
       required: ['machineId', 'name'],
+      screen: before(machinePage),
       run: ({ machineId, name }) => api.updateMachine(machineId, { name }),
     }),
     tool({
@@ -748,6 +801,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       },
       required: ['machineId', 'enabled'],
       destructive: true,
+      screen: before(machinePage),
       run: ({ machineId, enabled }) => api.updateMachine(machineId, { enabled }),
     }),
     tool({
@@ -757,12 +811,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { machineId: MACHINE_ID },
       required: ['machineId'],
       destructive: true,
+      screen: before(() => '/machines'),
       run: ({ machineId }) => api.deleteMachine(machineId),
     }),
     tool({
       name: 'createEnrolmentCode',
       description:
         'Mint a single-use code for enrolling a new machine. It is shown once and is useless without access to the machine being enrolled.',
+      screen: before(() => '/machines'),
       run: () => api.createEnrolmentCode(),
     }),
     tool({
@@ -804,6 +860,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         rows: int('Terminal height in rows.'),
       },
       required: ['workspaceId', 'machineId', 'kind'],
+      screen: before(workspacePage),
       run: ({ workspaceId, machineId, kind, model = '', agent = '', cols = 0, rows = 0 }) =>
         api.launchAgent(workspaceId, { machineId, kind, model, agent, cols, rows }),
     }),
@@ -817,6 +874,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       },
       required: ['machineId'],
       destructive: true,
+      screen: before(machinePage),
       run: ({ machineId, version = '' }) => api.restartDaemon(machineId, version),
     }),
     tool({
@@ -825,6 +883,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { sessionId: str('The session ID (base62), as it appears in the URL.') },
       required: ['sessionId'],
       destructive: true,
+      screen: before(() => '/machines'),
       run: ({ sessionId }) => api.killSession(sessionId),
     }),
 
@@ -852,6 +911,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         payloadGuidelines: str('What a publisher should put in the payload.'),
       },
       required: ['name'],
+      screen: after((_, r) => (r?.event?.id ? `/events/${seg(r.event.id)}` : '/events')),
       run: ({ name, payloadGuidelines = '' }) => api.createEvent(name, payloadGuidelines),
     }),
     tool({
@@ -859,6 +919,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Change an event\'s payload guidelines.',
       properties: { eventId: str('The event ID.'), payloadGuidelines: str('New guidelines.') },
       required: ['eventId', 'payloadGuidelines'],
+      screen: before(eventPage),
       run: ({ eventId, payloadGuidelines }) => api.updateEvent(eventId, payloadGuidelines),
     }),
     tool({
@@ -867,6 +928,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { eventId: str('The event ID.') },
       required: ['eventId'],
       destructive: true,
+      screen: before(() => '/events'),
       run: ({ eventId }) => api.deleteEvent(eventId),
     }),
     tool({
@@ -893,6 +955,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         emitEventId: str('Optional second event published when the created task completes.'),
       },
       required: ['eventId', 'workspaceId', 'title'],
+      screen: before(eventPage),
       run: ({ eventId, ...trigger }) => api.createEventTrigger(eventId, trigger),
     }),
     tool({
@@ -910,6 +973,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         emitEventId: str('Optional second event published on completion.'),
       },
       required: ['eventId', 'triggerId', 'workspaceId', 'title'],
+      screen: before(eventPage),
       run: ({ eventId, triggerId, ...trigger }) => api.updateEventTrigger(eventId, triggerId, trigger),
     }),
     tool({
@@ -918,6 +982,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { eventId: str('The event ID.'), triggerId: str('The trigger ID.') },
       required: ['eventId', 'triggerId'],
       destructive: true,
+      screen: before(eventPage),
       run: ({ eventId, triggerId }) => api.deleteEventTrigger(eventId, triggerId),
     }),
     tool({
@@ -955,6 +1020,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         startEventId: str('Optional event that starts it.'),
       },
       required: ['name'],
+      screen: after((_, r) => (r?.workflow?.id ? `/workflows/${seg(r.workflow.id)}` : '/workflows')),
       run: ({ name, description = '', startEventId = '' }) =>
         api.createWorkflow({ name, description, startEventId }),
     }),
@@ -968,6 +1034,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         startEventId: str('New starting event.'),
       },
       required: ['workflowId'],
+      screen: before(workflowPage),
       run: ({ workflowId, ...fields }) => api.updateWorkflow(workflowId, fields),
     }),
     tool({
@@ -976,6 +1043,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workflowId: str('The workflow ID.') },
       required: ['workflowId'],
       destructive: true,
+      screen: before(() => '/workflows'),
       run: ({ workflowId }) => api.deleteWorkflow(workflowId),
     }),
     tool({
@@ -1002,6 +1070,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         emitEventId: str('Optional event published when the created task completes.'),
       },
       required: ['workflowId', 'eventId', 'workspaceId', 'title'],
+      screen: before(workflowPage),
       run: ({ workflowId, ...step }) => api.createWorkflowStep(workflowId, step),
     }),
     tool({
@@ -1010,6 +1079,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workflowId: str('The workflow ID.'), stepId: str('The step ID.') },
       required: ['workflowId', 'stepId'],
       destructive: true,
+      screen: before(workflowPage),
       run: ({ workflowId, stepId }) => api.deleteWorkflowStep(workflowId, stepId),
     }),
     tool({
@@ -1038,6 +1108,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       properties: { workflowId: str('The workflow ID.'), text: str('The full workflow document.') },
       required: ['workflowId', 'text'],
       destructive: true,
+      screen: before(workflowPage),
       run: ({ workflowId, text }) => api.replaceWorkflowFromText(workflowId, text),
     }),
   ]

@@ -7,6 +7,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { createToolCatalogue } from '../src/webmcp/tools';
 import * as api from '../src/api';
 import { MIN_FORK_VERSION } from '../src/composables/useMachineFormat';
+import { createRouter, createMemoryHistory } from 'vue-router';
+import { routes } from '../src/app';
 
 /**
  * An input carrying every field any tool asks for, so one object can drive the
@@ -522,5 +524,79 @@ describe('the tools that only WebMCP can offer', () => {
     await expect(
       catalogue.find((t) => t.name === 'getTask').execute({ workspaceId: 'ws1', taskId: 't1' }, {})
     ).rejects.toThrow('Failed to fetch task');
+  });
+});
+
+// A write tool declares the page it acts on, so the person sees what an agent
+// did. Reads and `navigate` (the move itself) are exempt; nothing else is.
+describe('the page every write tool shows', () => {
+  const router = createRouter({ history: createMemoryHistory(), routes });
+  const writes = build().filter((t) => !t.annotations.readOnlyHint && t.name !== 'navigate');
+
+  it('is declared by every tool that is not read-only', () => {
+    expect(writes.length).toBeGreaterThan(40);
+    for (const t of writes) {
+      expect(typeof (t.screen?.before ?? t.screen?.after), `${t.name} screen`).toBe('function');
+    }
+  });
+
+  it('is not declared by a read, or by navigate', () => {
+    for (const t of build().filter((c) => c.annotations.readOnlyHint || c.name === 'navigate')) {
+      expect(t.screen, t.name).toBeUndefined();
+    }
+  });
+
+  it('is a page the app has, however the tool is called', () => {
+    // Results shaped as the API answers, and empty ones: a tool that only
+    // knows its page from the result must still land somewhere.
+    const results = [
+      {},
+      { workspace: { id: 'w9' }, task: { id: 't9' }, event: { id: 'e9' }, workflow: { id: 'wf9' }, parentId: 'p9' },
+    ];
+    for (const t of writes) {
+      for (const result of results) {
+        const path = t.screen.before ? t.screen.before(EVERY_FIELD) : t.screen.after(EVERY_FIELD, result);
+        expect(router.resolve(path).matched.length, `${t.name} -> ${path}`).toBeGreaterThan(0);
+        expect(path, t.name).not.toMatch(/undefined|\/\/|\.\./);
+      }
+    }
+  });
+
+  it('follows the result to the page a tool made', () => {
+    const by = (name) => writes.find((t) => t.name === name).screen;
+
+    expect(by('createTask').after({ workspaceId: 'w1' }, { task: { id: 't9' } })).toBe('/workspaces/w1/tasks/t9');
+    expect(by('createWorkspace').after({}, { workspace: { id: 'w9' } })).toBe('/workspaces/w9');
+    expect(by('forkWorkspace').after({ workspaceId: 'w1' }, { workspace: { id: 'w9' } })).toBe('/workspaces/w9');
+    expect(by('mergeFork').after({ workspaceId: 'w1' }, { parentId: 'p9' })).toBe('/workspaces/p9');
+    expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, { task: { id: 't9' } })).toBe('/workspaces/w1/tasks/t9');
+    expect(by('createEvent').after({}, { event: { id: 'e9' } })).toBe('/events/e9');
+    expect(by('createWorkflow').after({}, { workflow: { id: 'wf9' } })).toBe('/workflows/wf9');
+  });
+
+  it('falls back to where the thing lives when the result names nothing', () => {
+    const by = (name) => writes.find((t) => t.name === name).screen;
+
+    expect(by('createTask').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1');
+    expect(by('createWorkspace').after({}, {})).toBe('/');
+    expect(by('forkWorkspace').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1');
+    expect(by('mergeFork').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1');
+    expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, {})).toBe('/workspaces/w1/tasks/t1');
+    expect(by('createEvent').after({}, {})).toBe('/events');
+    expect(by('createWorkflow').after({}, {})).toBe('/workflows');
+  });
+
+  it('encodes an ID so it cannot become another page', () => {
+    const { screen } = writes.find((t) => t.name === 'restartDaemon');
+
+    expect(screen.before({ machineId: '../events' })).toBe('/machines/..%2Fevents');
+  });
+
+  it('opens the settings tab a setting lives on', () => {
+    const by = (name) => writes.find((t) => t.name === name).screen.before({ workspaceId: 'w1' });
+
+    expect(by('importWorkspaceSkills')).toBe('/workspaces/w1/settings?tab=skills');
+    expect(by('setWorkspaceSlackChannel')).toBe('/workspaces/w1/settings?tab=slack');
+    expect(by('updateWorkspace')).toBe('/workspaces/w1/settings');
   });
 });
