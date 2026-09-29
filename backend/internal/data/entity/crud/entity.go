@@ -217,6 +217,14 @@ type (
 		Workspace Workspace
 	}
 
+	// RecordForkDirectoryRequest is a daemon reporting the folder it made
+	// for a fork's session. The user comes from the machine's socket.
+	RecordForkDirectoryRequest struct {
+		UserID    string
+		SessionID string
+		Dir       string
+	}
+
 	MergeForkRequest struct {
 		UserID      string
 		WorkspaceID int64

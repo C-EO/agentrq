@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -253,11 +255,20 @@ type fakeLaunchCrud struct {
 
 	workspace entity.Workspace
 	machine   entity.MachineView
+	// parent answers a read of the fork's parent; parentErr fails it.
+	parent    entity.Workspace
+	parentErr error
 
 	recordTelemetryFunc func(ctx context.Context, rq entity.RecordTelemetryRequest) error
 }
 
 func (f *fakeLaunchCrud) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+	if f.workspace.ForkOfID != 0 && req.ID == f.workspace.ForkOfID {
+		if f.parentErr != nil {
+			return nil, f.parentErr
+		}
+		return &entity.GetWorkspaceResponse{Workspace: f.parent}, nil
+	}
 	return &entity.GetWorkspaceResponse{Workspace: f.workspace}, nil
 }
 
@@ -533,5 +544,124 @@ func TestCoreMCPURLFollowsTheDeployment(t *testing.T) {
 		if got := local.coreMCPURL(); got != "http://localhost:3000/mcp" {
 			t.Errorf("domain %q = %q, want the bare base URL", domain, got)
 		}
+	}
+}
+
+// launchFork launches into a fork of "api" on a machine whose daemon said
+// the given capabilities in its hello.
+func launchFork(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string) (*http.Response, wire.StartSession) {
+	t.Helper()
+	machineID := monoflake.ID(5)
+	crudCtrl.machine = entity.MachineView{ID: machineID.String(), Enabled: true}
+	conn := &capturingConn{}
+	registry := machinectrl.NewRegistry("test-instance")
+	registry.Add(machineID.Int64(), conn)
+	registry.SetCapabilities(machineID.Int64(), conn, caps)
+	h := &handler{
+		crud:            crudCtrl,
+		mcpManager:      &fakeMCPManager{},
+		machineRegistry: registry,
+		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+		mcpBaseURL:      "https://agentrq.example",
+	}
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(crudCtrl.workspace.ID).String()+"/agent",
+		strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"claude-code"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := launchApp(h, monoflake.ID(100).String()).Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp, conn.start
+}
+
+func forkLaunchCrud() *fakeLaunchCrud {
+	return &fakeLaunchCrud{
+		workspace: entity.Workspace{ID: 2, Name: "api fork", ForkOfID: 1},
+		parent:    entity.Workspace{ID: 1, Name: "api", WorkingDirectory: "/srv/api"},
+	}
+}
+
+func responseMessage(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// A fork is started from its parent's folder, in one the daemon makes for it.
+func TestLaunchAgent_AForkRunsInAFolderMadeFromItsParents(t *testing.T) {
+	resp, start := launchFork(t, forkLaunchCrud(), []string{wire.CapabilityFork})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
+	}
+	want := wire.ForkSpec{ID: monoflake.ID(2).String(), From: "/srv/api"}
+	if start.Fork == nil || *start.Fork != want {
+		t.Errorf("fork = %+v, want %+v", start.Fork, want)
+	}
+	if start.Dir != "/srv/api" {
+		t.Errorf("dir = %q, want the parent's", start.Dir)
+	}
+	if !strings.Contains(start.MCPURL, "/"+monoflake.ID(2).String()) {
+		t.Errorf("the fork's agent is pointed at %q, not at the fork", start.MCPURL)
+	}
+}
+
+// A relaunch sends the same fork, whatever folder the fork has recorded: the
+// daemon finds its folder by the fork's id.
+func TestLaunchAgent_ARelaunchedForkNamesTheSameFolder(t *testing.T) {
+	c := forkLaunchCrud()
+	c.workspace.WorkingDirectory = "/home/u/.agentrq/forks/2"
+	_, start := launchFork(t, c, []string{wire.CapabilityFork})
+	if start.Fork == nil || start.Fork.From != "/srv/api" || start.Dir != "/srv/api" {
+		t.Errorf("start = %+v", start)
+	}
+}
+
+// Review Focus 1: an old agentrqd ignores the fork field and would run the
+// fork's agent in the parent's folder, connected as the parent.
+func TestLaunchAgent_AForkIsRefusedOnADaemonThatCannotRunOne(t *testing.T) {
+	resp, start := launchFork(t, forkLaunchCrud(), nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to run a fork") {
+		t.Errorf("message = %s", msg)
+	}
+	if start.SessionID != 0 {
+		t.Error("the start was sent anyway")
+	}
+}
+
+// Only a fork needs the capability.
+func TestLaunchAgent_AnOrdinaryWorkspaceNeedsNoCapability(t *testing.T) {
+	resp, start := launchFork(t, &fakeLaunchCrud{
+		workspace: entity.Workspace{ID: 1, Name: "api", WorkingDirectory: "/srv/api"},
+	}, nil)
+	if resp.StatusCode != http.StatusAccepted || start.Fork != nil {
+		t.Errorf("status = %d fork = %+v", resp.StatusCode, start.Fork)
+	}
+}
+
+func TestLaunchAgent_AForkNeedsItsParentsFolder(t *testing.T) {
+	c := forkLaunchCrud()
+	c.parent.WorkingDirectory = ""
+	resp, _ := launchFork(t, c, []string{wire.CapabilityFork})
+	if resp.StatusCode != http.StatusPreconditionRequired {
+		t.Fatalf("status = %d, want 428", resp.StatusCode)
+	}
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "set api's working directory") {
+		t.Errorf("message = %s, want the parent named", msg)
+	}
+}
+
+func TestLaunchAgent_AForkWhoseParentCannotBeReadIsRefused(t *testing.T) {
+	c := forkLaunchCrud()
+	c.parentErr = base.ErrNotFound
+	resp, start := launchFork(t, c, []string{wire.CapabilityFork})
+	if resp.StatusCode != http.StatusNotFound || start.SessionID != 0 {
+		t.Errorf("status = %d, start = %+v", resp.StatusCode, start)
 	}
 }

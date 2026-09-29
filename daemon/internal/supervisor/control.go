@@ -85,6 +85,7 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 		Dir:        req.Dir,
 		MCPURL:     req.MCPURL,
 		CoreMCPURL: req.CoreMCPURL,
+		Fork:       req.Fork,
 		Cols:       req.Cols,
 		Rows:       req.Rows,
 	})
@@ -95,6 +96,7 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 	if err := r.ReportSessionState(wire.SessionState{
 		SessionID: req.SessionID,
 		State:     string(StateRunning),
+		Dir:       sess.Dir,
 	}); err != nil {
 		return err
 	}

@@ -111,6 +111,7 @@ type WorkspaceController interface {
 	ForkWorkspace(ctx context.Context, req entity.ForkWorkspaceRequest) (*entity.ForkWorkspaceResponse, error)
 	CheckForkMerge(ctx context.Context, req entity.MergeForkRequest) error
 	MergeFork(ctx context.Context, req entity.MergeForkRequest) (*entity.MergeForkResponse, error)
+	RecordForkDirectory(ctx context.Context, req entity.RecordForkDirectoryRequest) error
 	GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
 	GetDetailedUserStats(ctx context.Context, req entity.GetUserStatsRequest) (*entity.GetDetailedUserStatsResponse, error)
 	GetTaskLatencyStats(ctx context.Context, req entity.GetTaskLatencyStatsRequest) (*entity.GetTaskLatencyStatsResponse, error)
