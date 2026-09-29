@@ -20,6 +20,7 @@ vi.mock('../src/useEventBus', () => ({
 
 let machine
 const restartDaemon = vi.fn()
+const updateMachine = vi.fn()
 
 vi.mock('../src/api', () => ({
   getMachine: () => Promise.resolve({ machine }),
@@ -28,7 +29,7 @@ vi.mock('../src/api', () => ({
   launchAgent: vi.fn(),
   fetchAcpAgents: () => Promise.resolve({ agents: [] }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
-  updateMachine: vi.fn(),
+  updateMachine: (...args) => updateMachine(...args),
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
   restartDaemon: (...args) => restartDaemon(...args),
@@ -150,5 +151,34 @@ describe('MachineDetailView: updating the daemon, the same command', () => {
     await page.click('Update')
 
     expect(lastToast().message).toBe('that machine has not offered that update')
+  })
+})
+
+// A phone gets icons: a switch for Enable/Disable, a refresh icon for Update
+// and Restart. Both are the same actions as the text buttons desktop shows.
+describe('MachineDetailView: the phone controls', () => {
+  it('toggles the machine off with the switch', async () => {
+    updateMachine.mockReset().mockResolvedValue({ machine: { ...machine, enabled: false } })
+    const page = await mount()
+    await page.click('Settings')
+    const toggle = page.el.querySelector('[role="switch"]')
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    toggle.click()
+    await settle()
+    expect(updateMachine).toHaveBeenCalledWith('m1', { enabled: false })
+  })
+
+  it('names the icon-only update and restart buttons for a screen reader', async () => {
+    const page = await mount()
+    await page.click('Settings')
+    expect(page.el.querySelector('[aria-label="Restart daemon"] svg')).not.toBe(null)
+  })
+
+  it('names the icon-only update buttons too, in the banner and in Settings', async () => {
+    machine.availableVersion = '0.9.4'
+    const page = await mount()
+    expect(page.el.querySelectorAll('[aria-label="Update daemon"] svg')).toHaveLength(1)
+    await page.click('Settings')
+    expect(page.el.querySelectorAll('[aria-label="Update daemon"] svg')).toHaveLength(2)
   })
 })

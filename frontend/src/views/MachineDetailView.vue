@@ -113,6 +113,11 @@ const TONES = {
 
 // The same tokens as a filled dot. Text colours, which is what TONES holds,
 // are chosen to be readable as words and read as grey at eight pixels across.
+// The update and restart button on a phone, where it is this icon alone: the
+// row beside it already says which of the two it is.
+const REFRESH_ICON =
+  'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+
 const DOTS = {
   good: 'bg-emerald-500',
   pending: 'bg-amber-500',
@@ -250,9 +255,13 @@ async function stopSession(id) {
             v-if="canControl"
             :disabled="busy || !machine.online"
             @click="showRestart = true"
-            class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
+            aria-label="Update daemon"
+            class="shrink-0 p-2.5 sm:px-4 sm:py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
           >
-            Update daemon
+            <span class="hidden sm:inline">Update daemon</span>
+            <svg class="sm:hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" :d="REFRESH_ICON" />
+            </svg>
           </button>
         </div>
 
@@ -659,9 +668,25 @@ async function stopSession(id) {
                 <button
                   :disabled="busy"
                   @click="toggleEnabled"
-                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                  class="hidden sm:block shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
                 >
                   {{ machine.enabled ? 'Disable' : 'Enable' }}
+                </button>
+                <!-- A phone gets the switch workspace settings uses instead. -->
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="machine.enabled"
+                  aria-label="Enabled"
+                  :disabled="busy"
+                  @click="toggleEnabled"
+                  class="sm:hidden shrink-0 w-11 h-6 rounded-full border transition-colors relative disabled:opacity-50"
+                  :class="machine.enabled ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'"
+                >
+                  <span
+                    class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                    :class="machine.enabled ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"
+                  ></span>
                 </button>
               </div>
             </div>
@@ -685,9 +710,13 @@ async function stopSession(id) {
                   v-if="canControl"
                   :disabled="busy || !machine.online"
                   @click="showRestart = true"
-                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                  :aria-label="updating ? 'Update daemon' : 'Restart daemon'"
+                  class="shrink-0 p-2.5 sm:px-5 sm:py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
                 >
-                  {{ updating ? 'Update daemon' : 'Restart daemon' }}
+                  <span class="hidden sm:inline">{{ updating ? 'Update daemon' : 'Restart daemon' }}</span>
+                  <svg class="sm:hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" :d="REFRESH_ICON" />
+                  </svg>
                 </button>
               </div>
             </div>

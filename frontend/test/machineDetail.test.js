@@ -38,11 +38,11 @@ describe('updateConsequence', () => {
     const text = updateConsequence(3)
     expect(text).toContain('3 running sessions')
     expect(text).toContain('starts them again')
-    expect(text).toContain('not saved is lost')
+    expect(text).toContain('Unsaved work is lost')
   })
 
   it('counts one session as one', () => {
-    expect(updateConsequence(1)).toContain('1 running session')
+    expect(updateConsequence(1)).toContain('1 running session and starts it again')
     expect(updateConsequence(1)).not.toContain('1 running sessions')
   })
 

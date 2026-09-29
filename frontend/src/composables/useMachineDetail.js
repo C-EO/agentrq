@@ -25,11 +25,9 @@ import { isSessionLive } from './useMachineFormat'
  */
 export function updateConsequence(sessionCount) {
   const n = Number.isFinite(sessionCount) ? Math.max(0, sessionCount) : 0
-  if (n === 0) {
-    return 'This restarts the daemon on this machine. Nothing is running on it.'
-  }
-  const agents = n === 1 ? '1 running session' : `${n} running sessions`
-  return `This restarts the daemon on this machine, which stops ${agents} and starts them again. Anything an agent has not saved is lost.`
+  if (n === 0) return 'Nothing is running on it.'
+  if (n === 1) return 'Stops 1 running session and starts it again. Unsaved work is lost.'
+  return `Stops ${n} running sessions and starts them again. Unsaved work is lost.`
 }
 
 /** The first agentrqd that can be restarted or updated from here; wire.MinRemoteControlVersion. */
