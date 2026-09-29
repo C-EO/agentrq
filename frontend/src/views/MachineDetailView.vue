@@ -231,7 +231,7 @@ async function stopSession(id) {
         <!-- With an update on offer, the banner below says it next to the
              button that does it; without one, it is said here. -->
         <p v-if="outdated && !machine.availableVersion" class="text-xs text-red-600 dark:text-red-400 mt-0.5">
-          {{ DAEMON_OUTDATED_HINT }} Update it on the machine itself.
+          {{ DAEMON_OUTDATED_HINT }}
         </p>
       </div>
     </div>

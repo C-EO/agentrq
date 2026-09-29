@@ -197,5 +197,5 @@ export function daemonOutdated(version) {
   return versionAtLeast(version, MIN_FORK_VERSION) === false
 }
 
-/** What the red version says to do about it. */
-export const DAEMON_OUTDATED_HINT = `Update agentrqd to use new features such as workspace forks, which need ${MIN_FORK_VERSION} or newer.`
+/** What the red version says to do about it, kept to one line on a phone. */
+export const DAEMON_OUTDATED_HINT = `Update to ${MIN_FORK_VERSION}+ for forks and more.`

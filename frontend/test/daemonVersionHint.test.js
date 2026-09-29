@@ -106,7 +106,7 @@ describe('MachineDetailView: an old agentrqd', () => {
     expect(red(versionSpan(el))).toBe(true)
     const [hint] = hints(el)
     expect(hints(el)).toHaveLength(1)
-    expect(hint.textContent).toContain('Update it on the machine itself.')
+    expect(hint.parentElement.textContent).toContain('agentrqd 0.9.2')
     expect(el.textContent).not.toContain('is available')
   })
 
