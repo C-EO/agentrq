@@ -36,7 +36,7 @@ A fork's agent runs in a folder of its own, which `agentrqd` makes the first tim
 
 The folder is at `~/.agentrq/forks/<fork id>` on that machine, and the fork's settings page shows its path. The parent must have a working directory set, because that is where the fork's folder is made from.
 
-To run a fork, the machine needs an `agentrqd` new enough to make fork folders. On an older one, the launch is refused with "update agentrqd on this machine to run a fork". If the parent's repository commits its own `.mcp.json` with an AgentRQ workspace entry, a worktree would inherit that entry and point the fork's agent at the parent, so that launch is refused too, with a message naming the file.
+To run a fork, the machine needs `agentrqd` 0.9.3 or newer, the first release that makes fork folders. On an older one, the launch is refused with "update agentrqd on this machine to run a fork (it needs 0.9.3 or newer)". If the parent's repository commits its own `.mcp.json` with an AgentRQ workspace entry, a worktree would inherit that entry and point the fork's agent at the parent, so that launch is refused too, with a message naming the file.
 
 ## Merging a fork back
 

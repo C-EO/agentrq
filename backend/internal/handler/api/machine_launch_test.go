@@ -548,11 +548,17 @@ func TestCoreMCPURLFollowsTheDeployment(t *testing.T) {
 }
 
 // launchFork launches into a fork of "api" on a machine whose daemon said
-// the given capabilities in its hello.
+// the given capabilities in its hello, and the first version that runs forks.
 func launchFork(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string) (*http.Response, wire.StartSession) {
 	t.Helper()
+	return launchForkOn(t, crudCtrl, caps, wire.MinForkVersion)
+}
+
+// launchForkOn is launchFork on a daemon that said the given version.
+func launchForkOn(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version string) (*http.Response, wire.StartSession) {
+	t.Helper()
 	machineID := monoflake.ID(5)
-	crudCtrl.machine = entity.MachineView{ID: machineID.String(), Enabled: true}
+	crudCtrl.machine = entity.MachineView{ID: machineID.String(), Enabled: true, Version: version}
 	conn := &capturingConn{}
 	registry := machinectrl.NewRegistry("test-instance")
 	registry.Add(machineID.Int64(), conn)
@@ -635,11 +641,36 @@ func TestLaunchAgent_AForkIsRefusedOnADaemonThatCannotRunOne(t *testing.T) {
 	}
 }
 
-// Only a fork needs the capability.
+// The capability alone is not enough: a build older than the first release
+// that runs forks, or one that is no release at all, is refused the same way.
+func TestLaunchAgent_AForkIsRefusedOnADaemonBelowTheVersionFloor(t *testing.T) {
+	for _, version := range []string{"0.9.2", "0.9.3-rc1", "dev", ""} {
+		resp, start := launchForkOn(t, forkLaunchCrud(), []string{wire.CapabilityFork}, version)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("%q: status = %d, want 409", version, resp.StatusCode)
+		}
+		if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to run a fork (it needs 0.9.3 or newer)") {
+			t.Errorf("%q: message = %s", version, msg)
+		}
+		if start.SessionID != 0 {
+			t.Errorf("%q: the start was sent anyway", version)
+		}
+	}
+}
+
+// Compared as versions, not text: 0.9.10 is after 0.9.3.
+func TestLaunchAgent_AForkRunsOnALaterDaemon(t *testing.T) {
+	resp, start := launchForkOn(t, forkLaunchCrud(), []string{wire.CapabilityFork}, "0.9.10")
+	if resp.StatusCode != http.StatusAccepted || start.Fork == nil {
+		t.Errorf("status = %d fork = %+v: %s", resp.StatusCode, start.Fork, responseMessage(t, resp))
+	}
+}
+
+// Only a fork needs the capability and the version.
 func TestLaunchAgent_AnOrdinaryWorkspaceNeedsNoCapability(t *testing.T) {
-	resp, start := launchFork(t, &fakeLaunchCrud{
+	resp, start := launchForkOn(t, &fakeLaunchCrud{
 		workspace: entity.Workspace{ID: 1, Name: "api", WorkingDirectory: "/srv/api"},
-	}, nil)
+	}, nil, "dev")
 	if resp.StatusCode != http.StatusAccepted || start.Fork != nil {
 		t.Errorf("status = %d fork = %+v", resp.StatusCode, start.Fork)
 	}
