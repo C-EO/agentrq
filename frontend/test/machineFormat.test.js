@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   formatBytes,
   formatPercent,
@@ -15,6 +17,10 @@ import {
   sessionTone,
   sessionLabel,
   sessionSummary,
+  MIN_FORK_VERSION,
+  versionAtLeast,
+  daemonOutdated,
+  DAEMON_OUTDATED_HINT,
 } from '../src/composables/useMachineFormat.js'
 
 describe('formatBytes', () => {
@@ -197,5 +203,42 @@ describe('what a session row is called', () => {
 
   it('says something for a session it knows nothing about', () => {
     expect(sessionSummary({})).toBe('unknown')
+  })
+})
+
+describe('the agentrqd version floor', () => {
+  it('matches the server', () => {
+    // `wire.MinForkVersion` is what the server refuses a fork below; a page
+    // that disagrees would show a machine as fine that the launch refuses.
+    const src = readFileSync(resolve(__dirname, '../../daemon/wire/version.go'), 'utf-8')
+    expect(src.match(/const MinForkVersion = "([^"]+)"/)?.[1]).toBe(MIN_FORK_VERSION)
+  })
+
+  it('compares as semver, as wire.VersionAtLeast does', () => {
+    expect(versionAtLeast('0.9.3', '0.9.3')).toBe(true)
+    expect(versionAtLeast('0.9.10', '0.9.3')).toBe(true)
+    expect(versionAtLeast('1.0.0', '0.9.3')).toBe(true)
+    expect(versionAtLeast('0.10.0', '0.9.3')).toBe(true)
+    expect(versionAtLeast('0.9.2', '0.9.3')).toBe(false)
+    expect(versionAtLeast('0.8.9', '0.9.3')).toBe(false)
+    // A pre-release is below its release, and the server refuses it too.
+    expect(versionAtLeast('0.9.3-rc1', '0.9.3')).toBe(false)
+    expect(versionAtLeast('0.9.4-rc1', '0.9.3')).toBe(true)
+  })
+
+  it('has no answer for a version that is not a release', () => {
+    for (const v of ['', 'dev', undefined, null, '0.9', 'v0.9.3', '0.9.3+meta']) {
+      expect(versionAtLeast(v, '0.9.3'), String(v)).toBe(null)
+    }
+  })
+
+  it('reads as outdated only when known to be below the floor', () => {
+    expect(daemonOutdated('0.9.2')).toBe(true)
+    expect(daemonOutdated('0.9.3-rc1')).toBe(true)
+    expect(daemonOutdated('0.9.3')).toBe(false)
+    expect(daemonOutdated('0.9.10')).toBe(false)
+    expect(daemonOutdated('')).toBe(false)
+    expect(daemonOutdated('dev')).toBe(false)
+    expect(DAEMON_OUTDATED_HINT).toContain(MIN_FORK_VERSION)
   })
 })

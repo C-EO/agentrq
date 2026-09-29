@@ -33,6 +33,8 @@ import {
   sessionTone,
   sessionLabel,
   sessionSummary,
+  daemonOutdated,
+  DAEMON_OUTDATED_HINT,
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
@@ -76,6 +78,7 @@ const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
 const handUpdateText = `Update agentrqd on this machine by hand to ${REMOTE_CONTROL_MIN_VERSION} or newer to restart or update it from here.`
 const deleteText = computed(() => deleteConsequence(machine.value, liveCount.value))
+const outdated = computed(() => daemonOutdated(machine.value?.version))
 
 const TABS = [
   { id: 'sessions', label: 'Sessions', icon: 'M4 6h16M4 12h16M4 18h7' },
@@ -219,8 +222,16 @@ async function stopSession(id) {
           {{ machine?.name || machine?.hostname || 'Machine' }}
         </h1>
         <p v-if="machine" class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-          {{ machine.os }}/{{ machine.arch }} · agentrqd {{ machine.version || '—' }} ·
-          {{ machine.online ? 'online' : 'offline' }}
+          {{ machine.os }}/{{ machine.arch }} ·
+          <span :class="{ 'text-red-600 dark:text-red-400 font-bold': outdated }"
+            >agentrqd {{ machine.version || '—' }}</span
+          >
+          · {{ machine.online ? 'online' : 'offline' }}
+        </p>
+        <!-- With an update on offer, the banner below says it next to the
+             button that does it; without one, it is said here. -->
+        <p v-if="outdated && !machine.availableVersion" class="text-xs text-red-600 dark:text-red-400 mt-0.5">
+          {{ DAEMON_OUTDATED_HINT }}
         </p>
       </div>
     </div>
@@ -242,6 +253,7 @@ async function stopSession(id) {
             <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
               agentrqd {{ machine.availableVersion }} is available
             </p>
+            <p v-if="outdated" class="text-[11px] text-red-600 dark:text-red-400 mt-1">{{ DAEMON_OUTDATED_HINT }}</p>
             <template v-if="canControl">
               <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
               <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
