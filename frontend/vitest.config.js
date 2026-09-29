@@ -96,6 +96,7 @@ export default defineConfig({
         'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
         'src/composables/useWebMCPChanges.js',
+        'src/composables/useWebMCPScreen.js',
         'src/composables/useAgentSummary.js',
         'src/composables/useAgentTurn.js',
         'src/composables/useSlashCommands.js',

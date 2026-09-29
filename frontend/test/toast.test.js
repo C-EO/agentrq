@@ -100,6 +100,18 @@ describe('Toast', () => {
     expect(links).toEqual([null, 'View task'])
   })
 
+  it('navigates to a path, under its own label, when the link is one', async () => {
+    useToasts().addToast('Browser agent ran: restart daemon', 'info', null, 0, { path: '/machines/m1', label: 'Show' })
+    const el = await mount()
+
+    expect(el.querySelector('.toast-link').textContent).toBe('Show')
+    el.querySelector('.toast').click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(push).toHaveBeenCalledWith('/machines/m1')
+    expect(useToasts().toasts.value).toHaveLength(0)
+  })
+
   it('keeps the whole message on hover, since only two lines show', async () => {
     const long = 'word '.repeat(80).trim()
     useToasts().addToast(long, 'error', 'Error')

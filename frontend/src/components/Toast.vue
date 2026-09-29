@@ -31,7 +31,7 @@
             </div>
             <!-- Two lines at most, four for an error; the whole message is on hover. -->
             <div class="toast-message" :class="{ solo: !toast.title }" :title="toast.message">{{ toast.message }}</div>
-            <div v-if="hasLink(toast)" class="toast-link">View task</div>
+            <div v-if="hasLink(toast)" class="toast-link">{{ toast.link.label || 'View task' }}</div>
           </div>
         </div>
         <button @click.stop="removeToast(toast.id)" class="toast-close" aria-label="Dismiss">
@@ -58,12 +58,13 @@ const router = useRouter();
 // Falsy ids mean the toast has nothing to link to — the same sentinel
 // useStreamToasts.toastFor uses for "no task".
 function hasLink(toast) {
-  return Boolean(toast.link?.taskId && toast.link?.workspaceId);
+  return Boolean(toast.link?.path || (toast.link?.taskId && toast.link?.workspaceId));
 }
 
 function openLink(toast) {
   if (!hasLink(toast)) return;
   removeToast(toast.id);
+  if (toast.link.path) return router.push(toast.link.path);
   router.push(`/workspaces/${toast.link.workspaceId}/tasks/${toast.link.taskId}`);
 }
 
