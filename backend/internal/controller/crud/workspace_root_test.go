@@ -225,7 +225,7 @@ func newForkTaskEnv(t *testing.T) *forkTaskEnv {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}); err != nil {
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()

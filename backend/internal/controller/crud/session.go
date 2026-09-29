@@ -26,7 +26,7 @@ type SessionController interface {
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
-	SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
+	ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
 	RecordSessionKill(ctx context.Context, req entity.RecordSessionKillRequest)
 }
@@ -252,17 +252,30 @@ func (c *controller) ActiveSessionForWorkspace(ctx context.Context, req entity.A
 	return &v, nil
 }
 
-// SessionMachinesForWorkspace names the machines that ever ran a session of a
-// workspace, as base62 ids.
-func (c *controller) SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error) {
+// ForkFolderMachines names the machines holding a fork's folder, as base62
+// ids. A fork with a folder but no machine on record ran before machines were
+// recorded; it is refused rather than answered with none, which would let a
+// merge leave the folder behind and report it gone.
+func (c *controller) ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	wid := monoflake.IDFromBase62(req.WorkspaceID).Int64()
 	if uid == 0 || wid == 0 {
 		return nil, fmt.Errorf("invalid id")
 	}
-	ids, err := c.repository.SessionMachinesForWorkspace(ctx, wid, uid)
+	ids, err := c.repository.ForkFolderMachines(ctx, wid, uid)
 	if err != nil {
 		return nil, err
+	}
+	if len(ids) == 0 {
+		ws, err := c.repository.GetWorkspace(ctx, wid, uid)
+		if err != nil {
+			return nil, err
+		}
+		if ws.WorkingDirectory != "" {
+			return nil, entity.NewForkError(entity.ErrForkAgentRunning,
+				"there is no record of which machine holds the fork's folder — merge without deleting it, and delete "+
+					ws.WorkingDirectory+" by hand")
+		}
 	}
 	out := make([]string, len(ids))
 	for i, id := range ids {

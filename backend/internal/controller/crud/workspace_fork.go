@@ -311,7 +311,13 @@ func (c *controller) RecordForkDirectory(ctx context.Context, req entity.RecordF
 	if err != nil {
 		return err
 	}
-	if ws.ForkOfID == 0 || ws.WorkingDirectory == dir {
+	if ws.ForkOfID == 0 {
+		return nil
+	}
+	if err := c.repository.RecordForkFolder(ctx, ws.ID, session.MachineID, uid); err != nil {
+		return err
+	}
+	if ws.WorkingDirectory == dir {
 		return nil
 	}
 	ws.WorkingDirectory = dir

@@ -32,7 +32,7 @@ type (
 	Crud interface {
 		CheckForkMerge(ctx context.Context, req entity.MergeForkRequest) error
 		ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
-		SessionMachinesForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
+		ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 		GetMachine(ctx context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error)
 		GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 		MergeFork(ctx context.Context, req entity.MergeForkRequest) (*entity.MergeForkResponse, error)
@@ -105,7 +105,7 @@ func (m *Merger) folderMachines(ctx context.Context, rq entity.MergeForkRequest)
 	if !rq.DeleteFolder {
 		return nil, nil
 	}
-	ids, err := m.Crud.SessionMachinesForWorkspace(ctx, entity.ActiveSessionRequest{
+	ids, err := m.Crud.ForkFolderMachines(ctx, entity.ActiveSessionRequest{
 		UserID:      rq.UserID,
 		WorkspaceID: monoflake.ID(rq.WorkspaceID).String(),
 	})

@@ -6,6 +6,7 @@ package crud
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -162,12 +163,12 @@ func TestTheStateIsWrittenBeforeTheRowGoes(t *testing.T) {
 	}
 }
 
-func TestSessionMachinesForWorkspace(t *testing.T) {
+func TestForkFolderMachines(t *testing.T) {
 	env := newTestController(t)
 	uid := monoflake.IDFromBase62(testUserBase62).Int64()
-	env.repo.EXPECT().SessionMachinesForWorkspace(gomock.Any(), int64(7), uid).Return([]int64{3, 4}, nil)
+	env.repo.EXPECT().ForkFolderMachines(gomock.Any(), int64(7), uid).Return([]int64{3, 4}, nil)
 
-	got, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{
+	got, err := env.controller.ForkFolderMachines(t.Context(), entity.ActiveSessionRequest{
 		UserID: testUserBase62, WorkspaceID: monoflake.ID(7).String(),
 	})
 	if err != nil {
@@ -178,14 +179,46 @@ func TestSessionMachinesForWorkspace(t *testing.T) {
 	}
 }
 
-func TestSessionMachinesForWorkspaceFailures(t *testing.T) {
+// No machine on record is an answer only for a fork that never made a folder.
+// One that has a folder ran before machines were recorded, and answering none
+// would let the merge report the folder deleted when nothing deleted it.
+func TestForkFolderMachinesNoneRecorded(t *testing.T) {
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+	req := entity.ActiveSessionRequest{UserID: testUserBase62, WorkspaceID: monoflake.ID(7).String()}
+
 	env := newTestController(t)
-	if _, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{}); err == nil {
+	env.repo.EXPECT().ForkFolderMachines(gomock.Any(), int64(7), uid).Return(nil, nil)
+	env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(7), uid).Return(model.Workspace{ID: 7}, nil)
+	if got, err := env.controller.ForkFolderMachines(t.Context(), req); err != nil || len(got) != 0 {
+		t.Errorf("a fork with no folder: %v, %v", got, err)
+	}
+
+	env = newTestController(t)
+	env.repo.EXPECT().ForkFolderMachines(gomock.Any(), int64(7), uid).Return(nil, nil)
+	env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(7), uid).Return(model.Workspace{ID: 7, WorkingDirectory: "/home/u/.agentrq/forks/7"}, nil)
+	_, err := env.controller.ForkFolderMachines(t.Context(), req)
+	var fe *entity.ForkError
+	if !errors.As(err, &fe) || !errors.Is(err, entity.ErrForkAgentRunning) ||
+		!strings.Contains(err.Error(), "no record of which machine") || !strings.Contains(err.Error(), "/home/u/.agentrq/forks/7") {
+		t.Errorf("a fork with a folder nobody recorded: %v", err)
+	}
+
+	env = newTestController(t)
+	env.repo.EXPECT().ForkFolderMachines(gomock.Any(), int64(7), uid).Return(nil, nil)
+	env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(7), uid).Return(model.Workspace{}, errors.New("database is down"))
+	if _, err := env.controller.ForkFolderMachines(t.Context(), req); err == nil {
+		t.Error("a failed workspace read was swallowed")
+	}
+}
+
+func TestForkFolderMachinesFailures(t *testing.T) {
+	env := newTestController(t)
+	if _, err := env.controller.ForkFolderMachines(t.Context(), entity.ActiveSessionRequest{}); err == nil {
 		t.Error("an empty request was accepted")
 	}
 	uid := monoflake.IDFromBase62(testUserBase62).Int64()
-	env.repo.EXPECT().SessionMachinesForWorkspace(gomock.Any(), int64(7), uid).Return(nil, errors.New("database is down"))
-	if _, err := env.controller.SessionMachinesForWorkspace(t.Context(), entity.ActiveSessionRequest{
+	env.repo.EXPECT().ForkFolderMachines(gomock.Any(), int64(7), uid).Return(nil, errors.New("database is down"))
+	if _, err := env.controller.ForkFolderMachines(t.Context(), entity.ActiveSessionRequest{
 		UserID: testUserBase62, WorkspaceID: monoflake.ID(7).String(),
 	}); err == nil {
 		t.Error("a failed query was swallowed")

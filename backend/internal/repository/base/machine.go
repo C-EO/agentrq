@@ -7,9 +7,11 @@ package base
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -117,8 +119,15 @@ func (r *repository) UpdateMachine(ctx context.Context, m model.Machine) (model.
 }
 
 // DeleteMachine removes a machine, which is how a token is revoked.
+// DeleteMachine deletes a machine, and with it the record of the fork
+// folders it holds: nothing can reach them to delete them any more.
 func (r *repository) DeleteMachine(ctx context.Context, id, userID int64) error {
-	return r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.Machine{}).Error
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("machine_id = ? AND user_id = ?", id, userID).Delete(&model.ForkFolder{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Machine{}).Error
+	})
 }
 
 // TouchMachine records a heartbeat and which backend instance holds the socket.
@@ -230,14 +239,32 @@ func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID,
 	return s, nil
 }
 
-// SessionMachinesForWorkspace lists the machines that ever ran a session of a
-// workspace, finished or not: a fork leaves its folder on each of them.
-func (r *repository) SessionMachinesForWorkspace(ctx context.Context, workspaceID, userID int64) ([]int64, error) {
-	var ids []int64
-	err := r.conn(ctx).Model(&model.Session{}).
+// RecordForkFolder records that a machine holds a fork's folder. Recording
+// it again is a no-op.
+func (r *repository) RecordForkFolder(ctx context.Context, workspaceID, machineID, userID int64) error {
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.ForkFolder{
+		WorkspaceID: workspaceID, MachineID: machineID, UserID: userID, CreatedAt: time.Now(),
+	}).Error
+}
+
+// ForkFolderMachines lists the machines holding a fork's folder: those
+// recorded, and any whose session of it is still running, since a session
+// reports its folder only once it is up.
+func (r *repository) ForkFolderMachines(ctx context.Context, workspaceID, userID int64) ([]int64, error) {
+	var recorded, running []int64
+	if err := r.conn(ctx).Model(&model.ForkFolder{}).
 		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
-		Distinct().Order("machine_id").Pluck("machine_id", &ids).Error
-	return ids, err
+		Pluck("machine_id", &recorded).Error; err != nil {
+		return nil, err
+	}
+	if err := r.conn(ctx).Model(&model.Session{}).
+		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+		Distinct().Pluck("machine_id", &running).Error; err != nil {
+		return nil, err
+	}
+	ids := append(recorded, running...)
+	slices.Sort(ids)
+	return slices.Compact(ids), nil
 }
 
 // UpdateSessionState records what the daemon reported.

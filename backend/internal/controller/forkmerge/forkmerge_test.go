@@ -69,7 +69,7 @@ func (f *fakeCrud) ActiveSessionForWorkspace(_ context.Context, req entity.Activ
 	return f.session, nil
 }
 
-func (f *fakeCrud) SessionMachinesForWorkspace(_ context.Context, req entity.ActiveSessionRequest) ([]string, error) {
+func (f *fakeCrud) ForkFolderMachines(_ context.Context, req entity.ActiveSessionRequest) ([]string, error) {
 	if req.WorkspaceID != monoflake.ID(forkID).String() || req.UserID != userID {
 		return nil, errors.New("asked about the wrong workspace")
 	}
