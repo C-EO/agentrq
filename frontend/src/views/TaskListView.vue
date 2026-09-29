@@ -92,8 +92,8 @@
           <LoadingState label="Loading tasks..." />
         </div>
         
-        <div v-else class="space-y-6 pb-6 overflow-y-auto custom-scrollbar px-4">
-          <div v-for="grp in displayGroups" :key="grp.title" class="mb-4">
+        <div v-else class="space-y-6 pb-20 md:pb-0 overflow-y-auto custom-scrollbar px-4">
+          <div v-for="grp in displayGroups" :key="grp.title" class="mb-4 md:last:mb-0">
             <div class="mb-3 flex items-center gap-3">
               <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">{{ grp.title }}</h3>
               <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm">{{ grp.tasks.length }}</span>
@@ -175,13 +175,12 @@
                 </div>
               </template>
             </div>
+
+            <!-- One page runs across every group, so the button closes the last one. -->
+            <LoadMoreButton v-if="hasMore && tasks.length > 0 && grp === displayGroups[displayGroups.length - 1]" class="mt-2"
+                            :loading="loadingMore" @click="loadMore" />
           </div>
         </div>
-
-          <!-- Sticky Load More -->
-          <div v-if="hasMore && tasks.length > 0" class="sticky bottom-0 left-0 right-0 p-4 flex justify-center bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-30">
-            <LoadMoreButton :loading="loadingMore" @click="loadMore" />
-          </div>
         </div>
       
 

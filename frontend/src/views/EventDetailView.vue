@@ -16,6 +16,7 @@ import { useTooltipStore } from '../stores/tooltipStore'
 import { triggerWorkspaceTooltip, workspaceLabel } from '../composables/useWorkflowLabels'
 import DeleteModal from '../components/DeleteModal.vue'
 import LoadingState from '../components/LoadingState.vue'
+import LoadMoreButton from '../components/LoadMoreButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -617,12 +618,7 @@ onWebMCPChange(() => Promise.all([
             </div>
             <svg class="w-4 h-4 text-gray-300 dark:text-zinc-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
           </router-link>
-          <button
-            v-if="hasMoreTasks"
-            @click="loadMoreTasks"
-            class="w-full py-2 text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 border border-gray-100 dark:border-zinc-800 rounded-xl hover:border-gray-200 dark:hover:border-zinc-700 transition-all">
-            Load more ({{ tasks.length - visibleTaskCount }} remaining)
-          </button>
+          <LoadMoreButton v-if="hasMoreTasks" @click="loadMoreTasks" />
         </div>
       </div>
     </div>

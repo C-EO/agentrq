@@ -49,9 +49,9 @@
     <!-- Action Bar moved to parent for better layout consistency -->
 
     <!-- Single List Area -->
-    <div class="flex-1 overflow-y-auto pb-20 custom-scrollbar relative px-4">
+    <div class="flex-1 overflow-y-auto pb-20 md:pb-0 custom-scrollbar relative px-4">
       <div class="space-y-6">
-        <div v-for="grp in displayGroups" :key="grp.title" class="mb-4">
+        <div v-for="grp in displayGroups" :key="grp.title" class="mb-4 md:last:mb-0">
           <div class="mb-3 flex items-center gap-3">
             <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">{{ grp.title }}</h3>
             <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm">{{ grp.totalCount !== undefined ? grp.totalCount : grp.tasks.length }}</span>
@@ -128,16 +128,11 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-      
-      <!-- Sticky Load More Footer -->
-      <div v-if="displayGroups.find(g => g.hasMore)" class="sticky bottom-0 left-0 right-0 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-30 flex flex-col items-center gap-2">
-        <template v-for="grp in displayGroups" :key="'more-' + grp.title">
-          <LoadMoreButton v-if="grp.hasMore" :label="`Load More ${grp.title}`"
+
+          <LoadMoreButton v-if="grp.hasMore" class="mt-2"
                           :loading="loadingMore === grp.category"
                           @click="loadMoreGroup(grp.category)" />
-        </template>
+        </div>
       </div>
     </div>
     

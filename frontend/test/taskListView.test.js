@@ -195,7 +195,7 @@ describe('the sidebar task list', () => {
     let release
     const el = await mount(TaskListView)
     fetchGlobalTasks.mockImplementationOnce(() => new Promise((r) => { release = r }))
-    button(el, 'Load More Entries').click()
+    button(el, 'Load More').click()
     await settle()
 
     expect(rows(el)).toHaveLength(10)
@@ -204,7 +204,7 @@ describe('the sidebar task list', () => {
     release({ tasks: pages[1] })
     await settle()
     expect(rows(el)).toHaveLength(12)
-    expect(button(el, 'Load More Entries')).toBeUndefined()
+    expect(button(el, 'Load More')).toBeUndefined()
   })
 
   // One piece of activity arrives as a burst of events, each a refresh of its own.
@@ -264,7 +264,7 @@ describe('the sidebar task list', () => {
     const answers = []
     fetchGlobalTasks.mockImplementation(() => new Promise((r) => answers.push(r)))
 
-    button(el, 'Load More Entries').click()
+    button(el, 'Load More').click()
     await settle()
     busEvents.value = [...busEvents.value, { type: 'task.created' }]
     await settle()
@@ -283,11 +283,11 @@ describe('a workspace task list', () => {
     const el = await mount(TaskFeed, { workspaceId: 'w1', filter: 'notstarted' })
     expect(rows(el)).toHaveLength(10)
 
-    button(el, 'Load More Not Started').click()
+    button(el, 'Load More').click()
     await settle()
     expect(fetchTasks).toHaveBeenLastCalledWith('w1', { status: 'notstarted', limit: 10, offset: 10 })
     expect(rows(el)).toHaveLength(11)
-    expect(button(el, 'Load More Not Started')).toBeUndefined()
+    expect(button(el, 'Load More')).toBeUndefined()
   })
 
   it('edits under its workspace', async () => {
