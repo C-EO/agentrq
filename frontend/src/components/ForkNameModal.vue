@@ -9,7 +9,8 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue';
 import ForkIcon from './ForkIcon.vue';
-import { MAX_WORKSPACE_NAME } from '../composables/useWorkspaceForks';
+import { MAX_WORKSPACE_NAME, kebabName } from '../composables/useWorkspaceForks';
+import { useFormat } from '../composables/useFormat';
 
 const props = defineProps({
   show: Boolean,
@@ -20,6 +21,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
 const input = ref(null);
+const { liveKebabCase } = useFormat();
 
 watch(() => props.show, async (open) => {
   if (!open) return;
@@ -28,8 +30,17 @@ watch(() => props.show, async (open) => {
   input.value?.select();
 });
 
+// Named as the workspace form names a workspace: kebab-case as it is typed.
+// The field is rewritten too, since a keystroke that is dropped leaves the
+// model, and so the prop, unchanged.
+function onInput(event) {
+  const formatted = liveKebabCase(event.target.value);
+  event.target.value = formatted;
+  emit('update:modelValue', formatted);
+}
+
 function confirm() {
-  if (!props.modelValue.trim() || props.busy) return;
+  if (!kebabName(props.modelValue) || props.busy) return;
   emit('confirm', props.modelValue);
 }
 </script>
@@ -56,7 +67,7 @@ function confirm() {
                 </p>
                 <label for="fork-name" class="block mt-4 text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Name</label>
                 <input id="fork-name" ref="input" type="text" :value="modelValue" :maxlength="MAX_WORKSPACE_NAME"
-                       @input="emit('update:modelValue', $event.target.value)"
+                       @input="onInput"
                        spellcheck="false" autocapitalize="off" autocorrect="off"
                        class="mt-1 w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-3 py-2 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-semibold text-gray-900 dark:text-zinc-100" />
               </div>
@@ -64,7 +75,7 @@ function confirm() {
           </div>
 
           <div class="bg-gray-50/50 dark:bg-zinc-800/50 px-6 py-5 sm:px-8 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-100 dark:border-zinc-800">
-            <button type="submit" :disabled="!modelValue.trim() || busy"
+            <button type="submit" :disabled="!kebabName(modelValue) || busy"
                     class="w-full inline-flex justify-center rounded-sm px-6 py-2.5 bg-black dark:bg-white text-[10px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 sm:w-auto">
               {{ busy ? 'Forking…' : 'Fork' }}
             </button>

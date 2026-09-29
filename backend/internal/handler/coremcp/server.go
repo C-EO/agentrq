@@ -179,7 +179,7 @@ type CreateWorkspaceParams struct {
 
 type ForkWorkspaceParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace to fork (base62)"`
-	Name        string `json:"name,omitempty" jsonschema:"Name for the fork, at most 128 characters. Defaults to '<parent> fork'"`
+	Name        string `json:"name,omitempty" jsonschema:"Name for the fork in kebab-case, like other workspace names, at most 128 characters. Defaults to '<parent>-fork'"`
 }
 
 type MergeForkParams struct {

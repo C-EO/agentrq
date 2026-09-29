@@ -48,10 +48,12 @@ describe('names', () => {
   });
 
   it('starts the prompt on the server default, still fitting', () => {
-    expect(defaultForkName('ops')).toBe('ops fork');
+    expect(defaultForkName('ops')).toBe('ops-fork');
+    expect(defaultForkName('Billing API')).toBe('billing-api-fork');
+    expect(defaultForkName('проект')).toBe('fork');
     const long = defaultForkName('x'.repeat(200));
     expect(long).toHaveLength(MAX_WORKSPACE_NAME);
-    expect(long.endsWith(' fork')).toBe(true);
+    expect(long.endsWith('x-fork')).toBe(true);
   });
 
   it('names the parent from the list, then the store, then generically', () => {
@@ -123,10 +125,10 @@ describe('useForkActions: forking', () => {
     const { actions, router, store, toasts, deps } = setup();
     actions.startFork(parent);
     expect(actions.state.forking).toEqual(parent);
-    expect(actions.state.forkName).toBe('ops fork');
+    expect(actions.state.forkName).toBe('ops-fork');
 
-    const made = await actions.confirmFork('  ops try  ');
-    expect(deps.forkWorkspace).toHaveBeenCalledWith('p1', { name: 'ops try' });
+    const made = await actions.confirmFork('  Ops try  ');
+    expect(deps.forkWorkspace).toHaveBeenCalledWith('p1', { name: 'ops-try' });
     expect(store.fetchWorkspaces).toHaveBeenCalled();
     expect(toasts.notifySuccess).toHaveBeenCalledWith('Forked ops');
     expect(router.push).toHaveBeenCalledWith('/workspaces/f9');

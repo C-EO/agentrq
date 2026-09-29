@@ -44,7 +44,7 @@ func parentWorkspace() model.Workspace {
 
 func forkWorkspace() model.Workspace {
 	f := parentWorkspace()
-	f.ID, f.Name, f.WorkingDirectory, f.ForkOfID = fkFork, "api fork", "", fkParent
+	f.ID, f.Name, f.WorkingDirectory, f.ForkOfID = fkFork, "api-fork", "", fkParent
 	return f
 }
 
@@ -74,7 +74,7 @@ func TestForkWorkspace_CopiesTheParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.ID != fkFork || created.ForkOfID != fkParent || created.Name != "api fork" || created.UserID != testUserID {
+	if created.ID != fkFork || created.ForkOfID != fkParent || created.Name != "api-fork" || created.UserID != testUserID {
 		t.Errorf("created = %+v", created)
 	}
 	if created.Icon != "icon" || created.Description != "the API" {
@@ -116,14 +116,30 @@ func TestForkWorkspace_TakesTheGivenName(t *testing.T) {
 	}
 }
 
-func TestForkName_FitsTheColumn(t *testing.T) {
-	if got := forkName("api"); got != "api fork" {
-		t.Errorf("forkName = %q", got)
+// Kebab-case, like every workspace name the web app makes.
+func TestForkName_IsKebabCase(t *testing.T) {
+	for parent, want := range map[string]string{
+		"api":            "api-fork",
+		"Billing API":    "billing-api-fork",
+		"  --Ops__v2!! ": "ops-v2-fork",
+		"проект":         "fork", // nothing kebab-case is left of it
+		"":               "fork",
+	} {
+		if got := forkName(parent); got != want {
+			t.Errorf("forkName(%q) = %q, want %q", parent, got, want)
+		}
 	}
-	long := strings.Repeat("é", 200)
-	got := forkName(long)
-	if n := len([]rune(got)); n != maxWorkspaceNameRunes || !strings.HasSuffix(got, " fork") {
-		t.Errorf("forkName of 200 runes = %d runes, %q", n, got[len(got)-10:])
+}
+
+func TestForkName_FitsTheColumn(t *testing.T) {
+	got := forkName(strings.Repeat("x", 200))
+	if len(got) != maxWorkspaceNameRunes || !strings.HasSuffix(got, "x-fork") {
+		t.Errorf("forkName of 200 characters = %d, %q", len(got), got[len(got)-10:])
+	}
+	// A cut that lands on a hyphen does not leave two.
+	cut := forkName(strings.Repeat("x", maxWorkspaceNameRunes-6) + " yz")
+	if strings.Contains(cut, "--") || len(cut) > maxWorkspaceNameRunes {
+		t.Errorf("forkName = %q", cut)
 	}
 }
 

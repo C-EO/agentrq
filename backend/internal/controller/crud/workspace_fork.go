@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
+	"strings"
 	"time"
-	"unicode/utf8"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -83,14 +84,22 @@ func (c *controller) ForkWorkspace(ctx context.Context, req entity.ForkWorkspace
 	return &entity.ForkWorkspaceResponse{Workspace: w}, nil
 }
 
-// forkName is the name a fork gets when none is given, cut so it still fits.
+// notKebab is what kebab-case turns into a single hyphen, as the web app's
+// workspace form does.
+var notKebab = regexp.MustCompile(`[^a-z0-9]+`)
+
+// forkName is the name a fork gets when none is given: "<parent>-fork" in
+// kebab-case, like every workspace name, cut so it still fits.
 func forkName(parent string) string {
-	const suffix = " fork"
-	keep := maxWorkspaceNameRunes - utf8.RuneCountInString(suffix)
-	if utf8.RuneCountInString(parent) > keep {
-		parent = string([]rune(parent)[:keep])
+	const suffix = "-fork"
+	base := strings.Trim(notKebab.ReplaceAllString(strings.ToLower(parent), "-"), "-")
+	if keep := maxWorkspaceNameRunes - len(suffix); len(base) > keep {
+		base = strings.TrimRight(base[:keep], "-") // ASCII only, so bytes are runes
 	}
-	return parent + suffix
+	if base == "" {
+		return "fork"
+	}
+	return base + suffix
 }
 
 // MergeFork moves every task of a fork back into its parent and removes the

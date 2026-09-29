@@ -27,7 +27,7 @@ import {
   useAcpGatewaySuggestions,
 } from './useAgentLaunch'
 import { launchableMachines, machineChoiceEligibility } from './useWorkspaceAgentLaunch'
-import { canFork, fitName } from './useWorkspaceForks'
+import { canFork, kebabName } from './useWorkspaceForks'
 import { launchTerminalSize } from './useLaunchTerminalSize'
 
 /** A task still waiting on work: a schedule is a template, not work to hand off. */
@@ -38,9 +38,9 @@ export function canSpinUp(task, workspace) {
   return !!task && UNFINISHED.includes(task.status) && canFork(workspace)
 }
 
-/** The fork is named after the task, cut to what a workspace name may hold. */
+/** The fork is named after the task, in kebab-case, cut to what a workspace name may hold. */
 export function spinUpName(task) {
-  return fitName(task?.title) || 'spin up'
+  return kebabName(task?.title) || 'spin-up'
 }
 
 /** What each step is called when it fails. */

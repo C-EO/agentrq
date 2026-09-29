@@ -111,7 +111,7 @@ describe('the sidebar', () => {
     expect(again.querySelector('[data-test=sidebar-fork]')).toBeTruthy()
   })
 
-  it('offers Fork on a right-click, prompts on "<name> fork", forks and goes to it', async () => {
+  it('offers Fork on a right-click, prompts on "<name>-fork", forks and goes to it', async () => {
     const { el } = sidebar()
     await settle()
     const row = el.querySelector('[data-test=sidebar-workspace] a')
@@ -123,13 +123,29 @@ describe('the sidebar', () => {
     menuButtons()[0].click()
     await settle()
     const input = document.body.querySelector('#fork-name')
-    expect(input.value).toBe('ops fork')
-    input.value = 'ops experiment'
+    expect(input.value).toBe('ops-fork')
+    input.value = 'Ops experiment'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    expect(input.value).toBe('ops-experiment')
+    input.value = 'ops-experiment!'
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    expect(input.value).toBe('ops-experiment') // a dropped keystroke leaves the field as it was
+    input.value = ' '
+    input.dispatchEvent(new Event('input'))
+    await settle()
+    const submit = document.body.querySelector('[aria-labelledby=fork-modal-title] button[type=submit]')
+    expect(submit.disabled).toBe(true) // "-" is no name
+    document.body.querySelector('[aria-labelledby=fork-modal-title] form').dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    expect(forkWorkspace).not.toHaveBeenCalled()
+    input.value = 'ops-experiment'
     input.dispatchEvent(new Event('input'))
     await settle()
     document.body.querySelector('[aria-labelledby=fork-modal-title] form').dispatchEvent(new Event('submit', { cancelable: true }))
     await settle()
-    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'ops experiment' })
+    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'ops-experiment' })
     expect(push).toHaveBeenCalledWith('/workspaces/f9')
   })
 
@@ -197,7 +213,7 @@ describe('the sidebar', () => {
     expect(menuButtons().map(text)).toEqual(['Fork workspace'])
     menuButtons()[0].click()
     await settle()
-    expect(document.body.querySelector('#fork-name').value).toBe('web fork')
+    expect(document.body.querySelector('#fork-name').value).toBe('web-fork')
   })
 
   it('offers nothing on the supervisor workspace', async () => {
@@ -263,11 +279,11 @@ describe('the Move dialog', () => {
     dialog().querySelector('[data-test=move-new-fork]').click()
     await settle()
     const name = dialog().querySelector('#move-fork-name')
-    expect(name.value).toBe('Fix login')
+    expect(name.value).toBe('fix-login')
     const go = [...dialog().querySelectorAll('button')].find((b) => text(b) === 'Fork and move')
     go.click()
     await settle()
-    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'Fix login' })
+    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'fix-login' })
     expect(fetchWorkspaces).toHaveBeenCalled()
     expect(onConfirm).toHaveBeenCalledWith('f9')
   })
@@ -281,6 +297,7 @@ describe('the Move dialog', () => {
     name.value = '  '
     name.dispatchEvent(new Event('input'))
     await settle()
+    expect(name.value).toBe('-') // kebab-cased as typed, and still no name
     const go = [...dialog().querySelectorAll('button')].find((b) => text(b) === 'Fork and move')
     expect(go.disabled).toBe(true)
     name.value = 'x'

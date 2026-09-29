@@ -23,7 +23,7 @@ const rows = {
   cron: [{ id: 't2', title: 'Nightly', status: 'cron', cronSchedule: '0 0 * * *', assignee: 'agent', workspaceId: 'p1' }],
   'completed,rejected': [{ id: 't3', title: 'Done thing', status: 'completed', assignee: 'agent', workspaceId: 'p1' }],
 }
-const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'Fix login' } }))
+const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'fix-login' } }))
 const moveTask = vi.fn(() => Promise.resolve({}))
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
 vi.mock('../src/api', async (importOriginal) => ({
@@ -88,7 +88,7 @@ describe('Spin up on a task row', () => {
     await settle()
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
-    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'Fix login' })
+    expect(forkWorkspace).toHaveBeenCalledWith('p1', { name: 'fix-login' })
     expect(moveTask).toHaveBeenCalledWith('p1', 't1', 'f1')
     expect(push).toHaveBeenCalledWith('/sessions/s1')
     expect(row('Fix login')).toBeUndefined()
