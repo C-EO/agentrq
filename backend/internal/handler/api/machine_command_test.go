@@ -160,6 +160,52 @@ func TestApproveMachineUpdateSendsTheApprovedVersionAndCountsIt(t *testing.T) {
 	}
 }
 
+// The restart route is the page's one command: with the offered version it
+// updates, and counts it as an update.
+func TestRestartDaemonWithAVersionUpdates(t *testing.T) {
+	reg, conn := connected(wire.CapabilityRestart, wire.CapabilityUpdate)
+	c := &commandCrud{running: "0.9.3", offered: "0.9.4"}
+	app := commandApp(c, reg)
+
+	if status, body := post(t, app, "/machines/"+machine11+"/restart", `{"version":"0.9.4"}`); status != http.StatusAccepted {
+		t.Fatalf("status = %d (%s), want 202", status, body)
+	}
+	ops := conn.ops(t)
+	if len(ops) != 1 || ops[0].Op != wire.OpUpdateNow {
+		t.Fatalf("sent %+v", ops)
+	}
+	var req wire.UpdateNow
+	if err := json.Unmarshal(ops[0].Body, &req); err != nil || req.Version != "0.9.4" {
+		t.Errorf("sent %s (%v)", ops[0].Body, err)
+	}
+	if len(c.recorded) != 1 || c.recorded[0].Action != entity.ActionMachineUpdate {
+		t.Errorf("counted %+v", c.recorded)
+	}
+
+	// An empty object is a plain restart, like no body at all.
+	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `{}`); status != http.StatusAccepted {
+		t.Errorf("{}: status = %d, want 202", status)
+	}
+	if ops := conn.ops(t); len(ops) != 2 || ops[1].Op != wire.OpRestart {
+		t.Errorf("sent %+v", ops)
+	}
+}
+
+func TestRestartDaemonRefusals(t *testing.T) {
+	reg, conn := connected(wire.CapabilityRestart, wire.CapabilityUpdate)
+	app := commandApp(&commandCrud{running: "0.9.3", offered: "0.9.4"}, reg)
+
+	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `{"version":"0.9.9"}`); status != http.StatusConflict {
+		t.Errorf("a version never offered: status = %d, want 409", status)
+	}
+	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `not json`); status != http.StatusUnprocessableEntity {
+		t.Errorf("an unreadable body: status = %d, want 422", status)
+	}
+	if len(conn.ops(t)) != 0 {
+		t.Errorf("sent %d", len(conn.ops(t)))
+	}
+}
+
 // An older daemon is refused rather than sent something it would ignore, or
 // act on without bringing its agents back listed.
 func TestAnOlderDaemonIsNotSentACommand(t *testing.T) {

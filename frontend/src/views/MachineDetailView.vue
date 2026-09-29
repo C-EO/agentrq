@@ -48,12 +48,11 @@ const { notifySuccess, notifyError } = useToasts()
 
 const machineId = String(route.params.id ?? '')
 const detail = useMachineDetail({ machineId })
-const { machine, sessions, liveSessions, canControl, loading, error, busy } = detail
+const { machine, sessions, liveSessions, canControl, updating, loading, error, busy } = detail
 
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
 const showDelete = ref(false)
-const showUpdate = ref(false)
 const showRestart = ref(false)
 
 // Destructured because refs keep their reactivity through it, and the
@@ -150,19 +149,12 @@ async function confirmDelete() {
   }
 }
 
-async function confirmUpdate() {
-  showUpdate.value = false
-  if (await detail.approveUpdate()) {
-    notifySuccess('The machine is updating; its sessions will come back as new terminals')
-  } else {
-    notifyError(error.value)
-  }
-}
-
 async function confirmRestart() {
   showRestart.value = false
+  // Read before the call: the daemon's next hello clears the offer.
+  const doing = updating.value ? 'updating' : 'restarting'
   if (await detail.restart()) {
-    notifySuccess('The machine is restarting; its sessions will come back as new terminals')
+    notifySuccess(`The machine is ${doing}; its sessions will come back as new terminals`)
   } else {
     notifyError(error.value)
   }
@@ -257,10 +249,10 @@ async function stopSession(id) {
           <button
             v-if="canControl"
             :disabled="busy || !machine.online"
-            @click="showUpdate = true"
+            @click="showRestart = true"
             class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
           >
-            Update and restart
+            Update daemon
           </button>
         </div>
 
@@ -682,7 +674,9 @@ async function stopSession(id) {
                 class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
               >
                 <div class="min-w-0">
-                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">Restart agentrqd</p>
+                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+                    {{ updating ? `Update agentrqd to ${machine.availableVersion}` : 'Restart agentrqd' }}
+                  </p>
                   <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
                     {{ canControl ? updateText : handUpdateText }}
                   </p>
@@ -693,7 +687,7 @@ async function stopSession(id) {
                   @click="showRestart = true"
                   class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
                 >
-                  Restart
+                  {{ updating ? 'Update daemon' : 'Restart daemon' }}
                 </button>
               </div>
             </div>
@@ -736,21 +730,12 @@ async function stopSession(id) {
     />
 
     <!-- A bare "Update?" is not consent: the person pressing it is usually not
-         the person whose agent is mid-task. -->
-    <DeleteModal
-      :show="showUpdate"
-      title="Update and restart"
-      :message="updateText"
-      confirm-label="Update"
-      @close="showUpdate = false"
-      @confirm="confirmUpdate"
-    />
-
+         the person whose agent is mid-task. One confirm for the one command. -->
     <DeleteModal
       :show="showRestart"
-      title="Restart agentrqd"
+      :title="updating ? `Update agentrqd to ${machine?.availableVersion}` : 'Restart agentrqd'"
       :message="updateText"
-      confirm-label="Restart"
+      :confirm-label="updating ? 'Update' : 'Restart'"
       @close="showRestart = false"
       @confirm="confirmRestart"
     />

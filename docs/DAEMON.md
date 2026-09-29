@@ -322,8 +322,10 @@ and forgotten.
 ## Restarts and updates
 
 A machine running agentrqd **0.9.3 or newer** can be restarted from its page
-in the control panel, and updated there once it has found a newer release.
-Older daemons have to be updated by hand once; after that, the panel can do it.
+in the control panel. It is one command: once the daemon has found a newer
+release, the button reads **Update daemon** and installs that release on the
+way; otherwise it reads **Restart daemon**. Older daemons have to be updated by
+hand once; after that, the panel can do it.
 
 The daemon checks for new releases and tells the control panel when there is
 one. **It never updates itself on its own initiative.** Somebody has to approve

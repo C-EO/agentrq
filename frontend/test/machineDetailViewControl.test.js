@@ -20,7 +20,6 @@ vi.mock('../src/useEventBus', () => ({
 
 let machine
 const restartDaemon = vi.fn()
-const approveMachineUpdate = vi.fn()
 
 vi.mock('../src/api', () => ({
   getMachine: () => Promise.resolve({ machine }),
@@ -32,7 +31,6 @@ vi.mock('../src/api', () => ({
   updateMachine: vi.fn(),
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
-  approveMachineUpdate: (...args) => approveMachineUpdate(...args),
   restartDaemon: (...args) => restartDaemon(...args),
   API_BASE_URL: '/api/v1',
 }))
@@ -63,7 +61,6 @@ const lastToast = () => useToasts().toasts.value.at(-1)
 beforeEach(() => {
   machine = { id: 'm1', name: 'pi', enabled: true, online: true, os: 'linux', arch: 'arm64', version: '0.9.3' }
   restartDaemon.mockReset().mockResolvedValue(true)
-  approveMachineUpdate.mockReset().mockResolvedValue(true)
 })
 afterEach(() => {
   app?.unmount()
@@ -74,7 +71,7 @@ describe('MachineDetailView: restarting the daemon', () => {
   it('asks, and says so, after a confirm that names what it stops', async () => {
     const page = await mount()
     await page.click('Settings')
-    await page.click('Restart')
+    await page.click('Restart daemon')
 
     expect(document.body.textContent).toContain('Restart agentrqd')
     expect(document.body.textContent).toContain('Nothing is running on it')
@@ -85,7 +82,7 @@ describe('MachineDetailView: restarting the daemon', () => {
     confirm.click()
     await settle()
 
-    expect(restartDaemon).toHaveBeenCalledWith('m1')
+    expect(restartDaemon).toHaveBeenCalledWith('m1', '')
     expect(lastToast().message).toContain('restarting')
   })
 
@@ -93,7 +90,7 @@ describe('MachineDetailView: restarting the daemon', () => {
     restartDaemon.mockRejectedValue(new Error('that machine is not connected'))
     const page = await mount()
     await page.click('Settings')
-    await page.click('Restart')
+    await page.click('Restart daemon')
     ;[...document.body.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Restart').at(-1).click()
     await settle()
 
@@ -104,7 +101,7 @@ describe('MachineDetailView: restarting the daemon', () => {
     machine.online = false
     const page = await mount()
     await page.click('Settings')
-    expect(page.button('Restart').disabled).toBe(true)
+    expect(page.button('Restart daemon').disabled).toBe(true)
   })
 
   it('tells an older daemon to be updated by hand instead', async () => {
@@ -113,28 +110,43 @@ describe('MachineDetailView: restarting the daemon', () => {
     const page = await mount()
     await page.click('Settings')
 
-    expect(page.button('Restart')).toBe(undefined)
-    expect(page.button('Update and restart')).toBe(undefined)
+    expect(page.button('Restart daemon')).toBe(undefined)
+    expect(page.button('Update daemon')).toBe(undefined)
     expect(page.el.textContent).toContain('by hand to 0.9.3 or newer')
   })
 })
 
-describe('MachineDetailView: updating the daemon', () => {
-  it('installs the offered version after a confirm', async () => {
+describe('MachineDetailView: updating the daemon, the same command', () => {
+  it('installs the offered version after a confirm, from the banner', async () => {
     machine.availableVersion = '0.9.4'
     const page = await mount()
-    await page.click('Update and restart')
+    await page.click('Update daemon')
+    expect(document.body.textContent).toContain('Update agentrqd to 0.9.4')
     await page.click('Update')
 
-    expect(approveMachineUpdate).toHaveBeenCalledWith('m1', '0.9.4')
+    expect(restartDaemon).toHaveBeenCalledWith('m1', '0.9.4')
     expect(lastToast().message).toContain('updating')
+  })
+
+  it('is offered in Settings instead of a plain restart', async () => {
+    machine.availableVersion = '0.9.4'
+    const page = await mount()
+    await page.click('Settings')
+    expect(page.button('Restart daemon')).toBe(undefined)
+    // The banner's button and the Settings one are the same command.
+    const updates = [...page.el.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Update daemon')
+    expect(updates).toHaveLength(2)
+    updates[1].click()
+    await settle()
+    await page.click('Update')
+    expect(restartDaemon).toHaveBeenCalledWith('m1', '0.9.4')
   })
 
   it('says why when the update was refused', async () => {
     machine.availableVersion = '0.9.4'
-    approveMachineUpdate.mockRejectedValue(new Error('that machine has not offered that update'))
+    restartDaemon.mockRejectedValue(new Error('that machine has not offered that update'))
     const page = await mount()
-    await page.click('Update and restart')
+    await page.click('Update daemon')
     await page.click('Update')
 
     expect(lastToast().message).toBe('that machine has not offered that update')

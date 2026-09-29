@@ -58,6 +58,10 @@ func (h *handler) registerMachineRoutes() {
 // in those words before it gets here, and the version is required so that
 // "yes" means yes to a particular release rather than to whatever the feed
 // offers by the time the daemon looks.
+//
+// The page now sends the version to the restart route instead; this route
+// stays for the desktop builds already installed, which bundle a page that
+// still calls it.
 func (h *handler) approveMachineUpdate() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
@@ -69,54 +73,32 @@ func (h *handler) approveMachineUpdate() fiber.Handler {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
 		}
-
-		ctx, cancel := newContext(c)
-		defer cancel()
-
-		approved, err := h.crud.ApproveMachineUpdate(ctx, entity.ApproveMachineUpdateRequest{
-			UserID:    c.Locals("user_id").(string),
-			MachineID: c.Params("id"),
-			Version:   payload.Version,
-		})
-		if err != nil {
-			if errors.Is(err, _crud.ErrNoUpdateOffered) {
-				c.Status(http.StatusConflict)
-				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
-			}
-			e, status := mapper.FromErrorToHTTPResponse(err)
-			c.Status(status)
-			return c.Send(e)
-		}
-
-		if !h.commandMachine(c, approved.MachineID, approved.RunningVersion, wire.CapabilityUpdate,
-			wire.OpUpdateNow, wire.UpdateNow{Version: approved.Version}) {
-			return nil
-		}
-
-		// Audited, because this destroys work that somebody else may be in the
-		// middle of. Who approved it, for which machine, to which version.
-		zlog.Info().
-			Str("user_id", c.Locals("user_id").(string)).
-			Int64("machine_id", approved.MachineID).
-			Str("version", approved.Version).
-			Msg("[audit] agentrqd update approved")
-		h.crud.RecordMachineCommand(ctx, entity.RecordMachineCommandRequest{
-			UserID:    c.Locals("user_id").(string),
-			MachineID: approved.MachineID,
-			Action:    entity.ActionMachineUpdate,
-		})
-
-		c.Status(http.StatusAccepted)
-		return nil
+		return h.updateDaemon(c, payload.Version)
 	}
 }
 
-// restartDaemon tells a daemon to restart, which stops every session on that
-// machine and starts them again. Answers 202: the daemon's next hello is what
-// says it came back.
+// restartDaemon is the one command the machine page and WebMCP send: with the
+// version the daemon offered it updates to that release, which restarts it;
+// without one it only restarts. Either stops every session on that machine
+// and starts them again. Answers 202: the daemon's next hello is what says it
+// came back.
 func (h *handler) restartDaemon() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
+
+		var payload struct {
+			Version string `json:"version"`
+		}
+		if len(c.Body()) > 0 {
+			if err := c.BodyParser(&payload); err != nil {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(_invalidPayload)
+			}
+		}
+		if payload.Version != "" {
+			return h.updateDaemon(c, payload.Version)
+		}
+
 		ctx, cancel := newContext(c)
 		defer cancel()
 
@@ -147,6 +129,48 @@ func (h *handler) restartDaemon() fiber.Handler {
 		c.Status(http.StatusAccepted)
 		return nil
 	}
+}
+
+// updateDaemon sends the update a machine offered, to exactly that version.
+func (h *handler) updateDaemon(c *fiber.Ctx, version string) error {
+	ctx, cancel := newContext(c)
+	defer cancel()
+
+	approved, err := h.crud.ApproveMachineUpdate(ctx, entity.ApproveMachineUpdateRequest{
+		UserID:    c.Locals("user_id").(string),
+		MachineID: c.Params("id"),
+		Version:   version,
+	})
+	if err != nil {
+		if errors.Is(err, _crud.ErrNoUpdateOffered) {
+			c.Status(http.StatusConflict)
+			return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
+		}
+		e, status := mapper.FromErrorToHTTPResponse(err)
+		c.Status(status)
+		return c.Send(e)
+	}
+
+	if !h.commandMachine(c, approved.MachineID, approved.RunningVersion, wire.CapabilityUpdate,
+		wire.OpUpdateNow, wire.UpdateNow{Version: approved.Version}) {
+		return nil
+	}
+
+	// Audited, because this destroys work that somebody else may be in the
+	// middle of. Who approved it, for which machine, to which version.
+	zlog.Info().
+		Str("user_id", c.Locals("user_id").(string)).
+		Int64("machine_id", approved.MachineID).
+		Str("version", approved.Version).
+		Msg("[audit] agentrqd update approved")
+	h.crud.RecordMachineCommand(ctx, entity.RecordMachineCommandRequest{
+		UserID:    c.Locals("user_id").(string),
+		MachineID: approved.MachineID,
+		Action:    entity.ActionMachineUpdate,
+	})
+
+	c.Status(http.StatusAccepted)
+	return nil
 }
 
 // commandMachine sends a restart or an update to a machine's daemon, and

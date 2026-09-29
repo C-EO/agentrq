@@ -82,7 +82,6 @@ export function useMachineDetail(deps = {}) {
     updateMachine = api.updateMachine,
     deleteMachine = api.deleteMachine,
     killSession = api.killSession,
-    approveMachineUpdate = api.approveMachineUpdate,
     restartDaemon = api.restartDaemon,
   } = deps
 
@@ -182,42 +181,23 @@ export function useMachineDetail(deps = {}) {
     }
   }
 
-  /**
-   * Say yes to the update this machine has offered.
-   *
-   * The version travels with the approval, so a release that appeared between
-   * the offer and the yes is refused rather than installed: somebody who
-   * agreed to lose their sessions for one version did not agree to lose them
-   * for another.
-   */
-  async function approveUpdate() {
-    const version = machine.value?.availableVersion
-    if (!version) return false
-    busy.value = true
-    error.value = ''
-    try {
-      await approveMachineUpdate(machineId, version)
-      return true
-    } catch (e) {
-      error.value = e?.message || 'Failed to approve the update'
-      return false
-    } finally {
-      busy.value = false
-    }
-  }
+  // One command for both: an offered release is installed on the way, since
+  // installing it restarts the daemon anyway.
+  const updating = computed(() => Boolean(machine.value?.availableVersion))
 
   /**
-   * Restart the daemon, which stops every session and starts them again.
-   * Answered once the daemon has been asked; its next hello says it is back.
+   * Restart the daemon, updating it to the offered release when there is one.
+   * Every session is stopped and started again. Answered once the daemon has
+   * been asked; its next hello says it is back.
    */
   async function restart() {
     busy.value = true
     error.value = ''
     try {
-      await restartDaemon(machineId)
+      await restartDaemon(machineId, machine.value?.availableVersion || '')
       return true
     } catch (e) {
-      error.value = e?.message || 'Failed to restart this machine'
+      error.value = e?.message || (updating.value ? 'Failed to update this machine' : 'Failed to restart this machine')
       return false
     } finally {
       busy.value = false
@@ -277,7 +257,7 @@ export function useMachineDetail(deps = {}) {
     setEnabled,
     remove,
     stop,
-    approveUpdate,
+    updating,
     restart,
     handleEvent,
   }

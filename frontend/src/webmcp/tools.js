@@ -803,25 +803,16 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.launchAgent(workspaceId, { machineId, kind, model, agent, cols, rows }),
     }),
     tool({
-      name: 'approveMachineUpdate',
-      description:
-        "Install the agentrqd release a machine has offered. This stops every session on that machine and starts them again as new terminals: scrollback and in-flight work are lost.",
-      properties: {
-        machineId: MACHINE_ID,
-        version: str('The offered version, exactly as the machine reported it.'),
-      },
-      required: ['machineId', 'version'],
-      destructive: true,
-      run: ({ machineId, version }) => api.approveMachineUpdate(machineId, version),
-    }),
-    tool({
       name: 'restartDaemon',
       description:
-        "Restart a machine's agentrqd (0.9.3 or newer). This stops every session on that machine and starts them again in new terminals: scrollback and in-flight work are lost.",
-      properties: { machineId: MACHINE_ID },
+        "Restart a machine's agentrqd (0.9.3 or newer), updating it first when given the version it offered (getMachine's availableVersion). This stops every session on that machine and starts them again in new terminals: scrollback and in-flight work are lost.",
+      properties: {
+        machineId: MACHINE_ID,
+        version: str('The offered version to update to, exactly as the machine reported it. Leave it out to restart only.'),
+      },
       required: ['machineId'],
       destructive: true,
-      run: ({ machineId }) => api.restartDaemon(machineId),
+      run: ({ machineId, version = '' }) => api.restartDaemon(machineId, version),
     }),
     tool({
       name: 'killSession',
