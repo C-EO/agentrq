@@ -32,6 +32,28 @@ export function updateConsequence(sessionCount) {
   return `This restarts the daemon on this machine, which stops ${agents} and starts them again. Anything an agent has not saved is lost.`
 }
 
+/** The first agentrqd that can be restarted or updated from here; wire.MinRemoteControlVersion. */
+export const REMOTE_CONTROL_MIN_VERSION = '0.9.3'
+
+/**
+ * Whether a daemon's version is `min` or later, as wire.VersionAtLeast
+ * decides it: semver, a pre-release below its release, and anything that is
+ * not a release ("dev", empty) below everything.
+ */
+export function versionAtLeast(version, min) {
+  const parse = (s) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.]+)?$/.exec(String(s ?? ''))
+    return m ? { core: [+m[1], +m[2], +m[3]], pre: Boolean(m[4]) } : null
+  }
+  const v = parse(version)
+  const floor = parse(min)
+  if (!v || !floor) return false
+  for (let i = 0; i < 3; i++) {
+    if (v.core[i] !== floor.core[i]) return v.core[i] > floor.core[i]
+  }
+  return !v.pre
+}
+
 /**
  * What deleting this machine destroys.
  *
@@ -61,6 +83,7 @@ export function useMachineDetail(deps = {}) {
     deleteMachine = api.deleteMachine,
     killSession = api.killSession,
     approveMachineUpdate = api.approveMachineUpdate,
+    restartMachine = api.restartMachine,
   } = deps
 
   const machine = ref(null)
@@ -70,6 +93,9 @@ export function useMachineDetail(deps = {}) {
   const busy = ref(false)
 
   const liveSessions = computed(() => sessions.value.filter((s) => isSessionLive(s.status)))
+
+  // The server refuses an older daemon too; this is so the page says so first.
+  const canControl = computed(() => versionAtLeast(machine.value?.version, REMOTE_CONTROL_MIN_VERSION))
 
   // `quiet` re-reads without the loading line, for a refresh the person did not ask for.
   async function load({ quiet = false } = {}) {
@@ -180,6 +206,24 @@ export function useMachineDetail(deps = {}) {
     }
   }
 
+  /**
+   * Restart the daemon, which stops every session and starts them again.
+   * Answered once the daemon has been asked; its next hello says it is back.
+   */
+  async function restart() {
+    busy.value = true
+    error.value = ''
+    try {
+      await restartMachine(machineId)
+      return true
+    } catch (e) {
+      error.value = e?.message || 'Failed to restart this machine'
+      return false
+    } finally {
+      busy.value = false
+    }
+  }
+
   /** Fold a live update in. */
   function handleEvent(event) {
     if (event?.type === 'machine.updated') {
@@ -224,6 +268,7 @@ export function useMachineDetail(deps = {}) {
     machine,
     sessions,
     liveSessions,
+    canControl,
     loading,
     error,
     busy,
@@ -233,6 +278,7 @@ export function useMachineDetail(deps = {}) {
     remove,
     stop,
     approveUpdate,
+    restart,
     handleEvent,
   }
 }

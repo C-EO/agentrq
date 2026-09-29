@@ -28,8 +28,8 @@
   <true/>
   <key>KeepAlive</key>
   <dict>
-    <!-- Restarted when it fails, left alone when it stops on purpose — which
-         is what a self-update does. -->
+    <!-- Restarted when it exits non-zero, which is what a restart or update
+         from the panel does (75); left alone when it stops on purpose. -->
     <key>SuccessfulExit</key>
     <false/>
   </dict>

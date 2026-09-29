@@ -815,6 +815,15 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ machineId, version }) => api.approveMachineUpdate(machineId, version),
     }),
     tool({
+      name: 'restartMachine',
+      description:
+        "Restart a machine's agentrqd (0.9.3 or newer). This stops every session on that machine and starts them again in new terminals: scrollback and in-flight work are lost.",
+      properties: { machineId: MACHINE_ID },
+      required: ['machineId'],
+      destructive: true,
+      run: ({ machineId }) => api.restartMachine(machineId),
+    }),
+    tool({
       name: 'killSession',
       description: 'Ask a machine to end an agent session. Anything the agent has not saved is lost.',
       properties: { sessionId: str('The session ID (base62), as it appears in the URL.') },

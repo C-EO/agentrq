@@ -62,6 +62,7 @@ vi.mock('../src/api', () => ({
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
   approveMachineUpdate: vi.fn(),
+  restartMachine: vi.fn(),
   API_BASE_URL: '/api/v1',
 }))
 

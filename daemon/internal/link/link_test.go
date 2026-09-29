@@ -224,7 +224,8 @@ type harness struct {
 	cancel  context.CancelFunc
 }
 
-func start(t *testing.T, b *fakeBackend) *harness {
+// start connects a link to b; each option configures it before it runs.
+func start(t *testing.T, b *fakeBackend, options ...func(*Link)) *harness {
 	t.Helper()
 	tty := newTTY()
 	sup := supervisor.New(starter(tty), 0, 0)
@@ -232,6 +233,9 @@ func start(t *testing.T, b *fakeBackend) *harness {
 	l := New("work", b.url(), Identity{MachineID: "m1", UserID: "u1", Token: "tkn", Version: "test"},
 		realDialer{}, sup, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	l.Rand = func() float64 { return 0 }
+	for _, option := range options {
+		option(l)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

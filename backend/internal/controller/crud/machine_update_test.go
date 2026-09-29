@@ -50,7 +50,7 @@ func TestApproveMachineUpdate(t *testing.T) {
 	env := newTestController(t)
 	uid := monoflake.IDFromBase62(testUserBase62).Int64()
 	env.repo.EXPECT().GetMachine(gomock.Any(), int64(5), uid).
-		Return(model.Machine{ID: 5, UserID: uid, AvailableVersion: "0.7.1"}, nil)
+		Return(model.Machine{ID: 5, UserID: uid, Version: "0.7.0", AvailableVersion: "0.7.1"}, nil)
 
 	rs, err := env.controller.ApproveMachineUpdate(t.Context(), entity.ApproveMachineUpdateRequest{
 		UserID: testUserBase62, MachineID: monoflake.ID(5).String(), Version: "0.7.1",
@@ -58,7 +58,7 @@ func TestApproveMachineUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApproveMachineUpdate: %v", err)
 	}
-	if rs.MachineID != 5 || rs.Version != "0.7.1" {
+	if rs.MachineID != 5 || rs.Version != "0.7.1" || rs.RunningVersion != "0.7.0" {
 		t.Errorf("approved %+v", rs)
 	}
 }
@@ -115,6 +115,45 @@ func TestApprovingAnotherAccountsMachineIsNotFound(t *testing.T) {
 	}); err == nil {
 		t.Error("an approval for another account's machine succeeded")
 	}
+}
+
+func TestRestartMachine(t *testing.T) {
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+
+	t.Run("reads the owner's machine", func(t *testing.T) {
+		env := newTestController(t)
+		env.repo.EXPECT().GetMachine(gomock.Any(), int64(5), uid).
+			Return(model.Machine{ID: 5, UserID: uid, Version: "0.9.3"}, nil)
+
+		rs, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{
+			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
+		})
+		if err != nil {
+			t.Fatalf("RestartMachine: %v", err)
+		}
+		if rs.MachineID != 5 || rs.RunningVersion != "0.9.3" {
+			t.Errorf("got %+v", rs)
+		}
+	})
+
+	t.Run("another account's machine is not found", func(t *testing.T) {
+		env := newTestController(t)
+		env.repo.EXPECT().GetMachine(gomock.Any(), int64(5), uid).
+			Return(model.Machine{}, errors.New("not found"))
+
+		if _, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{
+			UserID: testUserBase62, MachineID: monoflake.ID(5).String(),
+		}); err == nil {
+			t.Error("restarted another account's machine")
+		}
+	})
+
+	t.Run("an unusable id", func(t *testing.T) {
+		env := newTestController(t)
+		if _, err := env.controller.RestartMachine(t.Context(), entity.RestartMachineRequest{}); err == nil {
+			t.Error("a restart with no machine was accepted")
+		}
+	})
 }
 
 func TestRecordMachineVersion(t *testing.T) {

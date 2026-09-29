@@ -32,6 +32,8 @@ type MachineManageController interface {
 	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
 	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
 	ApproveMachineUpdate(ctx context.Context, req entity.ApproveMachineUpdateRequest) (*entity.ApproveMachineUpdateResponse, error)
+	RestartMachine(ctx context.Context, req entity.RestartMachineRequest) (*entity.RestartMachineResponse, error)
+	RecordMachineCommand(ctx context.Context, req entity.RecordMachineCommandRequest)
 }
 
 // toMachineView renders a machine for the API, deriving online from the last
@@ -122,7 +124,42 @@ func (c *controller) ApproveMachineUpdate(ctx context.Context, req entity.Approv
 	if req.Version != "" && req.Version != m.AvailableVersion {
 		return nil, ErrNoUpdateOffered
 	}
-	return &entity.ApproveMachineUpdateResponse{MachineID: m.ID, Version: m.AvailableVersion}, nil
+	return &entity.ApproveMachineUpdateResponse{MachineID: m.ID, Version: m.AvailableVersion, RunningVersion: m.Version}, nil
+}
+
+// RestartMachine reads the machine a restart is for, scoped to its owner. Like
+// ApproveMachineUpdate it sends nothing: the socket lives in the handler.
+func (c *controller) RestartMachine(ctx context.Context, req entity.RestartMachineRequest) (*entity.RestartMachineResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	id := monoflake.IDFromBase62(req.MachineID).Int64()
+	if uid == 0 || id == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	m, err := c.repository.GetMachine(ctx, id, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &entity.RestartMachineResponse{MachineID: m.ID, RunningVersion: m.Version}, nil
+}
+
+// RecordMachineCommand counts a restart or update a person sent a machine.
+//
+// Emitted by the handler once the daemon has been sent it, like
+// RecordSessionKill, and with no error for the same reason: the command has
+// gone, and failing the request over a counter would report a failure that
+// did not happen. Workspace 0, as for every machine action.
+func (c *controller) RecordMachineCommand(ctx context.Context, req entity.RecordMachineCommandRequest) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if uid == 0 {
+		return
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       req.Action,
+		UserID:       uid,
+		ResourceType: entity.ResourceMachine,
+		ResourceID:   req.MachineID,
+		Actor:        entity.ActorHuman,
+	})
 }
 
 // ErrNoUpdateOffered covers both "there is nothing to install" and "that is

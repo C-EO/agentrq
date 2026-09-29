@@ -24,6 +24,7 @@ const (
 	OpDetach          Op = "detach"          // backend → daemon
 	OpUpdateAvailable Op = "updateAvailable" // daemon → backend
 	OpUpdateNow       Op = "updateNow"       // backend → daemon, the user approved
+	OpRestart         Op = "restart"         // backend → daemon, the user asked
 	OpPresence        Op = "presence"        // backend → viewer, who else is watching
 	OpError           Op = "error"           // either way, always correlated
 	OpListAcpAgents   Op = "listAcpAgents"   // backend → daemon, correlated by ID
@@ -78,6 +79,15 @@ type Hello struct {
 // CapabilityFork is a daemon that honours [StartSession.Fork]. Without it a
 // fork would run in its parent's folder and connect as the parent.
 const CapabilityFork = "fork"
+
+// CapabilityRestart is a daemon that honours [OpRestart], and CapabilityUpdate
+// one that can also install an [OpUpdateNow]. An older daemon ignores the op,
+// so the backend refuses to send either unless it is listed here and the
+// daemon is at least [MinRemoteControlVersion].
+const (
+	CapabilityRestart = "restart"
+	CapabilityUpdate  = "update"
+)
 
 // UpdateAvailable is the daemon telling the panel there is a newer release.
 //

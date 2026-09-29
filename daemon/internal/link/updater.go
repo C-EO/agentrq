@@ -11,8 +11,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/agentrq/agentrq/daemon/internal/restore"
-	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 	"github.com/agentrq/agentrq/daemon/internal/update"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -28,34 +26,23 @@ const CheckEvery = time.Hour
 //
 // The order below is the whole design, and it is not rearrangeable:
 //
-//	verify → download → test → *write the note* → kill → swap → restart
+//	verify → download → test → *write the note* → stop → swap → restart
 //
-// The note goes to disk before anything is killed because the process holding
-// it in memory is the process about to be replaced. Everything before the note
-// is reversible; everything after it is not.
+// Everything before the note is reversible; the rest is the [Restarter]'s.
 type Updater struct {
-	// BinaryPath is what will be replaced.
-	BinaryPath string
 	// ManifestURL is the release feed.
 	ManifestURL string
-	// Version is what is running now.
-	Version string
-	// StateDir is where the restore note is written.
-	StateDir string
 
-	Client     update.Fetcher
-	Supervisor *supervisor.Supervisor
-	Log        *slog.Logger
+	Client update.Fetcher
+	Log    *slog.Logger
 
 	// GOOS and GOARCH pick the artefact. Fields rather than runtime constants
 	// so a test can ask for a platform it is not on.
 	GOOS, GOARCH string
-	// Mode is how the daemon comes back. Resolved at construction from the
-	// environment the supervisor sets.
-	Mode update.Mode
-	// Restart is the handover, injected so everything up to it can be tested
-	// without a test binary that replaces itself.
-	Restart func(update.Mode, string, []string) error
+
+	// Restarter holds the binary being replaced, the running version, and
+	// the handover that brings the agents back.
+	Restarter *Restarter
 
 	available string
 }
@@ -75,7 +62,7 @@ func (u *Updater) Check(ctx context.Context, conn *Conn) {
 		u.Log.Debug("could not read the release feed", "error", err)
 		return
 	}
-	if !update.Newer(u.Version, m.Version) {
+	if !update.Newer(u.Restarter.Version, m.Version) {
 		return
 	}
 	// Not verified here, deliberately. This is an offer, and verification is
@@ -84,7 +71,7 @@ func (u *Updater) Check(ctx context.Context, conn *Conn) {
 	// failed now would simply mean no offer, which is what an unreadable feed
 	// already does.
 	u.available = m.Version
-	u.Log.Info("a newer agentrqd is available", "version", m.Version, "running", u.Version)
+	u.Log.Info("a newer agentrqd is available", "version", m.Version, "running", u.Restarter.Version)
 
 	if err := conn.Control(wire.Control{Op: wire.OpUpdateAvailable, Body: mustJSON(wire.UpdateAvailable{
 		Version: m.Version,
@@ -116,7 +103,8 @@ var ErrNotWhatWasApproved = errors.New("update: the available release is not the
 // It returns only on failure. On success the process has been replaced or has
 // exited for its supervisor to restart.
 func (u *Updater) Apply(ctx context.Context, approved string) error {
-	plan, err := update.Prepare(ctx, u.Client, u.ManifestURL, u.Version, u.GOOS, u.GOARCH, u.BinaryPath)
+	r := u.Restarter
+	plan, err := update.Prepare(ctx, u.Client, u.ManifestURL, r.Version, u.GOOS, u.GOARCH, r.BinaryPath)
 	if err != nil {
 		return err
 	}
@@ -129,58 +117,14 @@ func (u *Updater) Apply(ctx context.Context, approved string) error {
 		return fmt.Errorf("%w: approved %s, feed now offers %s", ErrNotWhatWasApproved, approved, plan.Version)
 	}
 
-	// The note first. Written to disk before a single session is killed,
-	// because the thing that remembers it is the thing being replaced.
-	live := u.Supervisor.Live()
-	note := restore.File{
-		Reason:      "update",
-		FromVersion: u.Version,
-		Sessions:    make([]restore.Session, 0, len(live)),
-	}
-	for _, sess := range live {
-		note.Sessions = append(note.Sessions, restore.Session{
-			ID:         sess.ID,
-			Profile:    u.Supervisor.Profile(sess.ID),
-			Kind:       string(sess.Kind),
-			Dir:        sess.Dir,
-			Workspace:  sess.Params.Workspace,
-			ServerName: sess.Params.ServerName,
-			Model:      sess.Params.Model,
-			Agent:      sess.Params.Agent,
-			Cols:       sess.Cols,
-			Rows:       sess.Rows,
-		})
-	}
-	if err := restore.Write(u.StateDir, note); err != nil {
-		// Abandoned rather than pressed on with. An update that kills sessions
-		// it has not written down is an update that loses them.
-		plan.Abandon()
-		return err
-	}
-
-	u.Log.Warn("updating agentrqd; every session on this machine is being stopped",
-		"from", u.Version, "to", plan.Version, "sessions", len(note.Sessions))
-
-	for _, sess := range live {
-		if err := u.Supervisor.Kill(sess.ID); err != nil && !errors.Is(err, supervisor.ErrNoSuchSession) {
-			u.Log.Warn("could not stop a session before updating", "session", sess.ID, "error", err)
-		}
-	}
-
-	if err := update.Swap(u.BinaryPath, plan.Staged); err != nil {
-		// Nothing was replaced, but the sessions are gone. The note stays: the
-		// next start — this process carrying on, in fact — brings them back.
-		return err
-	}
-
-	if err := u.Restart(u.Mode, u.BinaryPath, restartArgs()); err != nil {
-		// The binary just installed cannot be executed. This is the case the
+	err = r.handOver(ctx, "update", plan.Version,
+		func() error { return update.Swap(r.BinaryPath, plan.Staged) },
+		// The binary just installed cannot be executed, which is the case the
 		// retained copy exists for.
-		u.Log.Error("the new binary will not run; rolling back", "error", err)
-		if rollbackErr := update.Rollback(u.BinaryPath); rollbackErr != nil {
-			return errors.Join(err, rollbackErr)
-		}
-		return err
+		func() error { return update.Rollback(r.BinaryPath) })
+	if err != nil {
+		// A no-op once the swap has moved the staged file into place.
+		plan.Abandon()
 	}
-	return nil
+	return err
 }

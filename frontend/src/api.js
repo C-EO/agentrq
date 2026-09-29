@@ -319,6 +319,26 @@ export async function approveMachineUpdate(machineId, version) {
 }
 
 /**
+ * Restart a machine's agentrqd.
+ *
+ * Every session on that machine is stopped and started again, as the same
+ * sessions in new terminals. Answers 202: the daemon has been asked, and its
+ * next connection is what says it came back.
+ */
+export async function restartMachine(machineId) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/restart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message || body?.error || 'Failed to restart the machine');
+  }
+  return true;
+}
+
+/**
  * One agent session.
  *
  * The terminal page reads this so it can say what it is showing and whether it

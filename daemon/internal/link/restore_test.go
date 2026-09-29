@@ -7,6 +7,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -14,12 +15,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/daemon/internal/pty"
 	"github.com/agentrq/agentrq/daemon/internal/restore"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func idleSupervisor() *supervisor.Supervisor {
+	return supervisor.New(func(context.Context, pty.Spec) (pty.Session, error) {
+		return nil, errors.New("nothing is started here")
+	}, 0, 0)
+}
 
 func TestRestoredReadsTheNoteOnceAndRemovesIt(t *testing.T) {
 	dir := t.TempDir()
@@ -30,19 +38,25 @@ func TestRestoredReadsTheNoteOnceAndRemovesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := Restored(context.Background(), dir, nil, quietLog())
+	sup := idleSupervisor()
+	got := Restored(context.Background(), dir, sup, quietLog())
 	if len(got) != 1 || got[0].ID != 9 {
 		t.Fatalf("restored %+v", got)
 	}
+	// Named before it is started, or the first hello has the backend delete
+	// the row it is about to come back to.
+	if running := sup.Running(); len(running) != 1 || running[0] != 9 {
+		t.Errorf("Running() = %v, want the session that is coming back", running)
+	}
 	// A note left behind starts somebody's agents again on every subsequent
 	// start, forever.
-	if again := Restored(context.Background(), dir, nil, quietLog()); len(again) != 0 {
+	if again := Restored(context.Background(), dir, idleSupervisor(), quietLog()); len(again) != 0 {
 		t.Errorf("a second start found %d sessions", len(again))
 	}
 }
 
 func TestRestoredWithNoNote(t *testing.T) {
-	if got := Restored(context.Background(), t.TempDir(), nil, quietLog()); got != nil {
+	if got := Restored(context.Background(), t.TempDir(), idleSupervisor(), quietLog()); got != nil {
 		t.Errorf("found %+v in nothing", got)
 	}
 }
@@ -57,7 +71,7 @@ func TestAStaleNoteIsNotActedOn(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := Restored(context.Background(), dir, nil, quietLog()); len(got) != 0 {
+	if got := Restored(context.Background(), dir, idleSupervisor(), quietLog()); len(got) != 0 {
 		t.Errorf("a stale note restored %+v", got)
 	}
 }
@@ -67,7 +81,7 @@ func TestAnUnreadableNoteIsNotActedOn(t *testing.T) {
 	if err := os.WriteFile(restore.Path(dir), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := Restored(context.Background(), dir, nil, quietLog()); len(got) != 0 {
+	if got := Restored(context.Background(), dir, idleSupervisor(), quietLog()); len(got) != 0 {
 		t.Errorf("nonsense restored %+v", got)
 	}
 }

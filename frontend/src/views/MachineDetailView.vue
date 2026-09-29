@@ -15,7 +15,12 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMachineDetail, updateConsequence, deleteConsequence } from '../composables/useMachineDetail'
+import {
+  useMachineDetail,
+  updateConsequence,
+  deleteConsequence,
+  REMOTE_CONTROL_MIN_VERSION,
+} from '../composables/useMachineDetail'
 import {
   formatBytes,
   formatPercent,
@@ -43,12 +48,13 @@ const { notifySuccess, notifyError } = useToasts()
 
 const machineId = String(route.params.id ?? '')
 const detail = useMachineDetail({ machineId })
-const { machine, sessions, liveSessions, loading, error, busy } = detail
+const { machine, sessions, liveSessions, canControl, loading, error, busy } = detail
 
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
 const showDelete = ref(false)
 const showUpdate = ref(false)
+const showRestart = ref(false)
 
 // Destructured because refs keep their reactivity through it, and the
 // alternative — reaching through `launcher.x.value` in every binding — is
@@ -69,6 +75,7 @@ const {
 
 const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
+const handUpdateText = `Update agentrqd on this machine by hand to ${REMOTE_CONTROL_MIN_VERSION} or newer to restart or update it from here.`
 const deleteText = computed(() => deleteConsequence(machine.value, liveCount.value))
 
 const TABS = [
@@ -152,6 +159,15 @@ async function confirmUpdate() {
   }
 }
 
+async function confirmRestart() {
+  showRestart.value = false
+  if (await detail.restart()) {
+    notifySuccess('The machine is restarting; its sessions will come back as new terminals')
+  } else {
+    notifyError(error.value)
+  }
+}
+
 async function startAgent() {
   const session = await launcher.launch()
   if (!session) {
@@ -229,13 +245,18 @@ async function stopSession(id) {
             <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
               agentrqd {{ machine.availableVersion }} is available
             </p>
-            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
-            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
-              Sessions come back as new terminals: same agent, same folder, empty scrollback.
-            </p>
+            <template v-if="canControl">
+              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
+              <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
+                Sessions come back as new terminals: same agent, same folder, empty scrollback. Claude Code
+                agents resume their conversation.
+              </p>
+            </template>
+            <p v-else class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ handUpdateText }}</p>
           </div>
           <button
-            :disabled="busy"
+            v-if="canControl"
+            :disabled="busy || !machine.online"
             @click="showUpdate = true"
             class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
           >
@@ -654,6 +675,30 @@ async function stopSession(id) {
             </div>
 
             <div class="space-y-2">
+              <p class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 ml-1">
+                Daemon
+              </p>
+              <div
+                class="flex items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-lg"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">Restart agentrqd</p>
+                  <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+                    {{ canControl ? updateText : handUpdateText }}
+                  </p>
+                </div>
+                <button
+                  v-if="canControl"
+                  :disabled="busy || !machine.online"
+                  @click="showRestart = true"
+                  class="shrink-0 px-5 py-2.5 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:border-gray-900 dark:hover:border-white transition-all active:scale-95 disabled:opacity-50"
+                >
+                  Restart
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-2">
               <p class="block text-[10px] font-black uppercase tracking-widest text-red-400 dark:text-red-500 ml-1">
                 Danger Zone
               </p>
@@ -696,8 +741,18 @@ async function stopSession(id) {
       :show="showUpdate"
       title="Update and restart"
       :message="updateText"
+      confirm-label="Update"
       @close="showUpdate = false"
       @confirm="confirmUpdate"
+    />
+
+    <DeleteModal
+      :show="showRestart"
+      title="Restart agentrqd"
+      :message="updateText"
+      confirm-label="Restart"
+      @close="showRestart = false"
+      @confirm="confirmRestart"
     />
 
   </div>

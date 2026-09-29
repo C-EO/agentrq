@@ -174,7 +174,7 @@ func cmdServe(ctx context.Context, args []string) error {
 		}, &dialer{}, sup, log.With("profile", p.ID))
 		l.Metrics = collector.Snapshot
 		l.Pending = pending
-		l.Updater = newUpdater(p.ID, st.dir, log.With("profile", p.ID), sup, *manifestURL)
+		l.Restarter, l.Updater = remoteControl(st.dir, log.With("profile", p.ID), sup, *manifestURL)
 
 		links = append(links, l)
 		started++
@@ -230,23 +230,27 @@ func cmdServe(ctx context.Context, args []string) error {
 	return nil
 }
 
-// DefaultManifestURL is the release feed.
-const DefaultManifestURL = "https://agentrq.com/releases/agentrqd.json"
+// DefaultManifestURL is the release feed: the signed manifest attached to the
+// newest release. agentrq.com/releases/agentrqd.json, the feed before this,
+// answers with the website's page, so no daemon reading it ever saw an update.
+const DefaultManifestURL = "https://github.com/agentrq/agentrq/releases/latest/download/agentrqd.json"
 
-// newUpdater builds the self-update machinery, or nothing.
-//
-// Nothing when this build has no release key, when the binary's own path
-// cannot be resolved, or when the feed is not https — each of which is a
-// reason this daemon must not replace itself, and each of which is said out
-// loud rather than discovered as a silent no-op later.
-func newUpdater(profile, stateDir string, log *slog.Logger, sup *supervisor.Supervisor, manifestURL string) *link.Updater {
-	if update.ReleaseKey == "" {
-		log.Info("this build has no release key, so it will not update itself; update it by hand")
-		return nil
-	}
-	self, err := os.Executable()
+// remoteControl builds what restarts and updates this daemon from the panel.
+func remoteControl(stateDir string, log *slog.Logger, sup *supervisor.Supervisor, manifestURL string) (*link.Restarter, *link.Updater) {
+	r := newRestarter(stateDir, log, sup)
+	return r, newUpdater(r, log, manifestURL)
+}
+
+// executable is os.Executable, swapped out by a test.
+var executable = os.Executable
+
+// newRestarter builds what restarts this daemon from the panel, or nothing
+// when the binary's own path cannot be resolved — said out loud rather than
+// discovered as a silent no-op later.
+func newRestarter(stateDir string, log *slog.Logger, sup *supervisor.Supervisor) *link.Restarter {
+	self, err := executable()
 	if err != nil {
-		log.Warn("cannot locate this binary, so it will not update itself", "error", err)
+		log.Warn("cannot locate this binary, so it cannot be restarted or updated from the panel", "error", err)
 		return nil
 	}
 	// Symlinks resolved, because replacing a symlink with a binary is not what
@@ -254,19 +258,35 @@ func newUpdater(profile, stateDir string, log *slog.Logger, sup *supervisor.Supe
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
 	}
+	return &link.Restarter{
+		BinaryPath: self,
+		Version:    version,
+		StateDir:   stateDir,
+		Supervisor: sup,
+		Log:        log,
+		Mode:       update.DetectMode(os.Getenv, runtime.GOOS),
+		Restart:    update.Restart,
+	}
+}
 
+// newUpdater builds the self-update machinery, or nothing when there is no
+// restarter or this build has no release key: a verification step with
+// nothing to verify against is worse than none.
+func newUpdater(r *link.Restarter, log *slog.Logger, manifestURL string) *link.Updater {
+	if r == nil {
+		return nil
+	}
+	if update.ReleaseKey == "" {
+		log.Info("this build has no release key, so it will not update itself; update it by hand")
+		return nil
+	}
 	return &link.Updater{
-		BinaryPath:  self,
 		ManifestURL: manifestURL,
-		Version:     version,
-		StateDir:    stateDir,
 		Client:      &httpClient{timeout: dialTimeout},
-		Supervisor:  sup,
 		Log:         log,
 		GOOS:        runtime.GOOS,
 		GOARCH:      runtime.GOARCH,
-		Mode:        update.DetectMode(os.Getenv, runtime.GOOS),
-		Restart:     update.Restart,
+		Restarter:   r,
 	}
 }
 

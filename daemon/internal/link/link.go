@@ -52,6 +52,10 @@ type Link struct {
 	// a build that cannot update itself, which then simply refuses.
 	Updater *Updater
 
+	// Restarter restarts this daemon when somebody asks, bringing its agents
+	// back. Nil when the binary's own path cannot be resolved.
+	Restarter *Restarter
+
 	// Pending are sessions an update stopped, to be started again on the first
 	// connection. Each link takes only its own profile's.
 	Pending []restore.Session
@@ -168,7 +172,7 @@ func (l *Link) once(ctx context.Context) error {
 		// which is how the backend learns that rows it thinks are running
 		// are not.
 		Sessions:     l.Supervisor.Running(),
-		Capabilities: []string{wire.CapabilityFork},
+		Capabilities: l.capabilities(),
 	})}); err != nil {
 		return fmt.Errorf("hello: %w", err)
 	}
@@ -305,6 +309,8 @@ func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 		l.start(ctx, conn, c)
 	case wire.OpUpdateNow:
 		l.updateNow(ctx, conn, c)
+	case wire.OpRestart:
+		l.restartNow(ctx, conn, c)
 	case wire.OpListAcpAgents:
 		// Its own goroutine: this shells out and can take tens of seconds on
 		// a cold npx cache, and the frame loop reading this connection must
@@ -367,8 +373,57 @@ func (l *Link) updateNow(ctx context.Context, conn *Conn, c wire.Control) {
 		if err := l.Updater.Apply(ctx, req.Version); err != nil {
 			l.Log.Error("update refused", "approved", req.Version, "error", err)
 			l.report(conn, c.ID, err.Error())
+			l.recoverFrom(ctx, conn, err)
 		}
 	}()
+}
+
+// restartNow acts on a request to restart, which brings the agents back.
+func (l *Link) restartNow(ctx context.Context, conn *Conn, c wire.Control) {
+	if l.Restarter == nil {
+		l.report(conn, c.ID, "this daemon cannot restart itself")
+		return
+	}
+	go func() {
+		if err := l.Restarter.Now(ctx); err != nil {
+			l.Log.Error("restart failed", "error", err)
+			l.report(conn, c.ID, err.Error())
+			l.recoverFrom(ctx, conn, err)
+		}
+	}()
+}
+
+// recoverFrom starts again, in this process, the agents a handover stopped for
+// a restart that did not happen — the next daemon was going to, and there is
+// not one. Only this link's; another profile's are reported lost.
+func (l *Link) recoverFrom(ctx context.Context, conn *Conn, err error) {
+	if !errors.Is(err, ErrNotRestarted) {
+		return
+	}
+	note, takeErr := restore.Take(l.Restarter.StateDir, time.Now())
+	if takeErr != nil {
+		l.Log.Warn("cannot bring the stopped sessions back", "error", takeErr)
+	}
+	for _, s := range note.Sessions {
+		if s.Profile != l.Profile {
+			l.Log.Warn("a session of another profile was stopped and is not coming back", "session", s.ID)
+			continue
+		}
+		l.Restore(ctx, conn, s)
+	}
+	l.Supervisor.Abandon()
+}
+
+// capabilities is what the hello says this daemon can do.
+func (l *Link) capabilities() []string {
+	caps := []string{wire.CapabilityFork}
+	if l.Restarter != nil {
+		caps = append(caps, wire.CapabilityRestart)
+	}
+	if l.Updater != nil {
+		caps = append(caps, wire.CapabilityUpdate)
+	}
+	return caps
 }
 
 // report sends an error back, correlated with whatever provoked it.

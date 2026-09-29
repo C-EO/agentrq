@@ -187,8 +187,8 @@ leaves them in the archive you unpacked:
 
 Both are **user**-level — a systemd user unit and a LaunchAgent, not a system
 service and not a LaunchDaemon — for the reason above. Under either, the daemon
-exits and lets the service manager restart it when it updates itself; run by
-hand, it re-executes. Both work.
+exits with status 75 and lets the service manager start it again when it is
+restarted or updated from the panel; run by hand, it re-executes. Both work.
 
 `INSTALL.md` in the archive is the same instructions, for when you have the
 archive and not this page.
@@ -306,6 +306,7 @@ Recorded, on the server, for every machine:
 - an agent being killed
 - a browser **attaching** to a terminal, and detaching
 - an update being approved, and to which version
+- a restart being asked for
 
 **Keystrokes are not recorded.** Not on the server, not on the machine, not
 anywhere. What somebody types into a terminal is passwords, tokens, and the
@@ -318,7 +319,11 @@ and forgotten.
 
 ---
 
-## Updates
+## Restarts and updates
+
+A machine running agentrqd **0.9.3 or newer** can be restarted from its page
+in the control panel, and updated there once it has found a newer release.
+Older daemons have to be updated by hand once; after that, the panel can do it.
 
 The daemon checks for new releases and tells the control panel when there is
 one. **It never updates itself on its own initiative.** Somebody has to approve
@@ -327,11 +332,13 @@ it, because approving means:
 > stop every agent running on this machine, replace the daemon, and start them
 > again
 
-Those agents come back as **new terminals**. Same agent, same folder, same
-settings — and no scrollback, no in-flight work, nothing half-typed. The panel
-marks them as restored so it is clear why the terminal is empty. "Restore the
-sessions" means restoring the *intent*, not the state, and there is no version
-of this that could mean otherwise.
+A restart is the same without replacing the daemon.
+
+Those agents come back as **the same sessions in new terminals**: same agent,
+same folder, same settings, still listed on the machine's page. A claude-code
+agent resumes its conversation where it stopped. An ACP Gateway agent starts
+fresh. Either way the scrollback and anything half-typed are gone, and the
+panel marks the sessions as restored so it is clear why the terminal is empty.
 
 Before anything is replaced, the daemon:
 

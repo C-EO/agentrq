@@ -611,6 +611,9 @@ const (
 	// Spin up from a task row, reported by the browser: a fork, a move and a
 	// launch that were one decision.
 	ActionIDUISpinUp
+	// A machine's daemon restarted, or updated, from the panel.
+	ActionIDMachineRestart
+	ActionIDMachineUpdate
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

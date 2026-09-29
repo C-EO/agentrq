@@ -1496,6 +1496,11 @@ const (
 	// composed in the browser from three calls the server counts one by one,
 	// so the browser is the only one that knows they were one action.
 	ActionUISpinUp Action = 82
+	// A daemon asked from the panel to restart, or to install the update it
+	// offered. Counted once the machine has been sent it; the daemon's next
+	// hello is what says whether it came back.
+	ActionMachineRestart Action = 83
+	ActionMachineUpdate  Action = 84
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1640,6 +1645,10 @@ func (a Action) String() string {
 		return "workspace_fork_merge"
 	case ActionUISpinUp:
 		return "ui_spin_up"
+	case ActionMachineRestart:
+		return "machine_restart"
+	case ActionMachineUpdate:
+		return "machine_update"
 	}
 	return "unknown"
 }
@@ -1792,6 +1801,29 @@ type (
 	ApproveMachineUpdateResponse struct {
 		MachineID int64
 		Version   string
+		// RunningVersion is what the machine last said it runs, which decides
+		// whether it can be updated from the panel at all.
+		RunningVersion string
+	}
+
+	// RestartMachineRequest is a person asking a machine's daemon to restart,
+	// which stops its sessions and starts them again.
+	RestartMachineRequest struct {
+		UserID    string
+		MachineID string
+	}
+	RestartMachineResponse struct {
+		MachineID int64
+		// RunningVersion is what the machine last said it runs.
+		RunningVersion string
+	}
+
+	// RecordMachineCommandRequest counts a restart or update sent to a
+	// machine. Resolved ids: the handler has just read the machine.
+	RecordMachineCommandRequest struct {
+		UserID    string
+		MachineID int64
+		Action    Action
 	}
 
 	// RecordMachineVersionRequest is what a daemon says it is running, from

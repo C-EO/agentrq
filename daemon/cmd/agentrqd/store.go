@@ -109,5 +109,18 @@ type httpClient struct {
 }
 
 func (c *httpClient) Do(r *http.Request) (*http.Response, error) {
-	return (&http.Client{Timeout: c.timeout}).Do(r)
+	return (&http.Client{Timeout: c.timeout, CheckRedirect: noDowngrade}).Do(r)
+}
+
+// noDowngrade refuses a redirect from https to anything else. The release feed
+// is a redirect to wherever GitHub keeps the file, and the https the feed was
+// checked for is only worth anything if it holds to the end.
+func noDowngrade(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("refused a redirect from https to %s", req.URL.Scheme)
+	}
+	return nil
 }
