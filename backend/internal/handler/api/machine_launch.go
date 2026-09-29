@@ -322,11 +322,14 @@ func (h *handler) launchAgent() fiber.Handler {
 				"that machine is not connected", http.StatusConflict))
 		}
 		// An agentrqd that predates forks ignores the fork field: the agent
-		// would run in the parent's folder and connect as the parent.
-		if fork != nil && !h.machineRegistry.HasCapability(machineID, wire.CapabilityFork) {
+		// would run in the parent's folder and connect as the parent. The
+		// version floor catches a build that says the capability early.
+		if fork != nil && (!h.machineRegistry.HasCapability(machineID, wire.CapabilityFork) ||
+			!wire.VersionAtLeast(machine.Machine.Version, wire.MinForkVersion)) {
 			c.Status(http.StatusConflict)
 			return c.Send(mapper.FromMessageToHTTPResponse(
-				"update agentrqd on this machine to run a fork", http.StatusConflict))
+				"update agentrqd on this machine to run a fork (it needs "+wire.MinForkVersion+" or newer)",
+				http.StatusConflict))
 		}
 
 		start := wire.StartSession{
