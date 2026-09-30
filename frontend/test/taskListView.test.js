@@ -54,6 +54,7 @@ let fetchTasksPages = []
 const fetchTasks = vi.fn(async () => ({ tasks: fetchTasksPages.shift() || [] }))
 const deleteTask = vi.fn(async () => ({}))
 const moveTask = vi.fn(async () => ({}))
+const updateTaskOrder = vi.fn(async () => ({}))
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -63,6 +64,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   fetchTaskCounts: async () => ({ notstarted: 12 }),
   deleteTask: (...a) => deleteTask(...a),
   moveTask: (...a) => moveTask(...a),
+  updateTaskOrder: (...a) => updateTaskOrder(...a),
 }))
 
 const { default: TaskListView } = await import('../src/views/TaskListView.vue')
@@ -296,4 +298,66 @@ describe('a workspace task list', () => {
     rowOf(el, 'task n0').querySelector('[title="Edit Task"]').click()
     expect(push).toHaveBeenCalledWith('/workspaces/w1/tasks/n0/edit')
   })
+})
+
+// Not Started shows the lowest sort order first. The bug: a step set the task
+// just the far side of its neighbour's order from where it meant to go, so it
+// stayed below the task it was moved up past.
+describe('Move Up and Move Down', () => {
+  const ordered = () => [
+    { ...task('a'), sortOrder: 10 },
+    { ...task('b'), sortOrder: 20 },
+    { ...task('c'), sortOrder: 30 },
+  ]
+  const lists = {
+    'the sidebar task list': async () => {
+      pages = [ordered()]
+      return mount(TaskListView)
+    },
+    'a workspace task list': async () => {
+      fetchTasksPages = [ordered(), ordered()]
+      return mount(TaskFeed, { workspaceId: 'w1', filter: 'notstarted' })
+    },
+  }
+
+  for (const [name, open] of Object.entries(lists)) {
+    describe(name, () => {
+      it('puts a task moved up between the two tasks above it', async () => {
+        const el = await open()
+        rowOf(el, 'task c').querySelector('[title="Move Up"]').click()
+        await settle()
+        expect(updateTaskOrder).toHaveBeenCalledWith('w1', 'c', 15)
+      })
+
+      it('puts a task moved down between the two tasks below it', async () => {
+        const el = await open()
+        rowOf(el, 'task a').querySelector('[title="Move Down"]').click()
+        await settle()
+        expect(updateTaskOrder).toHaveBeenCalledWith('w1', 'a', 25)
+      })
+
+      it('puts a task moved up to the top before the first one', async () => {
+        const el = await open()
+        rowOf(el, 'task b').querySelector('[title="Move Up"]').click()
+        await settle()
+        expect(updateTaskOrder).toHaveBeenCalledWith('w1', 'b', 9)
+      })
+
+      it('leaves the first task where it is when moved up', async () => {
+        const el = await open()
+        rowOf(el, 'task a').querySelector('[title="Move Up"]').click()
+        await settle()
+        expect(updateTaskOrder).not.toHaveBeenCalled()
+      })
+
+      it('says so when the move fails', async () => {
+        updateTaskOrder.mockRejectedValueOnce(new Error('database unavailable'))
+        const { useToasts } = await import('../src/composables/useToasts')
+        const el = await open()
+        rowOf(el, 'task c').querySelector('[title="Move Up"]').click()
+        await settle()
+        expect(useToasts().toasts.value.at(-1).message).toBe('Reorder Error: database unavailable')
+      })
+    })
+  }
 })

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
-import { getOrder, sortColumn, orderBetween } from '../src/composables/useKanbanOrder'
+import { getOrder, sortColumn, orderBetween, orderForStep } from '../src/composables/useKanbanOrder'
 
 const NOT_STARTED = { id: 'notstarted', statuses: ['notstarted'] }
 const DONE = { id: 'done', statuses: ['completed', 'rejected'], sortBy: 'recent' }
@@ -67,5 +67,25 @@ describe('orderBetween', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-27T15:00:00Z'))
     expect(orderBetween(undefined, undefined)).toBe(Date.parse('2026-09-27T15:00:00Z') / 1000)
+  })
+})
+
+describe('orderForStep', () => {
+  const column = [{ id: 'a', sortOrder: 10 }, { id: 'b', sortOrder: 20 }, { id: 'c', sortOrder: 30 }]
+
+  it('lands a step up between the two cards above', () => {
+    expect(orderForStep(column, column[2], -1)).toBe(15)
+    expect(orderForStep(column, column[1], -1)).toBe(9)
+  })
+
+  it('lands a step down between the two cards below', () => {
+    expect(orderForStep(column, column[0], 1)).toBe(25)
+    expect(orderForStep(column, column[1], 1)).toBe(31)
+  })
+
+  it('is null past either end, or for a card not in the column', () => {
+    expect(orderForStep(column, column[0], -1)).toBeNull()
+    expect(orderForStep(column, column[2], 1)).toBeNull()
+    expect(orderForStep(column, { id: 'x' }, -1)).toBeNull()
   })
 })
