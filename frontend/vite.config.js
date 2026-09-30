@@ -10,6 +10,10 @@ import { readFileSync } from 'node:fs'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
+// The backend the dev server proxies to. The QA suite in qa/ runs its own on
+// another port, so it never takes over the one a developer is using.
+const apiTarget = process.env.AGENTRQ_DEV_API_TARGET || 'http://localhost:3000'
+
 export default defineConfig({
   base: '',
   define: {
@@ -70,8 +74,8 @@ export default defineConfig({
       // it the terminal socket is never proxied at all — the browser sits on
       // "connecting" forever, with no error, because nothing ever answers the
       // handshake.
-      '/api': { target: 'http://localhost:3000', ws: true },
-      '/mcp': 'http://localhost:3000',
+      '/api': { target: apiTarget, ws: true },
+      '/mcp': apiTarget,
     }
   }
 })
