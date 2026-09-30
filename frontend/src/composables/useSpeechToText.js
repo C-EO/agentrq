@@ -2,14 +2,13 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { ref, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onUnmounted, watch, nextTick } from 'vue';
 import { insertAtCursor } from '../utils/insertAtCursor';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
-import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_END } from '../api';
-
-let hasShownMobileToast = false;
+import { useNativeDictation, dictationLanguage, isMobileDevice } from './useNativeDictation';
+import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_END, TELEMETRY_UI_DICTATION_END } from '../api';
 
 /**
  * Composable for browser-based speech-to-text using local Whisper AI.
@@ -18,18 +17,22 @@ let hasShownMobileToast = false;
  *
  * Uses the same model as whisperweb.dev (onnx-community/whisper-base).
  *
+ * On a phone or tablet its own dictation is used instead; see
+ * useNativeDictation. Whisper is never run there — it crashes a phone — so a
+ * phone without dictation, or one that refuses it, has no voice input at all.
+ *
  * @param {import('vue').Ref<string>} targetRef - Reactive string ref the transcribed text goes into
  * @param {string|import('vue').ComputedRef<string>} workspaceId - Workspace identifier for settings lookup
  * @param {import('vue').Ref<HTMLTextAreaElement|null>} [inputRef] - The field bound to targetRef; the text
  *   lands at its cursor, and is appended without it
  */
 export function useSpeechToText(targetRef, workspaceId, inputRef) {
-  const isRecording = ref(false);
+  const recording = ref(false);
   const isTranscribing = ref(false);
   const isModelLoading = ref(false);
   const modelProgress = ref(0);
   const error = ref('');
-  const { notifyError, notifyInfo } = useToasts();
+  const { notifyError } = useToasts();
 
 
   watch(error, (newVal) => {
@@ -38,11 +41,6 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     }
   });
 
-  const isSupported = typeof window !== 'undefined'
-    && !!navigator.mediaDevices?.getUserMedia
-    && typeof Worker !== 'undefined'
-    && typeof MediaRecorder !== 'undefined';
-
   const SUPPORTED_LANGUAGES = Object.keys(WHISPER_LANGUAGES);
 
   // Callers pass the workspace id as a plain string, a ref or a getter,
@@ -50,6 +48,31 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
   function resolveWorkspaceId() {
     return typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
   }
+
+  // Set once the phone has refused its own dictation, for as long as this view
+  // lives; the mic is then hidden.
+  const nativeUnavailable = ref(false);
+  const native = useNativeDictation(targetRef, inputRef, {
+    language: () => {
+      const wsId = resolveWorkspaceId();
+      return dictationLanguage(wsId ? localStorage.getItem(`stt_lang_${wsId}`) : null, navigator.language);
+    },
+    onError: (message) => { error.value = message; },
+    onEnd: () => recordTelemetry(TELEMETRY_UI_DICTATION_END, resolveWorkspaceId()),
+    onUnavailable: () => {
+      nativeUnavailable.value = true;
+      error.value = "Dictation isn't available here. Check it is turned on in your phone's keyboard settings.";
+    },
+  });
+
+  const isRecording = computed(() => recording.value || native.isListening.value);
+
+  const whisperSupported = !isMobileDevice()
+    && !!navigator.mediaDevices?.getUserMedia
+    && typeof Worker !== 'undefined'
+    && typeof MediaRecorder !== 'undefined';
+
+  const isSupported = computed(() => native.isSupported ? !nativeUnavailable.value : whisperSupported);
 
   function getResolvedLanguage() {
     if (typeof window === 'undefined') return 'en';
@@ -189,12 +212,6 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     error.value = '';
     audioChunks = [];
 
-    const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    if (isMobile && !hasShownMobileToast) {
-      notifyInfo('Voice transcription on mobile currently supports English only.', 'English Only');
-      hasShownMobileToast = true;
-    }
-
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -249,7 +266,7 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
       };
 
       mediaRecorder.start(250); // Collect data every 250ms
-      isRecording.value = true;
+      recording.value = true;
     } catch (e) {
       if (e.name === 'NotAllowedError') {
         error.value = 'Microphone permission denied';
@@ -267,12 +284,12 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     // onUnmounted calls this unconditionally, so without the guard every
     // teardown of a view holding this composable would report a recording that
     // never happened. It also keeps a second stop from counting twice.
-    const wasRecording = isRecording.value;
+    const wasRecording = recording.value;
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
-    isRecording.value = false;
+    recording.value = false;
 
     if (wasRecording) {
       recordTelemetry(TELEMETRY_LOCAL_AI_RECORDING_END, resolveWorkspaceId());
@@ -280,6 +297,17 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
   }
 
   function toggleRecording() {
+    if (native.isSupported) {
+      if (nativeUnavailable.value) return;
+      if (native.isListening.value) {
+        native.stop();
+      } else {
+        error.value = '';
+        native.start();
+      }
+      return;
+    }
+
     // Initialize AudioContext directly on the user click gesture thread
     initAudioContext();
 
@@ -292,6 +320,7 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
 
   // Cleanup on unmount
   onUnmounted(() => {
+    native.abort();
     stopRecording();
     stream?.getTracks().forEach(t => t.stop());
     if (sharedAudioCtx) {
