@@ -239,9 +239,9 @@ describe('createEventStreamClient', () => {
     let attempt = 0
     const netFetch = vi.fn(async () => {
       attempt += 1
-      if (attempt === 1) throw new Error('down')
+      if (attempt === 1) throw new Error('server unreachable')
       if (attempt === 2) return streamingResponse(['data: {"type":"ok"}\n\n'])
-      throw new Error('down again')
+      throw new Error('server unreachable again')
     })
     const { client, delay } = setup({ netFetch, stopAfterDelays: 2 })
 
@@ -257,7 +257,7 @@ describe('createEventStreamClient', () => {
   it('re-resolves the URL each attempt, so a server switch is picked up', async () => {
     let url = 'https://first.example.com/api/v1/events/stream'
     const netFetch = vi.fn(async () => {
-      throw new Error('down')
+      throw new Error('server unreachable')
     })
     const { client } = setup({ netFetch, streamUrl: () => url, stopAfterDelays: 1 })
 

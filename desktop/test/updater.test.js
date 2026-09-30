@@ -86,7 +86,7 @@ describe('describeUpdateError', () => {
   })
 
   it('passes an unrecognised message through rather than hiding it', () => {
-    expect(describeUpdateError(new Error('something odd'))).toBe('something odd')
+    expect(describeUpdateError(new Error('unrecognised updater failure'))).toBe('unrecognised updater failure')
   })
 
   it('copes with a thrown value that is not an Error', () => {
@@ -109,7 +109,7 @@ describe('remedyForUpdateError', () => {
     // A command that cannot help is worse than no command at all.
     expect(remedyForUpdateError(new Error('net::ERR_CONNECTION_REFUSED'))).toBe('')
     expect(remedyForUpdateError(new Error('HttpError: 404 Not Found'))).toBe('')
-    expect(remedyForUpdateError(new Error('something odd'))).toBe('')
+    expect(remedyForUpdateError(new Error('unrecognised updater failure'))).toBe('')
     expect(remedyForUpdateError(undefined)).toBe('')
   })
 })
@@ -364,7 +364,7 @@ describe('createUpdater', () => {
     const updater = createUpdater({ autoUpdater, isPackaged: true, onStatus: () => {}, setTimer: () => 1 })
 
     updater.start()
-    autoUpdater.emit('error', new Error('boom'))
+    autoUpdater.emit('error', new Error('update server unreachable'))
 
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()

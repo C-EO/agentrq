@@ -39,7 +39,7 @@ func statusServer(t *testing.T, before string) (*WorkspaceServer, chan []byte) {
 		bus:         bus,
 		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
 			if before == "" {
-				return model.Task{}, errors.New("gone")
+				return model.Task{}, errors.New("task not found")
 			}
 			return model.Task{ID: taskID, Status: before, Title: "Approve DB migration script"}, nil
 		},

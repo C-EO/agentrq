@@ -94,18 +94,18 @@ func TestSkillTools_ReportFailures(t *testing.T) {
 		run  func(s *WorkspaceServer) callResult
 		want string
 	}{
-		{"list", &mockSkillCrud{listErr: errors.New("db down")}, func(s *WorkspaceServer) callResult {
+		{"list", &mockSkillCrud{listErr: errors.New("database unavailable")}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleSearchSkills(authedContext(), nil, SearchSkillsParams{WorkspaceID: base62(testWorkspace), Q: "test", Limit: 5, Offset: 10}))
-		}, "db down"},
+		}, "database unavailable"},
 		{"bad uri", &mockSkillCrud{}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "memory://x.md"}))
 		}, "not a skill URI"},
 		{"file", &mockSkillCrud{fileErr: refusal}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "skill://tdd"}))
 		}, "read-only here"},
-		{"file list", &mockSkillCrud{getErr: errors.New("db down")}, func(s *WorkspaceServer) callResult {
+		{"file list", &mockSkillCrud{getErr: errors.New("database unavailable")}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "skill://tdd"}))
-		}, "db down"},
+		}, "database unavailable"},
 	} {
 		res := tc.run(&WorkspaceServer{crud: tc.ctrl})
 		if !res.isError || !strings.Contains(res.text, tc.want) {

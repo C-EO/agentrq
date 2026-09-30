@@ -226,7 +226,7 @@ func TestSkillRoutes_Errors(t *testing.T) {
 		{"conflict", &crud.SkillError{Kind: crud.SkillConflict, Message: "already taken"}, 409, "already taken"},
 		{"upstream", &crud.SkillError{Kind: crud.SkillUpstream, Message: "GitHub answered 500"}, 502, "GitHub answered 500"},
 		{"not found", base.ErrNotFound, 404, "not found"},
-		{"internal", errors.New("disk on fire at /var/lib"), 500, "internal server error"},
+		{"internal", errors.New("disk failure at /var/lib"), 500, "internal server error"},
 	} {
 		for _, r := range routes {
 			t.Run(tc.name+" "+r.method+" "+r.path, func(t *testing.T) {

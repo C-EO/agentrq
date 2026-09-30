@@ -97,11 +97,11 @@ describe('registerTools', () => {
   });
 
   it('describes a thrown non-error too', async () => {
-    const context = { registerTool: vi.fn().mockRejectedValue('nope') };
+    const context = { registerTool: vi.fn().mockRejectedValue('registration refused') };
 
     const { refused } = await registerTools([tools[0]], { context });
 
-    expect(refused).toEqual([{ name: 'listWorkspaces', reason: 'nope' }]);
+    expect(refused).toEqual([{ name: 'listWorkspaces', reason: 'registration refused' }]);
   });
 
   it('separates a browser that refused everything from one that has no WebMCP', async () => {

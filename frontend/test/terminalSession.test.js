@@ -474,7 +474,7 @@ describe('connection lifecycle', () => {
     const h = harness()
     await h.session.open()
     h.last().onopen()
-    h.last().onerror(new Error('transport'))
+    h.last().onerror(new Error('WebSocket transport error'))
     h.last().onclose()
     await h.fire()
     expect(h.statuses).toEqual(['connecting', 'connected', 'disconnected', 'reconnecting'])

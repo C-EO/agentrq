@@ -707,13 +707,13 @@ func (m *refreshCrud) FindUserByID(ctx context.Context, id int64) (entity.User, 
 // with nothing in any log to say why.
 func TestRefreshCookiePath(t *testing.T) {
 	if got, want := (&handler{}).refreshCookiePath(), _routeBasePath+"/auth/refresh"; got != want {
-		t.Errorf("refreshCookiePath() = %q, want %q — the route is mounted at %q", got, want, want)
+		t.Errorf("refreshCookiePath returned %q, want %q — the route is mounted at %q", got, want, want)
 	}
 
 	// A reverse-proxied deployment serves the API under a prefix; the cookie
 	// has to carry it or the browser will not match the request path.
 	if got, want := (&handler{basePath: "/agentrq"}).refreshCookiePath(), "/agentrq/api/v1/auth/refresh"; got != want {
-		t.Errorf("with a base path: got %q, want %q", got, want)
+		t.Errorf("with a base path, refreshCookiePath returned %q, want %q", got, want)
 	}
 }
 
@@ -759,7 +759,7 @@ func TestRefreshSession(t *testing.T) {
 		res := post(newApp(h), "a-valid-refresh-token")
 
 		if res.StatusCode != http.StatusOK {
-			t.Fatalf("status = %d, want 200", res.StatusCode)
+			t.Fatalf("the refresh answered status %d, want 200", res.StatusCode)
 		}
 		cookies := res.Header.Values("Set-Cookie")
 		joined := strings.Join(cookies, "\n")
@@ -777,7 +777,7 @@ func TestRefreshSession(t *testing.T) {
 		h := &handler{
 			tokenSvc: &refreshTokenSvc{
 				validateRefreshFunc: func(string) (*auth.Claims, error) {
-					return nil, errors.New("expired")
+					return nil, errors.New("refresh token expired")
 				},
 			},
 		}
@@ -785,7 +785,7 @@ func TestRefreshSession(t *testing.T) {
 		res := post(newApp(h), "an-expired-token")
 
 		if res.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401", res.StatusCode)
+			t.Fatalf("the refresh answered status %d, want 401", res.StatusCode)
 		}
 		if joined := strings.Join(res.Header.Values("Set-Cookie"), "\n"); !strings.Contains(joined, "rt=;") {
 			t.Errorf("refresh cookie was not cleared: %q", joined)
@@ -805,7 +805,7 @@ func TestRefreshSession(t *testing.T) {
 		}
 
 		if res := post(newApp(h), ""); res.StatusCode != http.StatusUnauthorized {
-			t.Errorf("status = %d, want 401", res.StatusCode)
+			t.Errorf("the refresh answered status %d, want 401", res.StatusCode)
 		}
 	})
 
@@ -824,7 +824,7 @@ func TestRefreshSession(t *testing.T) {
 		}
 
 		if res := post(newApp(h), "valid-but-orphaned"); res.StatusCode != http.StatusUnauthorized {
-			t.Errorf("status = %d, want 401", res.StatusCode)
+			t.Errorf("the refresh answered status %d, want 401", res.StatusCode)
 		}
 	})
 }
@@ -860,7 +860,7 @@ func TestSignInIssuesBothCookies(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", res.StatusCode)
+		t.Fatalf("signing in answered status %d, want 200", res.StatusCode)
 	}
 
 	joined := strings.Join(res.Header.Values("Set-Cookie"), "\n")
@@ -892,10 +892,10 @@ func TestAgentCommandsEntity(t *testing.T) {
 		})
 
 		if got == nil || len(got.Commands) != 2 {
-			t.Fatalf("got %+v", got)
+			t.Fatalf("agentCommandsEntity returned %+v, want 2 commands", got)
 		}
 		if got.Commands[0].Name != "review" || got.Commands[0].Description != "Review the diff" || got.Commands[0].Hint != "what to review" {
-			t.Errorf("commands[0] = %+v", got.Commands[0])
+			t.Errorf("the first command is %+v, want review, with its description and hint", got.Commands[0])
 		}
 		if got.Commands[1].Description != "" || got.Commands[1].Hint != "" {
 			t.Errorf("optional fields should stay empty: %+v", got.Commands[1])
@@ -913,7 +913,7 @@ func TestAgentClientEntity(t *testing.T) {
 	t.Run("carries the live identity into the API layer's own shape", func(t *testing.T) {
 		got := agentClientEntity(&mcpctrl.AgentClientInfo{Name: "claude-code", Version: "2.0.1"})
 		if got == nil || got.Name != "claude-code" || got.Version != "2.0.1" {
-			t.Errorf("got %+v", got)
+			t.Errorf("agentClientEntity returned %+v, want claude-code 2.0.1", got)
 		}
 	})
 }
@@ -1054,13 +1054,13 @@ func TestAgentConcurrencyEntity(t *testing.T) {
 		})
 
 		if got == nil {
-			t.Fatal("got nil")
+			t.Fatal("the queue state is nil, want it filled in")
 		}
 		if got.MaxConcurrency != 4 || got.Active != 2 || got.Queued != 3 {
-			t.Errorf("queue state = %+v", got)
+			t.Errorf("the queue state is %+v, want max concurrency 4, 2 active and 3 queued", got)
 		}
 		if got.Min != 1 || got.Max != 64 || !got.CanSet {
-			t.Errorf("range and permission = %+v", got)
+			t.Errorf("the queue state is %+v, want a range of 1 to 64 that the caller can set", got)
 		}
 	})
 
@@ -1419,7 +1419,7 @@ func TestSetAgentModel_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 		// No path in the controller produces this today — it has four exits and
 		// the three above are all the errors. The mapping is asserted anyway so
 		// that a fourth, when it arrives, lands somewhere deliberate.
-		{"anything else is ours, not the caller's", errors.New("boom"), http.StatusInternalServerError},
+		{"anything else is ours, not the caller's", errors.New("unexpected model switch failure"), http.StatusInternalServerError},
 	}
 
 	for _, tc := range cases {
@@ -1450,7 +1450,7 @@ func TestSetAgentModel_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if resp.StatusCode != tc.want {
-				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
+				t.Errorf("expected status %d for the error %q, got %d", tc.want, tc.err, resp.StatusCode)
 			}
 		})
 	}
@@ -1468,7 +1468,7 @@ func TestSetAgentConcurrency_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 		// Unreachable through a real server — the in-memory transport cannot
 		// stage the race — which is exactly why injecting the error is worth it.
 		{"the gateway went away before it could be told", mcpctrl.ErrConcurrencySetNotDelivered, http.StatusConflict},
-		{"anything else is ours, not the caller's", errors.New("boom"), http.StatusInternalServerError},
+		{"anything else is ours, not the caller's", errors.New("unexpected concurrency change failure"), http.StatusInternalServerError},
 	}
 
 	for _, tc := range cases {
@@ -1499,7 +1499,7 @@ func TestSetAgentConcurrency_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if resp.StatusCode != tc.want {
-				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
+				t.Errorf("expected status %d for the error %q, got %d", tc.want, tc.err, resp.StatusCode)
 			}
 		})
 	}

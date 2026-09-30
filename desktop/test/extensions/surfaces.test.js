@@ -71,7 +71,7 @@ describe('applies', () => {
   })
 
   it('swallows the failure when nobody is listening', () => {
-    expect(applies(entry({ when: () => { throw new Error('x') } }), {})).toBe(false)
+    expect(applies(entry({ when: () => { throw new Error('the extension\'s when() crashed') } }), {})).toBe(false)
   })
 })
 
@@ -100,7 +100,7 @@ describe('entriesFor', () => {
   })
 
   it('drops a row whose predicate threw even when nobody asked to be told', () => {
-    const rows = entriesFor([entry({ when: () => { throw new Error('boom') } })], 'task-menu', {})
+    const rows = entriesFor([entry({ when: () => { throw new Error('the extension\'s when() crashed') } })], 'task-menu', {})
 
     expect(rows).toEqual([])
   })
@@ -108,7 +108,7 @@ describe('entriesFor', () => {
   it('reports a predicate that threw against the extension that owns it', () => {
     const onError = vi.fn()
 
-    entriesFor([entry({ when: () => { throw new Error('boom') } })], 'task-menu', {}, { onError })
+    entriesFor([entry({ when: () => { throw new Error('the extension\'s when() crashed') } })], 'task-menu', {}, { onError })
 
     expect(onError).toHaveBeenCalledWith('task-stats', expect.any(Error))
   })
@@ -183,9 +183,9 @@ describe('invokeEntry', () => {
   })
 
   it('has something to say about a throw that carried no message', async () => {
-    const broken = entry({ run: () => { throw 'nope' } }) // eslint-disable-line no-throw-literal
+    const broken = entry({ run: () => { throw 'run() threw a bare string' } }) // eslint-disable-line no-throw-literal
 
-    expect((await invokeEntry([broken], { owner: 'task-stats', id: 'stats', surface: 'task-menu' }, {})).reason).toContain('nope')
+    expect((await invokeEntry([broken], { owner: 'task-stats', id: 'stats', surface: 'task-menu' }, {})).reason).toContain('run() threw a bare string')
   })
 
   // An entry that returns nothing has done something else, and an empty panel

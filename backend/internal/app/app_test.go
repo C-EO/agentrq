@@ -380,7 +380,7 @@ func TestTaskEventPayloadFailsWhenTheTaskCannotBeRead(t *testing.T) {
 	repo := mock_repository.NewMockRepository(ctrl)
 	ctx := context.Background()
 
-	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{}, errors.New("gone"))
+	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{}, errors.New("task not found"))
 
 	if _, err := taskEventPayload(ctx, repo, 7); err == nil {
 		t.Fatal("expected an error when the task cannot be read")
@@ -435,7 +435,7 @@ func TestMCPTaskDefaultsFallBackWhenTheWorkspaceCannotBeRead(t *testing.T) {
 	repo := mock_repository.NewMockRepository(ctrl)
 	ctx := context.Background()
 
-	repo.EXPECT().SystemGetWorkspace(ctx, int64(5)).Return(model.Workspace{}, errors.New("db down"))
+	repo.EXPECT().SystemGetWorkspace(ctx, int64(5)).Return(model.Workspace{}, errors.New("database unavailable"))
 
 	task := mcpTaskDefaults(ctx, repo, 5, model.Workspace{ID: 5, SelfLearningLoopNote: "Note."}, model.Task{Assignee: "agent", Body: "Do it.", ClearContext: true})
 	if task.Body != "Do it.\n\nNote." {

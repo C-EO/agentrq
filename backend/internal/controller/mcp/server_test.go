@@ -115,10 +115,10 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 
 	// Error case: listTasks fails
 	ps.listTasks = func(ctx context.Context, _ ListTasksFilter) ([]model.Task, error) {
-		return nil, fmt.Errorf("db error")
+		return nil, fmt.Errorf("database unavailable")
 	}
 	res, _, _ = ps.handleGetWorkspace(context.Background(), nil, nil)
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "db error") {
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "database unavailable") {
 		t.Errorf("expected error, got: %v", res)
 	}
 }
@@ -165,8 +165,8 @@ func TestWorkspaceServer_HandleGetAttachment(t *testing.T) {
 	}
 
 	// A file gone from both places it could be is an error.
-	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return(nil, errors.New("gone"))
-	mockStor.EXPECT().LoadRaw("att-1").Return(nil, errors.New("gone"))
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return(nil, errors.New("attachment not found"))
+	mockStor.EXPECT().LoadRaw("att-1").Return(nil, errors.New("attachment not found"))
 	res, _, _ = ps.handleGetAttachment(context.Background(), nil, params)
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "retention") {
 		t.Errorf("missing file: %+v", res)
@@ -723,10 +723,10 @@ func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 
 	// Case 3: Error
 	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
-		return model.Task{}, fmt.Errorf("db error")
+		return model.Task{}, fmt.Errorf("database unavailable")
 	}
 	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "db error") {
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "database unavailable") {
 		t.Errorf("expected error result, got: %v", res)
 	}
 }
@@ -866,7 +866,7 @@ func TestWorkspaceServer_PersistToolCall_RecordError(t *testing.T) {
 	ps := &WorkspaceServer{
 		idgen: mockIdgen,
 		recordToolCall: func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
-			return model.ToolCall{}, fmt.Errorf("db down")
+			return model.ToolCall{}, fmt.Errorf("database unavailable")
 		},
 	}
 

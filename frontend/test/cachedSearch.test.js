@@ -83,7 +83,7 @@ describe('taskKeysForTerm and tasksByKeys', () => {
   it('falls through rather than breaking when the read fails', async () => {
     const broken = {
       transaction() {
-        throw new Error('gone')
+        throw new Error('the database connection is closing')
       },
     }
 

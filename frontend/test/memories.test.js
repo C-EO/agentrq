@@ -435,7 +435,7 @@ describe('useMemoryReader', () => {
     const second = r.load();
     const third = r.load();
     resolveFirst({ memories: named('stale.md') });
-    rejectSecond(new Error('stale'));
+    rejectSecond(new Error('superseded request failed'));
     await Promise.all([first, second, third]);
     expect(r.memories.value.map((m) => m.name)).toEqual([INDEX_MEMORY]);
     expect(r.state.value).toBe(MemoriesState.Ready);
@@ -450,7 +450,7 @@ describe('useMemoryReader', () => {
     const shown = () => r.current.content;
     expect(shown()).toBe('latest');
     resolveOne({ memory: { content: 'stale' } });
-    rejectOne(new Error('stale'));
+    rejectOne(new Error('superseded request failed'));
     await flush();
     expect(shown()).toBe('latest');
     expect(r.current.error).toBe('');

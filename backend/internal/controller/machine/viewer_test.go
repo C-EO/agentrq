@@ -213,7 +213,7 @@ func TestAttachToAMachineHeldElsewhereIsRefusedBeforeUpgrading(t *testing.T) {
 		t.Fatal("the connection was accepted")
 	}
 	if resp == nil || resp.StatusCode != http.StatusConflict {
-		t.Errorf("status = %v, want 409 naming the problem", resp)
+		t.Errorf("the viewer was answered %v, want 409 naming the problem", resp)
 	}
 }
 
@@ -228,19 +228,19 @@ func TestViewerHandlerRefusesNonsense(t *testing.T) {
 		defer srv.Close()
 		_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err == nil || resp.StatusCode != http.StatusUnprocessableEntity {
-			t.Errorf("status = %v, want 422", resp)
+			t.Errorf("the viewer was answered %v, want 422", resp)
 		}
 	})
 
 	t.Run("session the caller may not see", func(t *testing.T) {
 		h := &ViewerHandler{Relay: NewRelay(reg),
-			Lookup:    fakeLookup{err: errors.New("no")},
+			Lookup:    fakeLookup{err: errors.New("session not found")},
 			SessionID: func(*http.Request) uint64 { return 7 }}
 		srv := httptest.NewServer(h)
 		defer srv.Close()
 		_, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
 		if err == nil || resp.StatusCode != http.StatusNotFound {
-			t.Errorf("status = %v, want 404", resp)
+			t.Errorf("the viewer was answered %v, want 404", resp)
 		}
 	})
 }
@@ -335,7 +335,7 @@ func TestPresenceReachesTheBrowser(t *testing.T) {
 		t.Fatalf("presence body: %v", err)
 	}
 	if p.SessionID != sessionID || len(p.Viewers) != 1 || p.Viewers[0] != "Ada" {
-		t.Errorf("presence = %+v", p)
+		t.Errorf("the presence frame is %+v, want session %d with the one viewer Ada", p, sessionID)
 	}
 }
 
@@ -371,11 +371,11 @@ func TestAViewerNeedNotNameItsSession(t *testing.T) {
 
 	got, _ := daemon.firstOfType(wire.TypeInput)
 	if string(got.Payload) != "y" {
-		t.Errorf("the daemon got %q", got.Payload)
+		t.Errorf("the daemon got the keystroke %q, want \"y\"", got.Payload)
 	}
 	// Supplied here, from the socket the viewer attached to, which is what
 	// stops a browser typing into another session by changing a number.
 	if got.SessionID != sessionID {
-		t.Errorf("session = %d, want %d", got.SessionID, sessionID)
+		t.Errorf("the keystroke was addressed to session %d, want %d", got.SessionID, sessionID)
 	}
 }

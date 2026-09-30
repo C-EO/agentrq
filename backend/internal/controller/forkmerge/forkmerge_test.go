@@ -292,10 +292,10 @@ func TestMerge_AgentDoesNotStop(t *testing.T) {
 
 // The session row cannot be read back: the merge stops there.
 func TestMerge_SessionUnreadable(t *testing.T) {
-	c := &fakeCrud{session: forkSession(), sessErr: errors.New("db down"), machineOK: true}
+	c := &fakeCrud{session: forkSession(), sessErr: errors.New("database unavailable"), machineOK: true}
 	reg := machinectrl.NewRegistry("pod-a")
 	reg.Add(machineID, &killingDaemon{crud: c})
-	if _, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), request()); err == nil || err.Error() != "db down" {
+	if _, err := merger(c, reg, &servers{}, time.Second).Merge(context.Background(), request()); err == nil || err.Error() != "database unavailable" {
 		t.Errorf("err = %v", err)
 	}
 	if c.got() != "check,kill" {
@@ -318,7 +318,7 @@ func TestMerge_ContextCancelled(t *testing.T) {
 // The merge itself fails: the fork's server stays, and nobody is told the
 // tasks moved.
 func TestMerge_MergeFails(t *testing.T) {
-	c := &fakeCrud{mergeErr: errors.New("tx failed")}
+	c := &fakeCrud{mergeErr: errors.New("merge transaction failed")}
 	s := &servers{}
 	if _, err := merger(c, nil, s, 0).Merge(context.Background(), request()); err == nil || len(s.removed) != 0 {
 		t.Errorf("err %v, removed %v", err, s.removed)
@@ -428,7 +428,7 @@ func TestMerge_DeleteFolderRefusedWhenAMachineCannotBeTold(t *testing.T) {
 }
 
 func TestMerge_DeleteFolderRefusedOnALookupError(t *testing.T) {
-	c := withFolders(&fakeCrud{foldErr: errors.New("db down")})
+	c := withFolders(&fakeCrud{foldErr: errors.New("database unavailable")})
 	if _, err := merger(c, nil, &servers{}, 0).Merge(context.Background(), deleteRequest()); err == nil || c.got() != "check" {
 		t.Errorf("err = %v steps = %s", err, c.got())
 	}

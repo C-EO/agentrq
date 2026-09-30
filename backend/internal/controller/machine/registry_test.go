@@ -112,7 +112,7 @@ func frame(t *testing.T, session uint64) wire.Frame {
 func TestRegistryRoutesToTheRightMachine(t *testing.T) {
 	r := NewRegistry("pod-a")
 	if r.InstanceID() != "pod-a" {
-		t.Errorf("InstanceID() = %q", r.InstanceID())
+		t.Errorf("InstanceID returned %q, want \"pod-a\"", r.InstanceID())
 	}
 
 	a, b := &fakeConn{name: "a"}, &fakeConn{name: "b"}
@@ -126,7 +126,7 @@ func TestRegistryRoutesToTheRightMachine(t *testing.T) {
 		t.Errorf("frame went to the wrong machine: a=%d b=%d", a.count(), b.count())
 	}
 	if r.Count() != 2 {
-		t.Errorf("Count() = %d, want 2", r.Count())
+		t.Errorf("Count returned %d, want 2", r.Count())
 	}
 }
 
@@ -135,10 +135,10 @@ func TestRegistryRoutesToTheRightMachine(t *testing.T) {
 func TestSendToAnUnheldMachineSaysSo(t *testing.T) {
 	r := NewRegistry("pod-a")
 	if _, err := r.Get(42); !errors.Is(err, ErrNotConnected) {
-		t.Errorf("Get error = %v, want ErrNotConnected", err)
+		t.Errorf("Get returned %v, want ErrNotConnected", err)
 	}
 	if err := r.Send(42, frame(t, 1)); !errors.Is(err, ErrNotConnected) {
-		t.Errorf("Send error = %v, want ErrNotConnected", err)
+		t.Errorf("Send returned %v, want ErrNotConnected", err)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestALateDisconnectCannotUnrouteALiveMachine(t *testing.T) {
 		t.Error("the current holder could not remove itself")
 	}
 	if _, err := r.Get(1); !errors.Is(err, ErrNotConnected) {
-		t.Errorf("Get after Remove = %v, want ErrNotConnected", err)
+		t.Errorf("Get after Remove returned %v, want ErrNotConnected", err)
 	}
 	// And removing again reports that somebody else already did.
 	if r.Remove(1, fresh) {
@@ -204,17 +204,17 @@ func TestALateDisconnectCannotUnrouteALiveMachine(t *testing.T) {
 // Revocation has to take effect without the daemon's cooperation.
 func TestDropClosesTheSocketFromThisEnd(t *testing.T) {
 	r := NewRegistry("pod-a")
-	c := &fakeConn{name: "c"}
-	r.Add(1, c)
+	conn := &fakeConn{name: "conn"}
+	r.Add(1, conn)
 
 	if !r.Drop(1) {
 		t.Fatal("Drop reported nothing to drop")
 	}
-	if !c.isClosed() {
+	if !conn.isClosed() {
 		t.Error("Drop did not close the socket")
 	}
 	if _, err := r.Get(1); !errors.Is(err, ErrNotConnected) {
-		t.Errorf("machine still registered after Drop: %v", err)
+		t.Errorf("Get after Drop returned %v, want ErrNotConnected", err)
 	}
 	if r.Drop(1) {
 		t.Error("Drop of an absent machine reported success")
@@ -228,21 +228,21 @@ func TestMachinesListsWhatThisInstanceHolds(t *testing.T) {
 
 	got := r.Machines()
 	if len(got) != 2 {
-		t.Fatalf("Machines() = %v, want two entries", got)
+		t.Fatalf("Machines returned %v, want two entries", got)
 	}
 	seen := map[int64]bool{got[0]: true, got[1]: true}
 	if !seen[7] || !seen[9] {
-		t.Errorf("Machines() = %v, want 7 and 9", got)
+		t.Errorf("Machines returned %v, want 7 and 9", got)
 	}
 }
 
 func TestSendPropagatesAWriteFailure(t *testing.T) {
 	r := NewRegistry("pod-a")
-	boom := errors.New("socket gone")
-	r.Add(1, &fakeConn{sendErr: boom})
+	errSocket := errors.New("socket gone")
+	r.Add(1, &fakeConn{sendErr: errSocket})
 
-	if err := r.Send(1, frame(t, 1)); !errors.Is(err, boom) {
-		t.Errorf("Send error = %v, want the underlying failure", err)
+	if err := r.Send(1, frame(t, 1)); !errors.Is(err, errSocket) {
+		t.Errorf("Send returned %v, want the socket's write error %v", err, errSocket)
 	}
 }
 
@@ -276,8 +276,8 @@ func (c *fakeConn) lastFrame() wire.Frame {
 // real socket round-trips it.
 func TestAskReturnsTheCorrelatedReply(t *testing.T) {
 	r := NewRegistry("pod-a")
-	c := &fakeConn{}
-	r.Add(1, c)
+	conn := &fakeConn{}
+	r.Add(1, conn)
 
 	done := make(chan struct{})
 	var reply wire.Control
@@ -289,8 +289,8 @@ func TestAskReturnsTheCorrelatedReply(t *testing.T) {
 
 	// The frame Ask actually sent names the id it is waiting on — a fixed id
 	// in the test would pass even if Ask ignored what it generated.
-	waitFor(t, func() bool { return c.count() > 0 }, "Ask never sent a request")
-	sent, err := wire.ParseControl(c.lastFrame())
+	waitFor(t, func() bool { return conn.count() > 0 }, "Ask never sent a request")
+	sent, err := wire.ParseControl(conn.lastFrame())
 	if err != nil {
 		t.Fatalf("ParseControl: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestAskTimesOutWhenNothingReplies(t *testing.T) {
 
 	_, err := r.Ask(context.Background(), 1, wire.Control{Op: wire.OpListAcpAgents}, 10*time.Millisecond)
 	if !errors.Is(err, ErrRequestTimeout) {
-		t.Errorf("Ask error = %v, want ErrRequestTimeout", err)
+		t.Errorf("Ask returned %v, want ErrRequestTimeout", err)
 	}
 }
 
@@ -331,12 +331,12 @@ func TestAskTimesOutWhenNothingReplies(t *testing.T) {
 // for a reply that was never going to arrive.
 func TestAskPropagatesASendFailure(t *testing.T) {
 	r := NewRegistry("pod-a")
-	boom := errors.New("socket gone")
-	r.Add(1, &fakeConn{sendErr: boom})
+	errSocket := errors.New("socket gone")
+	r.Add(1, &fakeConn{sendErr: errSocket})
 
 	_, err := r.Ask(context.Background(), 1, wire.Control{Op: wire.OpListAcpAgents}, time.Second)
-	if !errors.Is(err, boom) {
-		t.Errorf("Ask error = %v, want the underlying send failure", err)
+	if !errors.Is(err, errSocket) {
+		t.Errorf("Ask returned %v, want the socket's send error %v", err, errSocket)
 	}
 }
 
@@ -346,7 +346,7 @@ func TestAskRefusesAnUnconnectedMachine(t *testing.T) {
 	r := NewRegistry("pod-a")
 	_, err := r.Ask(context.Background(), 42, wire.Control{Op: wire.OpListAcpAgents}, time.Second)
 	if !errors.Is(err, ErrNotConnected) {
-		t.Errorf("Ask error = %v, want ErrNotConnected", err)
+		t.Errorf("Ask returned %v, want ErrNotConnected", err)
 	}
 }
 
@@ -417,11 +417,11 @@ func TestCapabilitiesBelongToTheConnectionThatSaidThem(t *testing.T) {
 
 func TestASessionRecordsItsDaemonsCapabilities(t *testing.T) {
 	r := NewRegistry("pod-a")
-	s, err := NewSession(t.Context(), r, &fakeAuth{}, Identity{MachineID: 7}, &fakeConn{})
+	session, err := NewSession(t.Context(), r, &fakeAuth{}, Identity{MachineID: 7}, &fakeConn{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.SetCapabilities([]string{wire.CapabilityFork})
+	session.SetCapabilities([]string{wire.CapabilityFork})
 	if !r.HasCapability(7, wire.CapabilityFork) {
 		t.Error("the session's hello was not recorded")
 	}

@@ -175,7 +175,7 @@ describe('createDrawerSource', () => {
     const mute = createDrawerSource({ bridge: bridge({ drawer: vi.fn(() => Promise.reject(new Error(''))) }) });
     expect(await mute.find('mermaid')).toEqual({ ok: false, reason: '' });
 
-    const bare = createDrawerSource({ bridge: bridge({ drawer: vi.fn(() => Promise.reject('boom')) }) });
+    const bare = createDrawerSource({ bridge: bridge({ drawer: vi.fn(() => Promise.reject('drawer crashed')) }) });
     expect(await bare.find('mermaid')).toEqual({ ok: false, reason: '' });
   });
 

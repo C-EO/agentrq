@@ -27,16 +27,16 @@ func TestCreateWorkspace_KeepsAFalseClearContextDefault(t *testing.T) {
 			ID: id, UserID: memUserID, Name: "api", CreatedAt: time.Now(), ClearContextDefault: want,
 		})
 		if err != nil || created.ClearContextDefault != want {
-			t.Fatalf("created %+v, %v", created, err)
+			t.Fatalf("CreateWorkspace returned %+v and error %v, want clearContextDefault %v and no error", created, err, want)
 		}
 		got, err := repo.GetWorkspace(context.Background(), id, memUserID)
 		if err != nil || got.ClearContextDefault != want {
-			t.Errorf("stored clearContextDefault = %v (%v), want %v", got.ClearContextDefault, err, want)
+			t.Errorf("the stored clearContextDefault is %v (read error %v), want %v", got.ClearContextDefault, err, want)
 		}
 	}
 }
 
-func TestCreateWorkspace_Errors(t *testing.T) {
+func TestCreateWorkspace_ReturnsAFailedWriteAndKeepsNothing(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -47,17 +47,17 @@ func TestCreateWorkspace_Errors(t *testing.T) {
 	}
 
 	db = workspaceDB(t)
-	boom := errors.New("boom")
-	if err := db.Callback().Update().Before("gorm:update").Register("fail", func(tx *gorm.DB) { _ = tx.AddError(boom) }); err != nil {
+	errUpdate := errors.New("updating clear_context_default failed")
+	if err := db.Callback().Update().Before("gorm:update").Register("fail", func(tx *gorm.DB) { _ = tx.AddError(errUpdate) }); err != nil {
 		t.Fatal(err)
 	}
 	repo = New(&mockDB{db: db})
-	if _, err := repo.CreateWorkspace(context.Background(), model.Workspace{ID: 1, UserID: memUserID}); !errors.Is(err, boom) {
-		t.Errorf("err = %v, want boom", err)
+	if _, err := repo.CreateWorkspace(context.Background(), model.Workspace{ID: 1, UserID: memUserID}); !errors.Is(err, errUpdate) {
+		t.Errorf("CreateWorkspace returned %v, want the failed update's error %v", err, errUpdate)
 	}
-	var n int64
-	db.Model(&model.Workspace{}).Where("id = ?", 1).Count(&n)
-	if n != 0 {
+	var kept int64
+	db.Model(&model.Workspace{}).Where("id = ?", 1).Count(&kept)
+	if kept != 0 {
 		t.Error("the workspace was kept when writing its setting back failed")
 	}
 }
@@ -82,7 +82,7 @@ func TestSetWorkingDirectory_WritesOnlyTheFolder(t *testing.T) {
 	}
 	got, _ := repo.GetWorkspace(ctx, 7, memUserID)
 	if got.WorkingDirectory != "/home/u/.agentrq/forks/7" || !got.AllowAllCommands || !got.UpdatedAt.After(stale.UpdatedAt) {
-		t.Errorf("stored %+v: want the folder set and the parent's setting kept", got)
+		t.Errorf("the stored workspace is %+v, want the folder set and the parent's setting kept", got)
 	}
 	if err := repo.SetWorkingDirectory(ctx, 9, memUserID, "/elsewhere"); err != nil {
 		t.Fatal(err)

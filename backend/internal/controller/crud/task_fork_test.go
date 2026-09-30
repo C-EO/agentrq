@@ -140,8 +140,8 @@ func TestForkTask_SkipsAttachmentsWhoseFilesAreGone(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(100), testUserID).Return(forkSource(t), nil)
 	// Gone from both where it is filed now and where it was kept before.
-	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-task-att")).Return(nil, errors.New("gone"))
-	e.storage.EXPECT().LoadRaw("src-task-att").Return(nil, errors.New("gone"))
+	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-task-att")).Return(nil, errors.New("attachment not found"))
+	e.storage.EXPECT().LoadRaw("src-task-att").Return(nil, errors.New("attachment not found"))
 	e.storage.EXPECT().LoadRaw(storage.AttachmentKey(1, 100, "src-msg-att")).Return([]byte("png"), nil)
 	e.storage.EXPECT().Save(gomock.Any(), gomock.Any()).Return(errors.New("disk full"))
 
@@ -175,12 +175,12 @@ func TestForkTask_RemovesCopiedFilesWhenTheWriteFails(t *testing.T) {
 	e.storage.EXPECT().LoadRaw(gomock.Any()).Return([]byte("x"), nil).Times(2)
 	e.storage.EXPECT().Save(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 	e.storage.EXPECT().Delete(gomock.Any()).Return(nil).Times(2)
-	e.repo.EXPECT().CreateTaskWithMessages(gomock.Any(), gomock.Any(), gomock.Any()).Return(model.Task{}, errors.New("db down"))
+	e.repo.EXPECT().CreateTaskWithMessages(gomock.Any(), gomock.Any(), gomock.Any()).Return(model.Task{}, errors.New("database unavailable"))
 
 	_, err := e.controller.ForkTask(context.Background(), entity.ForkTaskRequest{
 		WorkspaceID: 1, TaskID: 100, MessageID: 4, Status: "ongoing", UserID: testUserIDStr,
 	})
-	if err == nil || !strings.Contains(err.Error(), "db down") {
+	if err == nil || !strings.Contains(err.Error(), "database unavailable") {
 		t.Fatalf("err = %v, want the write failure", err)
 	}
 }

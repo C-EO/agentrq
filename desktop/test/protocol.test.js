@@ -903,7 +903,7 @@ describe('attachments', () => {
     // An error page stored under an attachment's name would outlive whatever
     // caused it.
     const attachments = makeStore(null)
-    const netFetch = vi.fn(async () => new Response('nope', { status: 404 }))
+    const netFetch = vi.fn(async () => new Response('attachment not found', { status: 404 }))
     const { handler } = makeHandler({ attachments, netFetch })
 
     const res = await handler(makeRequest(ATTACHMENT))

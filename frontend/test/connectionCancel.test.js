@@ -55,10 +55,10 @@ describe('useConnectionCancel', () => {
   })
 
   it('describes a rejection that is not an Error', async () => {
-    withBridge(vi.fn(async () => Promise.reject('nope')))
+    withBridge(vi.fn(async () => Promise.reject('shell refused to cancel')))
     const { run } = useConnectionCancel()
 
-    expect(await run()).toBe('nope')
+    expect(await run()).toBe('shell refused to cancel')
   })
 
   it('asks the shell once however many times the button is pressed', async () => {

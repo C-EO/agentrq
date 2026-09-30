@@ -75,8 +75,8 @@ test('isLostSession recognises only a 404 about a session', () => {
 
 test('callTool completes the handshake before calling', async () => {
   const inner = fakeFetch({ onCall: () => 'done' })
-  const c = client(withSession(inner))
-  assert.equal((await c.callTool('getWorkspace', {})).text, 'done')
+  const mcpClient = client(withSession(inner))
+  assert.equal((await mcpClient.callTool('getWorkspace', {})).text, 'done')
 
   // initialize, then the initialized notification, then the call — in order.
   assert.deepEqual(
@@ -87,8 +87,8 @@ test('callTool completes the handshake before calling', async () => {
 
 test('callTool sends the session and protocol headers once established', async () => {
   const inner = fakeFetch({ onCall: () => 'ok' })
-  const c = client(withSession(inner, 'sess-9'))
-  await c.callTool('getWorkspace', {})
+  const mcpClient = client(withSession(inner, 'sess-9'))
+  await mcpClient.callTool('getWorkspace', {})
   const toolCall = inner.calls.find((call) => call.body && call.body.method === 'tools/call')
   assert.equal(toolCall.headers['mcp-session-id'], 'sess-9')
   assert.equal(toolCall.headers['mcp-protocol-version'], '2025-06-18')
@@ -96,36 +96,36 @@ test('callTool sends the session and protocol headers once established', async (
 
 test('callTool passes custom headers from .mcp.json through', async () => {
   const inner = fakeFetch({})
-  const c = new McpClient({
+  const mcpClient = new McpClient({
     url: 'https://workspace.test',
     headers: { authorization: 'Bearer tok' },
     fetchImpl: withSession(inner),
   })
-  await c.callTool('getWorkspace', {})
+  await mcpClient.callTool('getWorkspace', {})
   assert.equal(inner.calls[0].headers.authorization, 'Bearer tok')
 })
 
 test('connect is idempotent', async () => {
   const inner = fakeFetch({})
-  const c = client(withSession(inner))
-  await c.connect()
-  await c.connect()
+  const mcpClient = client(withSession(inner))
+  await mcpClient.connect()
+  await mcpClient.connect()
   assert.equal(inner.calls.filter((call) => call.body && call.body.method === 'initialize').length, 1)
 })
 
 test('a tool answering isError becomes the server error, with its own wording', async () => {
-  const c = client(withSession(fakeFetch({ onCall: () => ({ text: 'invalid taskId format', isError: true }) })))
-  await assert.rejects(() => c.callTool('getTask', { taskId: 'x' }), /invalid taskId format/)
+  const mcpClient = client(withSession(fakeFetch({ onCall: () => ({ text: 'invalid taskId format', isError: true }) })))
+  await assert.rejects(() => mcpClient.callTool('getTask', { taskId: 'x' }), /invalid taskId format/)
 })
 
 test('an isError result with no text still fails', async () => {
-  const c = client(withSession(fakeFetch({ onCall: () => ({ text: '', isError: true }) })))
-  await assert.rejects(() => c.callTool('getTask', {}), /getTask failed/)
+  const mcpClient = client(withSession(fakeFetch({ onCall: () => ({ text: '', isError: true }) })))
+  await assert.rejects(() => mcpClient.callTool('getTask', {}), /getTask failed/)
 })
 
 test('a JSON-RPC error becomes a readable failure', async () => {
-  const c = client(withSession(fakeFetch({})))
-  await assert.rejects(() => c.request('nope', {}), /no such method nope/)
+  const mcpClient = client(withSession(fakeFetch({})))
+  await assert.rejects(() => mcpClient.request('tasks/unknown', {}), /no such method tasks\/unknown/)
 })
 
 test('a JSON-RPC error with no message still names the method', async () => {
@@ -175,8 +175,8 @@ test('a dropped session is re-established and the call retried', async () => {
       return null
     },
   })
-  const c = client(withSession(inner))
-  assert.equal((await c.callTool('getTask', {})).text, 'recovered')
+  const mcpClient = client(withSession(inner))
+  assert.equal((await mcpClient.callTool('getTask', {})).text, 'recovered')
   assert.equal(toolCalls, 2)
   assert.equal(inner.calls.filter((call) => call.body && call.body.method === 'initialize').length, 2)
 })
@@ -197,7 +197,7 @@ test('a non-session failure is not retried', async () => {
     onRequest: (record) => {
       if (record.body && record.body.method === 'tools/call') {
         attempts += 1
-        return response('boom', { status: 500 })
+        return response('internal server error', { status: 500 })
       }
       return null
     },
@@ -220,10 +220,10 @@ test('listTools returns the advertised tools, and copes with none', async () => 
 
 test('close ends the session and is safe to call twice', async () => {
   const inner = fakeFetch({})
-  const c = client(withSession(inner, 'sess-close'))
-  await c.callTool('getWorkspace', {})
-  await c.close()
-  await c.close()
+  const mcpClient = client(withSession(inner, 'sess-close'))
+  await mcpClient.callTool('getWorkspace', {})
+  await mcpClient.close()
+  await mcpClient.close()
   const deletes = inner.calls.filter((call) => call.method === 'DELETE')
   assert.equal(deletes.length, 1)
   assert.equal(deletes[0].headers['mcp-session-id'], 'sess-close')
@@ -231,12 +231,12 @@ test('close ends the session and is safe to call twice', async () => {
 
 test('close never turns a completed command into a failure', async () => {
   const inner = fakeFetch({})
-  const c = client(async (url, options) => {
+  const mcpClient = client(async (url, options) => {
     if ((options.method || 'POST') === 'DELETE') throw new Error('network gone')
     return withSession(inner)(url, options)
   })
-  await c.callTool('getWorkspace', {})
-  await c.close()
+  await mcpClient.callTool('getWorkspace', {})
+  await mcpClient.close()
 })
 
 test('close with no session does nothing', async () => {

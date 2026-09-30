@@ -44,7 +44,7 @@ describe('names and failures', () => {
 
   it('says which step failed, and that the fork is there when it is', () => {
     expect(spinUpFailure('fork', new Error('rate limit exceeded'), 'x')).toBe('Could not fork the workspace: rate limit exceeded');
-    expect(spinUpFailure('move', new Error('nope'), 'Fix it')).toBe(`Forked Fix it, but could not ${STEP_LABELS.move}: nope`);
+    expect(spinUpFailure('move', new Error('task not found'), 'Fix it')).toBe(`Forked Fix it, but could not ${STEP_LABELS.move}: task not found`);
     expect(spinUpFailure('launch', {}, 'Fix it')).toBe('Forked Fix it, but could not start the agent in the fork: unknown error');
   });
 });
@@ -95,9 +95,9 @@ describe('useSpinUp: opening', () => {
   });
 
   it('says so when the machines cannot be loaded', async () => {
-    const { spin } = setup({ fetchMachines: vi.fn(() => Promise.reject(new Error('down'))) });
+    const { spin } = setup({ fetchMachines: vi.fn(() => Promise.reject(new Error('network unreachable'))) });
     await spin.open(task, parent);
-    expect(spin.error.value).toBe('down');
+    expect(spin.error.value).toBe('network unreachable');
     const bare = setup({ fetchMachines: vi.fn(() => Promise.reject({})) }).spin;
     await bare.open(task, parent);
     expect(bare.error.value).toBe('Failed to load machines');

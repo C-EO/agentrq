@@ -178,7 +178,7 @@ func TestHandleSlashCommand_WorkspaceNotFound(t *testing.T) {
 
 	mockRepo.EXPECT().
 		SystemGetWorkspace(gomock.Any(), int64(1)).
-		Return(model.Workspace{}, fmt.Errorf("db error"))
+		Return(model.Workspace{}, fmt.Errorf("database unavailable"))
 
 	_, _, err := c.HandleSlashCommand(context.Background(), "C123", "some text")
 	if err == nil {

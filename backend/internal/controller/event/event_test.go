@@ -523,7 +523,7 @@ func TestStart_DeletesOrphanedEventRouting(t *testing.T) {
 	}{
 		{"some deleted", 3, nil},
 		{"nothing to delete", 0, nil},
-		{"sweep fails", 0, fmt.Errorf("db down")},
+		{"sweep fails", 0, fmt.Errorf("database unavailable")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, mockRepo, mockPubSub, _ := newTestController(t)

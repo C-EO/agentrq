@@ -209,9 +209,9 @@ func TestGetSiteToolDefinitionRefusals(t *testing.T) {
 	}{
 		{"no site", &fakeSiteTools{}, GetSiteToolDefinitionParams{Tool: "search"}, "site and tool are required"},
 		{"no tool", &fakeSiteTools{}, GetSiteToolDefinitionParams{Site: siteGitHub}, "site and tool are required"},
-		{"lookup fails", &fakeSiteTools{getErr: errors.New("db down")},
+		{"lookup fails", &fakeSiteTools{getErr: errors.New("database unavailable")},
 			GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "search"},
-			"failed to look up https://github.com: db down"},
+			"failed to look up https://github.com: database unavailable"},
 		{"not shared", &fakeSiteTools{shares: []SiteShareView{{Site: "https://example.com"}}},
 			GetSiteToolDefinitionParams{Site: siteGitHub, Tool: "search"},
 			"https://github.com is not shared with this workspace. Shared: https://example.com"},
@@ -231,9 +231,9 @@ func TestGetSiteToolDefinitionRefusals(t *testing.T) {
 }
 
 func TestListSiteToolsError(t *testing.T) {
-	s := newSiteServer(t, &fakeSiteTools{listErr: errors.New("db down")}, "", nil)
+	s := newSiteServer(t, &fakeSiteTools{listErr: errors.New("database unavailable")}, "", nil)
 	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
-	if !res.IsError || !strings.Contains(resultText(t, res), "db down") {
+	if !res.IsError || !strings.Contains(resultText(t, res), "database unavailable") {
 		t.Fatalf("got %+v", res)
 	}
 }
@@ -252,9 +252,9 @@ func TestCallSiteToolRefusals(t *testing.T) {
 			"site and tool are required"},
 		{"bad taskId", &fakeSiteTools{}, CallSiteToolParams{TaskID: "!", Site: siteGitHub, Tool: "search"},
 			"invalid taskId format"},
-		{"lookup fails", &fakeSiteTools{getErr: errors.New("db down")},
+		{"lookup fails", &fakeSiteTools{getErr: errors.New("database unavailable")},
 			CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "search"},
-			"failed to look up https://github.com: db down"},
+			"failed to look up https://github.com: database unavailable"},
 		{"not shared, none", &fakeSiteTools{},
 			CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "search"},
 			"https://github.com is not shared with this workspace. Shared: none"},
@@ -301,7 +301,7 @@ func TestCallSiteToolUnusableSchema(t *testing.T) {
 			text, isErr := callSite(t, newSiteServer(t, backend, "", nil),
 				CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "search"})
 			if !isErr || !strings.HasPrefix(text, "arguments do not match search's schema: ") || len(backend.calls) != 0 {
-				t.Fatalf("got %q (error %v), calls %v", text, isErr, backend.calls)
+				t.Fatalf("got %q (error %v) and site calls %v, want the failure reported and no site called", text, isErr, backend.calls)
 			}
 		})
 	}
@@ -344,7 +344,7 @@ func TestCallSiteToolAllowOnce(t *testing.T) {
 		TaskID: siteTask, Site: siteGitHub, Tool: "star", Arguments: map[string]any{"repo": "agentrq"},
 	})
 	if isErr || text != "starred" || len(backend.calls) != 1 {
-		t.Fatalf("got %q (error %v), calls %v", text, isErr, backend.calls)
+		t.Fatalf("got %q (error %v) and site calls %v, want the failure reported and no site called", text, isErr, backend.calls)
 	}
 	if len(backend.allowed) != 0 {
 		t.Errorf("allow once was remembered: %v", backend.allowed)
@@ -384,11 +384,11 @@ func TestCallSiteToolAlwaysAllow(t *testing.T) {
 }
 
 func TestCallSiteToolAlwaysAllowNotRemembered(t *testing.T) {
-	backend := &fakeSiteTools{shares: []SiteShareView{githubShare()}, allowErr: errors.New("db down")}
+	backend := &fakeSiteTools{shares: []SiteShareView{githubShare()}, allowErr: errors.New("database unavailable")}
 	s := newSiteServer(t, backend, "accept", map[string]any{"decision": "always"})
 	text, isErr := callSite(t, s, CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "star"})
-	if !isErr || text != "failed to remember the approval: db down" || len(backend.calls) != 0 {
-		t.Fatalf("got %q (error %v), calls %v", text, isErr, backend.calls)
+	if !isErr || text != "failed to remember the approval: database unavailable" || len(backend.calls) != 0 {
+		t.Fatalf("got %q (error %v) and site calls %v, want the failure reported and no site called", text, isErr, backend.calls)
 	}
 }
 
@@ -425,7 +425,7 @@ func TestCallSiteToolApprovalTimesOut(t *testing.T) {
 	s := newSiteServer(t, backend, "", nil)
 	text, isErr := callSite(t, s, CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "star"})
 	if !isErr || text != "denied by the human" || len(backend.calls) != 0 {
-		t.Fatalf("got %q (error %v), calls %v", text, isErr, backend.calls)
+		t.Fatalf("got %q (error %v) and site calls %v, want the failure reported and no site called", text, isErr, backend.calls)
 	}
 }
 
@@ -433,11 +433,11 @@ func TestCallSiteToolCannotAsk(t *testing.T) {
 	backend := &fakeSiteTools{shares: []SiteShareView{githubShare()}}
 	s := newSiteServer(t, backend, "", nil)
 	s.reply = func(context.Context, string, string, []entity.Attachment, any) (int64, error) {
-		return 0, errors.New("task gone")
+		return 0, errors.New("task not found")
 	}
 	text, isErr := callSite(t, s, CallSiteToolParams{TaskID: siteTask, Site: siteGitHub, Tool: "star"})
-	if !isErr || text != "failed to ask the human: task gone" || len(backend.calls) != 0 {
-		t.Fatalf("got %q (error %v), calls %v", text, isErr, backend.calls)
+	if !isErr || text != "failed to ask the human: task not found" || len(backend.calls) != 0 {
+		t.Fatalf("got %q (error %v) and site calls %v, want the failure reported and no site called", text, isErr, backend.calls)
 	}
 }
 

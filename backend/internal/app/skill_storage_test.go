@@ -80,10 +80,10 @@ func TestNewSkillStorage(t *testing.T) {
 	t.Run("S3Errors", func(t *testing.T) {
 		old := newS3
 		defer func() { newS3 = old }()
-		newS3 = func(s3.Params) (s3.Service, error) { return nil, errors.New("no creds") }
+		newS3 = func(s3.Params) (s3.Service, error) { return nil, errors.New("no S3 credentials configured") }
 		_, err := newSkillStorage(newYAMLConfig(t, "skills: {storage: s3}"), local, "https://agentrq.example/storage/skills")
-		if err == nil || err.Error() != "s3: no creds" {
-			t.Errorf("s3 failure: %v", err)
+		if err == nil || err.Error() != "s3: no S3 credentials configured" {
+			t.Errorf("newSkillStorage returned %v, want \"s3: no S3 credentials configured\"", err)
 		}
 	})
 }

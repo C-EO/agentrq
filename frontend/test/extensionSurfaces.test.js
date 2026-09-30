@@ -91,13 +91,13 @@ describe('entriesFor', () => {
   it('has something to say about a failure that carried no message', async () => {
     const logger = { warn: vi.fn() };
     const surfaces = useExtensionSurfaces({
-      bridge: fakeBridge({ entries: vi.fn(async () => { throw 'gone'; }) }), // eslint-disable-line no-throw-literal
+      bridge: fakeBridge({ entries: vi.fn(async () => { throw 'bridge threw a bare string'; }) }), // eslint-disable-line no-throw-literal
       logger,
     });
 
     await surfaces.entriesFor('task-menu', {});
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'gone');
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'bridge threw a bare string');
   });
 
   it('asks the main process about this surface and this task', async () => {
@@ -113,7 +113,7 @@ describe('entriesFor', () => {
   // The built-in items are the ones somebody actually came for; a broken bridge
   // must not be able to stop the menu opening.
   it('answers with nothing rather than throwing, however the bridge fails', async () => {
-    const throwing = useExtensionSurfaces({ bridge: fakeBridge({ entries: vi.fn(async () => { throw new Error('gone'); }) }) });
+    const throwing = useExtensionSurfaces({ bridge: fakeBridge({ entries: vi.fn(async () => { throw new Error('bridge disconnected'); }) }) });
     const empty = useExtensionSurfaces({ bridge: fakeBridge({ entries: vi.fn(async () => undefined) }) });
     const absent = useExtensionSurfaces({ bridge: undefined });
 
@@ -194,12 +194,12 @@ describe('invoke', () => {
 
   it('shows the reason the main process gave', async () => {
     const surfaces = useExtensionSurfaces({
-      bridge: fakeBridge({ invoke: vi.fn(async () => ({ ok: false, reason: 'task-stats failed: boom' })) }),
+      bridge: fakeBridge({ invoke: vi.fn(async () => ({ ok: false, reason: 'task-stats failed: database unavailable' })) }),
     });
 
     await surfaces.invoke({ owner: 'task-stats', id: 'stats' }, {});
 
-    expect(surfaces.error.value).toBe('task-stats failed: boom');
+    expect(surfaces.error.value).toBe('task-stats failed: database unavailable');
   });
 
   it('has something to say about a refusal that carried no reason', async () => {
@@ -239,7 +239,7 @@ describe('invoke', () => {
   });
 
   it('is not busy once it has finished, whatever happened', async () => {
-    const surfaces = useExtensionSurfaces({ bridge: fakeBridge({ invoke: vi.fn(async () => { throw new Error('x'); }) }) });
+    const surfaces = useExtensionSurfaces({ bridge: fakeBridge({ invoke: vi.fn(async () => { throw new Error('bridge disconnected'); }) }) });
 
     await surfaces.invoke({ owner: 'task-stats', id: 'stats' }, {});
 
@@ -444,7 +444,7 @@ describe('invokeQuietly', () => {
 
     // Not everything thrown is an Error, and nothing here may raise.
     const odd = useExtensionSurfaces({
-      bridge: fakeBridge({ invoke: vi.fn(async () => { throw 'gone' }) }), // eslint-disable-line no-throw-literal
+      bridge: fakeBridge({ invoke: vi.fn(async () => { throw 'bridge threw a bare string' }) }), // eslint-disable-line no-throw-literal
     });
     expect(await odd.invokeQuietly({}, {})).toEqual({ ok: false, reason: '' });
   });

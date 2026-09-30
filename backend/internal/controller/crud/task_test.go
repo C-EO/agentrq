@@ -299,7 +299,7 @@ func TestCreateTask_RepositoryError(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.idgen.EXPECT().NextID().Return(int64(1))
-	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("db error"))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("database unavailable"))
 
 	_, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
 		UserID: testUserIDStr,
@@ -714,7 +714,7 @@ func TestMoveTask_UpdateToolCallsWorkspaceIDError(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("db error"))
+	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("database unavailable"))
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
 		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
@@ -742,7 +742,7 @@ func TestMoveTask_UpdateSlackTaskThreadWorkspaceIDError(t *testing.T) {
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(nil)
-	e.repo.EXPECT().UpdateSlackTaskThreadWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("db error"))
+	e.repo.EXPECT().UpdateSlackTaskThreadWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("database unavailable"))
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
 		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
@@ -819,7 +819,7 @@ func TestMoveTask_UpdateTaskError(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("db error"))
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("database unavailable"))
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
 		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
@@ -1238,7 +1238,7 @@ func TestGetWorkspaceTaskCounts_Success(t *testing.T) {
 func TestGetWorkspaceTaskCounts_Error(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().GetWorkspaceTaskCountsByCategory(gomock.Any(), int64(1), testUserID).Return(nil, fmt.Errorf("db error"))
+	e.repo.EXPECT().GetWorkspaceTaskCountsByCategory(gomock.Any(), int64(1), testUserID).Return(nil, fmt.Errorf("database unavailable"))
 
 	_, err := e.controller.GetWorkspaceTaskCounts(context.Background(), entity.GetWorkspaceTaskCountsRequest{
 		WorkspaceID: 1,

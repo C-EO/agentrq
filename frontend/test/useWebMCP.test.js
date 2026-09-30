@@ -152,10 +152,10 @@ describe('telling the open page about changes', () => {
   });
 
   it('announces nothing when the tool fails', async () => {
-    const api = { updateWorkflow: vi.fn().mockRejectedValue(new Error('nope')) };
+    const api = { updateWorkflow: vi.fn().mockRejectedValue(new Error('workflow not found')) };
     const { ctx, changed, off } = await connected(api);
 
-    await expect(toolNamed(ctx, 'updateWorkflow').execute({ workflowId: 'wf1' }, {})).rejects.toThrow('nope');
+    await expect(toolNamed(ctx, 'updateWorkflow').execute({ workflowId: 'wf1' }, {})).rejects.toThrow('workflow not found');
     await tick();
     off();
 

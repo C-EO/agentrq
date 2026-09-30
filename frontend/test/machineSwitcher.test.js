@@ -146,7 +146,7 @@ describe('useMachineSwitcher', () => {
     pending[2].resolve({ machines: [MACHINES[0]] });
     await third;
     pending[0].resolve({ machines: MACHINES });
-    pending[1].reject(new Error('stale'));
+    pending[1].reject(new Error('superseded request failed'));
     await Promise.all([first, second]);
 
     expect(machines.value).toEqual([MACHINES[0]]);

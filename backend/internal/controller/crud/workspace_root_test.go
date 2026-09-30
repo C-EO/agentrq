@@ -40,7 +40,7 @@ func TestContentWorkspaceID(t *testing.T) {
 		{name: "a workspace is its own", ws: parentWorkspace(), want: fkParent},
 		{name: "a fork is its parent's", ws: forkWorkspace(), want: fkParent},
 		{name: "another account's is not found", ws: model.Workspace{ID: fkFork, UserID: testUserID + 1, ForkOfID: fkParent}, fail: base.ErrNotFound},
-		{name: "a failed lookup is reported", err: errors.New("db down"), fail: errors.New("db down")},
+		{name: "a failed lookup is reported", err: errors.New("database unavailable"), fail: errors.New("database unavailable")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newTestController(t)
@@ -83,11 +83,11 @@ func TestAForkListsItsParentsMemories(t *testing.T) {
 func TestMemories_ForkLookupFailureIsReported(t *testing.T) {
 	e := newTestController(t)
 	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), fkFork, testUserID).Return(true, nil)
-	e.repo.EXPECT().SystemGetWorkspace(gomock.Any(), fkFork).Return(model.Workspace{}, errors.New("db down"))
+	e.repo.EXPECT().SystemGetWorkspace(gomock.Any(), fkFork).Return(model.Workspace{}, errors.New("database unavailable"))
 
 	_, err := e.controller.ListMemories(context.Background(), entity.ListMemoriesRequest{WorkspaceID: fkFork, UserID: testUserIDStr})
 
-	if err == nil || !strings.Contains(err.Error(), "db down") {
+	if err == nil || !strings.Contains(err.Error(), "database unavailable") {
 		t.Fatalf("err = %v, want the lookup failure", err)
 	}
 }
@@ -178,13 +178,13 @@ func TestShareSkill_ForkLookupFailureIsReported(t *testing.T) {
 	// The target passes the access check but cannot then be read.
 	e.db.Callback().Query().After("gorm:query").Register("fail_target", func(tx *gorm.DB) {
 		if strings.Contains(tx.Statement.SQL.String(), "workspaces") && tx.Statement.Vars != nil && len(tx.Statement.Vars) == 1 && tx.Statement.Vars[0] == skFork {
-			_ = tx.AddError(errors.New("db down"))
+			_ = tx.AddError(errors.New("database unavailable"))
 		}
 	})
 
 	err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skFork})
 
-	if err == nil || !strings.Contains(err.Error(), "db down") {
+	if err == nil || !strings.Contains(err.Error(), "database unavailable") {
 		t.Fatalf("err = %v, want the lookup failure", err)
 	}
 }
@@ -370,7 +370,7 @@ func TestGetAttachment_WorkspaceLookupFails(t *testing.T) {
 	e := newTestController(t)
 	attsJSON, _ := json.Marshal([]entity.Attachment{{ID: "att-1", Filename: "f.txt"}})
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1, Attachments: datatypes.JSON(attsJSON)}, nil)
-	e.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(1)).Return(model.Workspace{}, errors.New("db down"))
+	e.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(1)).Return(model.Workspace{}, errors.New("database unavailable"))
 
 	_, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{WorkspaceID: 1, TaskID: 10, AttachmentID: "att-1", UserID: testUserIDStr})
 

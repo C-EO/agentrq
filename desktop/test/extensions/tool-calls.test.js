@@ -294,7 +294,7 @@ describe('review', () => {
     const verdict = await review(
       [
         reviewer('a', () => {
-          throw new Error('boom')
+          throw new Error('reviewer crashed')
         }),
         reviewer('b', () => 'deny'),
       ],
@@ -303,17 +303,17 @@ describe('review', () => {
     )
 
     expect(verdict.by).toBe('b')
-    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: 'boom' }))
+    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: 'reviewer crashed' }))
   })
 
   it('steps over one that rejects', async () => {
     const onError = vi.fn()
-    const verdict = await review([reviewer('a', () => Promise.reject(new Error('nope')))], request, {
+    const verdict = await review([reviewer('a', () => Promise.reject(new Error('reviewer\'s promise rejected')))], request, {
       onError,
     })
 
     expect(verdict.behavior).toBe('')
-    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: 'nope' }))
+    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: 'reviewer\'s promise rejected' }))
   })
 
   /** A reviewer that never answers must not hold a request open forever. */
@@ -363,7 +363,7 @@ describe('review', () => {
    * survivable without a caller having wired up a handler for each.
    */
   it('needs nothing but the reviewers to survive all three failures', async () => {
-    const thrown = await review([reviewer('a', () => { throw new Error('boom') })], request)
+    const thrown = await review([reviewer('a', () => { throw new Error('reviewer crashed') })], request)
     expect(thrown.behavior).toBe('')
 
     const overreach = await review([reviewer('a', () => 'allow', CONSENT.deny)], request)
@@ -541,7 +541,7 @@ describe('createToolCallReview', () => {
           owner: 'guardrail',
           id: 'shell',
           review: () => {
-            throw new Error('boom')
+            throw new Error('reviewer crashed')
           },
         },
       ],
@@ -549,7 +549,7 @@ describe('createToolCallReview', () => {
 
     await dispatcher.handle(streamEvent())
 
-    expect(onFailure).toHaveBeenCalledWith('guardrail', expect.objectContaining({ message: 'boom' }))
+    expect(onFailure).toHaveBeenCalledWith('guardrail', expect.objectContaining({ message: 'reviewer crashed' }))
   })
 
   /** Not everything thrown is an Error, and the log line still has to read. */
@@ -560,7 +560,7 @@ describe('createToolCallReview', () => {
           owner: 'guardrail',
           id: 'shell',
           review: () => {
-            throw 'no idea'
+            throw 'reviewer threw a bare string'
           },
         },
       ],
@@ -568,7 +568,7 @@ describe('createToolCallReview', () => {
 
     await dispatcher.handle(streamEvent())
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('no idea'))
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('reviewer threw a bare string'))
   })
 
   it('says when a reviewer tried to approve something it may only refuse', async () => {
@@ -620,7 +620,7 @@ describe('createToolCallReview', () => {
     const sendVerdict = vi.fn(async () => ({ ok: true }))
     const dispatcher = createToolCallReview({
       reviewers: () => [
-        { owner: 'guardrail', id: 'thrower', review: () => { throw new Error('boom') } },
+        { owner: 'guardrail', id: 'thrower', review: () => { throw new Error('reviewer crashed') } },
         { owner: 'guardrail', id: 'shell', review: () => 'deny' },
       ],
       grantFor: () => grant(CONSENT.decide),

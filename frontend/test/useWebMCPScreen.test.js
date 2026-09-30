@@ -141,7 +141,7 @@ describe('withScreen', () => {
 
   it('still runs the tool when the person cannot be moved', async () => {
     const { deps, tool, wrapped } = setup({ screen: { before: () => '/x' } });
-    deps.go.mockRejectedValue(new Error('guard'));
+    deps.go.mockRejectedValue(new Error('a navigation guard refused the move'));
 
     await expect(wrapped.execute({}, {})).resolves.toEqual({ ok: true });
     expect(tool.execute).toHaveBeenCalled();
@@ -149,9 +149,9 @@ describe('withScreen', () => {
 
   it('says nothing when the tool fails, and passes arguments it was not given as empty', async () => {
     const before = vi.fn().mockReturnValue('/x');
-    const { deps, wrapped } = setup({ screen: { before }, execute: vi.fn().mockRejectedValue(new Error('nope')) });
+    const { deps, wrapped } = setup({ screen: { before }, execute: vi.fn().mockRejectedValue(new Error('tool failed')) });
 
-    await expect(wrapped.execute(undefined, {})).rejects.toThrow('nope');
+    await expect(wrapped.execute(undefined, {})).rejects.toThrow('tool failed');
 
     expect(before).toHaveBeenCalledWith({});
     expect(deps.notify).not.toHaveBeenCalled();

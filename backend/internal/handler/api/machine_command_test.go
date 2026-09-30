@@ -42,15 +42,15 @@ func (c *recordingDaemonConn) ops(t *testing.T) []wire.Control {
 	t.Helper()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]wire.Control, 0, len(c.frames))
+	controls := make([]wire.Control, 0, len(c.frames))
 	for _, f := range c.frames {
 		ctl, err := wire.ParseControl(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, ctl)
+		controls = append(controls, ctl)
 	}
-	return out
+	return controls
 }
 
 type commandCrud struct {
@@ -84,8 +84,8 @@ func (m *commandCrud) RecordMachineCommand(_ context.Context, req entity.RecordM
 	m.recorded = append(m.recorded, req)
 }
 
-func commandApp(c crud.Controller, reg *machinectrl.Registry) *fiber.App {
-	h := &handler{crud: c, machineRegistry: reg}
+func commandApp(ctrl crud.Controller, reg *machinectrl.Registry) *fiber.App {
+	h := &handler{crud: ctrl, machineRegistry: reg}
 	app := fiber.New()
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
@@ -111,52 +111,52 @@ func post(t *testing.T, app *fiber.App, path, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	res, err := app.Test(req)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := io.ReadAll(res.Body)
-	return res.StatusCode, string(b)
+	respBody, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(respBody)
 }
 
 func TestRestartDaemonSendsTheRestartAndCountsIt(t *testing.T) {
 	reg, conn := connected(wire.CapabilityFork, wire.CapabilityRestart)
-	c := &commandCrud{running: "0.9.3"}
+	ctrl := &commandCrud{running: "0.9.3"}
 
-	status, body := post(t, commandApp(c, reg), "/machines/"+machine11+"/restart", "")
+	status, body := post(t, commandApp(ctrl, reg), "/machines/"+machine11+"/restart", "")
 
 	if status != http.StatusAccepted {
-		t.Fatalf("status = %d (%s), want 202", status, body)
+		t.Fatalf("the request answered status %d (%s), want 202", status, body)
 	}
 	ops := conn.ops(t)
 	if len(ops) != 1 || ops[0].Op != wire.OpRestart {
-		t.Fatalf("sent %+v", ops)
+		t.Fatalf("the daemon was sent %+v, want one restart", ops)
 	}
-	if len(c.recorded) != 1 || c.recorded[0].Action != entity.ActionMachineRestart ||
-		c.recorded[0].MachineID != 11 || c.recorded[0].UserID != "user-1" {
-		t.Errorf("counted %+v", c.recorded)
+	if len(ctrl.recorded) != 1 || ctrl.recorded[0].Action != entity.ActionMachineRestart ||
+		ctrl.recorded[0].MachineID != 11 || ctrl.recorded[0].UserID != "user-1" {
+		t.Errorf("counted %+v, want one restart of machine 11 by user-1", ctrl.recorded)
 	}
 }
 
 func TestApproveMachineUpdateSendsTheApprovedVersionAndCountsIt(t *testing.T) {
 	reg, conn := connected(wire.CapabilityRestart, wire.CapabilityUpdate)
-	c := &commandCrud{running: "0.9.3", offered: "0.9.4"}
+	ctrl := &commandCrud{running: "0.9.3", offered: "0.9.4"}
 
-	status, body := post(t, commandApp(c, reg), "/machines/"+machine11+"/update", `{"version":"0.9.4"}`)
+	status, body := post(t, commandApp(ctrl, reg), "/machines/"+machine11+"/update", `{"version":"0.9.4"}`)
 
 	if status != http.StatusAccepted {
-		t.Fatalf("status = %d (%s), want 202", status, body)
+		t.Fatalf("the request answered status %d (%s), want 202", status, body)
 	}
 	ops := conn.ops(t)
 	if len(ops) != 1 || ops[0].Op != wire.OpUpdateNow {
-		t.Fatalf("sent %+v", ops)
+		t.Fatalf("the daemon was sent %+v, want one update", ops)
 	}
 	var req wire.UpdateNow
 	if err := json.Unmarshal(ops[0].Body, &req); err != nil || req.Version != "0.9.4" {
-		t.Errorf("sent %s (%v)", ops[0].Body, err)
+		t.Errorf("the update body is %s (decode error %v), want version 0.9.4", ops[0].Body, err)
 	}
-	if len(c.recorded) != 1 || c.recorded[0].Action != entity.ActionMachineUpdate {
-		t.Errorf("counted %+v", c.recorded)
+	if len(ctrl.recorded) != 1 || ctrl.recorded[0].Action != entity.ActionMachineUpdate {
+		t.Errorf("counted %+v, want one update", ctrl.recorded)
 	}
 }
 
@@ -164,30 +164,30 @@ func TestApproveMachineUpdateSendsTheApprovedVersionAndCountsIt(t *testing.T) {
 // updates, and counts it as an update.
 func TestRestartDaemonWithAVersionUpdates(t *testing.T) {
 	reg, conn := connected(wire.CapabilityRestart, wire.CapabilityUpdate)
-	c := &commandCrud{running: "0.9.3", offered: "0.9.4"}
-	app := commandApp(c, reg)
+	ctrl := &commandCrud{running: "0.9.3", offered: "0.9.4"}
+	app := commandApp(ctrl, reg)
 
 	if status, body := post(t, app, "/machines/"+machine11+"/restart", `{"version":"0.9.4"}`); status != http.StatusAccepted {
-		t.Fatalf("status = %d (%s), want 202", status, body)
+		t.Fatalf("the request answered status %d (%s), want 202", status, body)
 	}
 	ops := conn.ops(t)
 	if len(ops) != 1 || ops[0].Op != wire.OpUpdateNow {
-		t.Fatalf("sent %+v", ops)
+		t.Fatalf("the daemon was sent %+v, want one update", ops)
 	}
 	var req wire.UpdateNow
 	if err := json.Unmarshal(ops[0].Body, &req); err != nil || req.Version != "0.9.4" {
-		t.Errorf("sent %s (%v)", ops[0].Body, err)
+		t.Errorf("the update body is %s (decode error %v), want version 0.9.4", ops[0].Body, err)
 	}
-	if len(c.recorded) != 1 || c.recorded[0].Action != entity.ActionMachineUpdate {
-		t.Errorf("counted %+v", c.recorded)
+	if len(ctrl.recorded) != 1 || ctrl.recorded[0].Action != entity.ActionMachineUpdate {
+		t.Errorf("counted %+v, want one update", ctrl.recorded)
 	}
 
 	// An empty object is a plain restart, like no body at all.
 	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `{}`); status != http.StatusAccepted {
-		t.Errorf("{}: status = %d, want 202", status)
+		t.Errorf("an empty object answered status %d, want 202", status)
 	}
 	if ops := conn.ops(t); len(ops) != 2 || ops[1].Op != wire.OpRestart {
-		t.Errorf("sent %+v", ops)
+		t.Errorf("the daemon was sent %+v, want the update and then a restart", ops)
 	}
 }
 
@@ -196,13 +196,13 @@ func TestRestartDaemonRefusals(t *testing.T) {
 	app := commandApp(&commandCrud{running: "0.9.3", offered: "0.9.4"}, reg)
 
 	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `{"version":"0.9.9"}`); status != http.StatusConflict {
-		t.Errorf("a version never offered: status = %d, want 409", status)
+		t.Errorf("a version never offered answered status %d, want 409", status)
 	}
 	if status, _ := post(t, app, "/machines/"+machine11+"/restart", `not json`); status != http.StatusUnprocessableEntity {
-		t.Errorf("an unreadable body: status = %d, want 422", status)
+		t.Errorf("an unreadable body answered status %d, want 422", status)
 	}
 	if len(conn.ops(t)) != 0 {
-		t.Errorf("sent %d", len(conn.ops(t)))
+		t.Errorf("%d commands were sent, want none", len(conn.ops(t)))
 	}
 }
 
@@ -221,15 +221,15 @@ func TestAnOlderDaemonIsNotSentACommand(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, path := range []string{"/restart", "/update"} {
 				reg, conn := connected(tc.caps...)
-				c := &commandCrud{running: tc.running, offered: "0.9.4"}
+				ctrl := &commandCrud{running: tc.running, offered: "0.9.4"}
 
-				status, body := post(t, commandApp(c, reg), "/machines/"+machine11+path, `{"version":"0.9.4"}`)
+				status, body := post(t, commandApp(ctrl, reg), "/machines/"+machine11+path, `{"version":"0.9.4"}`)
 
 				if status != http.StatusConflict || !strings.Contains(body, wire.MinRemoteControlVersion) {
-					t.Errorf("%s: status = %d (%s), want 409 naming the version", path, status, body)
+					t.Errorf("%s answered status %d (%s), want 409 naming the version", path, status, body)
 				}
-				if len(conn.ops(t)) != 0 || len(c.recorded) != 0 {
-					t.Errorf("%s: sent %d, counted %d", path, len(conn.ops(t)), len(c.recorded))
+				if len(conn.ops(t)) != 0 || len(ctrl.recorded) != 0 {
+					t.Errorf("%s: %d commands sent and %d counted, want none of either", path, len(conn.ops(t)), len(ctrl.recorded))
 				}
 			}
 		})
@@ -239,46 +239,46 @@ func TestAnOlderDaemonIsNotSentACommand(t *testing.T) {
 // A daemon whose update is not built in says restart and not update.
 func TestAnUpdateNeedsItsOwnCapability(t *testing.T) {
 	reg, conn := connected(wire.CapabilityRestart)
-	c := &commandCrud{running: "0.9.3", offered: "0.9.4"}
+	ctrl := &commandCrud{running: "0.9.3", offered: "0.9.4"}
 
-	status, _ := post(t, commandApp(c, reg), "/machines/"+machine11+"/update", `{"version":"0.9.4"}`)
+	status, _ := post(t, commandApp(ctrl, reg), "/machines/"+machine11+"/update", `{"version":"0.9.4"}`)
 	if status != http.StatusConflict || len(conn.ops(t)) != 0 {
-		t.Errorf("status = %d, sent %d", status, len(conn.ops(t)))
+		t.Errorf("the request answered status %d and %d commands sent, want 409 and none", status, len(conn.ops(t)))
 	}
 }
 
 func TestACommandThatCannotBeDeliveredSaysWhy(t *testing.T) {
-	t.Run("not connected", func(t *testing.T) {
-		c := &commandCrud{running: "0.9.3"}
-		status, _ := post(t, commandApp(c, machinectrl.NewRegistry("pod-a")), "/machines/"+machine11+"/restart", "")
+	t.Run("a machine this server does not hold is a conflict", func(t *testing.T) {
+		ctrl := &commandCrud{running: "0.9.3"}
+		status, _ := post(t, commandApp(ctrl, machinectrl.NewRegistry("pod-a")), "/machines/"+machine11+"/restart", "")
 		if status != http.StatusConflict {
-			t.Errorf("status = %d, want 409", status)
+			t.Errorf("the request answered status %d, want 409", status)
 		}
 	})
-	t.Run("no machine connections on this server", func(t *testing.T) {
-		c := &commandCrud{running: "0.9.3"}
-		status, _ := post(t, commandApp(c, nil), "/machines/"+machine11+"/restart", "")
+	t.Run("a server that takes no machine connections is unavailable", func(t *testing.T) {
+		ctrl := &commandCrud{running: "0.9.3"}
+		status, _ := post(t, commandApp(ctrl, nil), "/machines/"+machine11+"/restart", "")
 		if status != http.StatusServiceUnavailable {
-			t.Errorf("status = %d, want 503", status)
+			t.Errorf("the request answered status %d, want 503", status)
 		}
 	})
-	t.Run("the socket has gone", func(t *testing.T) {
+	t.Run("a socket that fails the send is a bad gateway, and not counted", func(t *testing.T) {
 		reg := machinectrl.NewRegistry("pod-a")
 		conn := &brokenDaemonConn{}
 		reg.Add(11, conn)
 		reg.SetCapabilities(11, conn, []string{wire.CapabilityRestart})
-		c := &commandCrud{running: "0.9.3"}
-		status, _ := post(t, commandApp(c, reg), "/machines/"+machine11+"/restart", "")
-		if status != http.StatusBadGateway || len(c.recorded) != 0 {
-			t.Errorf("status = %d, counted %d", status, len(c.recorded))
+		ctrl := &commandCrud{running: "0.9.3"}
+		status, _ := post(t, commandApp(ctrl, reg), "/machines/"+machine11+"/restart", "")
+		if status != http.StatusBadGateway || len(ctrl.recorded) != 0 {
+			t.Errorf("the request answered status %d and %d commands counted, want 502 and none", status, len(ctrl.recorded))
 		}
 	})
-	t.Run("not the caller's machine", func(t *testing.T) {
+	t.Run("a machine the caller cannot read is sent nothing", func(t *testing.T) {
 		reg, conn := connected(wire.CapabilityRestart)
-		c := &commandCrud{err: errors.New("record not found")}
-		status, _ := post(t, commandApp(c, reg), "/machines/"+machine11+"/restart", "")
+		ctrl := &commandCrud{err: errors.New("record not found")}
+		status, _ := post(t, commandApp(ctrl, reg), "/machines/"+machine11+"/restart", "")
 		if status == http.StatusAccepted || len(conn.ops(t)) != 0 {
-			t.Errorf("status = %d, sent %d", status, len(conn.ops(t)))
+			t.Errorf("the request answered status %d and %d commands sent, want a refusal and none", status, len(conn.ops(t)))
 		}
 	})
 }
@@ -288,17 +288,17 @@ func TestApproveMachineUpdateRefusals(t *testing.T) {
 	app := commandApp(&commandCrud{running: "0.9.3", offered: "0.9.4"}, reg)
 
 	if status, _ := post(t, app, "/machines/"+machine11+"/update", `{"version":"0.9.9"}`); status != http.StatusConflict {
-		t.Errorf("a version never offered: status = %d, want 409", status)
+		t.Errorf("a version never offered answered status %d, want 409", status)
 	}
 	if status, _ := post(t, app, "/machines/"+machine11+"/update", `not json`); status != http.StatusUnprocessableEntity {
-		t.Errorf("an unreadable body: status = %d, want 422", status)
+		t.Errorf("an unreadable body answered status %d, want 422", status)
 	}
-	failing := commandApp(&commandCrud{err: errors.New("boom")}, reg)
+	failing := commandApp(&commandCrud{err: errors.New("database unavailable")}, reg)
 	if status, _ := post(t, failing, "/machines/"+machine11+"/update", `{"version":"0.9.4"}`); status == http.StatusAccepted {
-		t.Errorf("a failed read: status = %d", status)
+		t.Errorf("a failed read answered status %d, want anything but 202", status)
 	}
 	if len(conn.ops(t)) != 0 {
-		t.Errorf("sent %d", len(conn.ops(t)))
+		t.Errorf("%d commands were sent, want none", len(conn.ops(t)))
 	}
 }
 
@@ -318,10 +318,10 @@ func TestCommandMachineRefusesWhatItCannotEncode(t *testing.T) {
 	})
 	for _, path := range []string{"/unencodable", "/no-op"} {
 		if status, _ := post(t, app, path, ""); status != http.StatusInternalServerError {
-			t.Errorf("%s: status = %d, want 500", path, status)
+			t.Errorf("%s answered status %d, want 500", path, status)
 		}
 	}
 	if len(conn.ops(t)) != 0 {
-		t.Errorf("sent %d", len(conn.ops(t)))
+		t.Errorf("%d commands were sent, want none", len(conn.ops(t)))
 	}
 }

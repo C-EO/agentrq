@@ -162,57 +162,57 @@ describe('useStatsRange', () => {
 
   it('opens on 7d and starts out loading', () => {
     const { fetchStats } = recordingFetch();
-    const s = useStatsRange({ fetchStats });
-    expect(s.activeRange.value).toBe('7d');
-    expect(s.loading.value).toBe(true);
-    expect(s.stats.value).toBe(null);
+    const range = useStatsRange({ fetchStats });
+    expect(range.activeRange.value).toBe('7d');
+    expect(range.loading.value).toBe(true);
+    expect(range.stats.value).toBe(null);
   });
 
   it('loads the active range and clears loading', async () => {
     const { fetchStats, calls } = recordingFetch({ summary: { tasksCompleted: 3 } });
-    const s = useStatsRange({ fetchStats });
+    const range = useStatsRange({ fetchStats });
 
-    await s.load();
+    await range.load();
 
     expect(calls).toEqual([{ range: '7d', from: 0, to: 0 }]);
-    expect(s.stats.value).toEqual({ summary: { tasksCompleted: 3 } });
-    expect(s.loading.value).toBe(false);
+    expect(range.stats.value).toEqual({ summary: { tasksCompleted: 3 } });
+    expect(range.loading.value).toBe(false);
   });
 
   it('loads immediately when switching to a named range', async () => {
     const { fetchStats, calls } = recordingFetch();
-    const s = useStatsRange({ fetchStats });
+    const range = useStatsRange({ fetchStats });
 
-    s.setRange('30d');
+    range.setRange('30d');
     await nextTick();
 
-    expect(s.activeRange.value).toBe('30d');
+    expect(range.activeRange.value).toBe('30d');
     expect(calls).toEqual([{ range: '30d', from: 0, to: 0 }]);
   });
 
   it('does not load when switching to custom, which has no dates yet', async () => {
     const { fetchStats, calls } = recordingFetch();
-    const s = useStatsRange({ fetchStats });
+    const range = useStatsRange({ fetchStats });
 
-    s.setRange('custom');
+    range.setRange('custom');
     await nextTick();
 
-    expect(s.activeRange.value).toBe('custom');
+    expect(range.activeRange.value).toBe('custom');
     expect(calls).toEqual([]);
   });
 
   it('applies a custom range only once both ends are set', async () => {
     const { fetchStats, calls } = recordingFetch();
-    const s = useStatsRange({ fetchStats });
-    s.setRange('custom');
+    const range = useStatsRange({ fetchStats });
+    range.setRange('custom');
 
-    s.customFrom.value = '2026-09-01';
-    s.apply();
+    range.customFrom.value = '2026-09-01';
+    range.apply();
     await nextTick();
     expect(calls).toEqual([]);
 
-    s.customTo.value = '2026-09-07';
-    s.apply();
+    range.customTo.value = '2026-09-07';
+    range.apply();
     await nextTick();
 
     expect(calls).toHaveLength(1);
@@ -223,75 +223,75 @@ describe('useStatsRange', () => {
 
   it('ignores apply outside a custom range', async () => {
     const { fetchStats, calls } = recordingFetch();
-    const s = useStatsRange({ fetchStats });
-    s.customFrom.value = '2026-09-01';
-    s.customTo.value = '2026-09-07';
+    const range = useStatsRange({ fetchStats });
+    range.customFrom.value = '2026-09-01';
+    range.customTo.value = '2026-09-07';
 
-    s.apply();
+    range.apply();
     await nextTick();
 
     expect(calls).toEqual([]);
   });
 
   it('drops stale numbers when a load fails, rather than leaving them on screen', async () => {
-    const boom = new Error('nope');
+    const errNetwork = new Error('network unreachable');
     const onError = vi.fn();
     let shouldFail = false;
-    const s = useStatsRange({
-      fetchStats: () => (shouldFail ? Promise.reject(boom) : Promise.resolve({ summary: { tasksCompleted: 1 } })),
+    const range = useStatsRange({
+      fetchStats: () => (shouldFail ? Promise.reject(errNetwork) : Promise.resolve({ summary: { tasksCompleted: 1 } })),
       onError,
     });
 
-    await s.load();
-    expect(s.stats.value).toEqual({ summary: { tasksCompleted: 1 } });
+    await range.load();
+    expect(range.stats.value).toEqual({ summary: { tasksCompleted: 1 } });
 
     shouldFail = true;
-    await s.load();
+    await range.load();
 
-    expect(s.stats.value).toBe(null);
-    expect(s.loading.value).toBe(false);
-    expect(onError).toHaveBeenCalledWith(boom);
+    expect(range.stats.value).toBe(null);
+    expect(range.loading.value).toBe(false);
+    expect(onError).toHaveBeenCalledWith(errNetwork);
   });
 
   it('reports a failure through console.error when given no handler', async () => {
-    const boom = new Error('nope');
+    const errNetwork = new Error('network unreachable');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const s = useStatsRange({ fetchStats: () => Promise.reject(boom) });
+    const range = useStatsRange({ fetchStats: () => Promise.reject(errNetwork) });
 
-    await s.load();
+    await range.load();
 
-    expect(spy).toHaveBeenCalledWith('Failed to load stats:', boom);
-    expect(s.stats.value).toBe(null);
+    expect(spy).toHaveBeenCalledWith('Failed to load stats:', errNetwork);
+    expect(range.stats.value).toBe(null);
     spy.mockRestore();
   });
 
   it('exposes the derived chart inputs for the active range', async () => {
     const { fetchStats } = recordingFetch({ heatmap: { granularity: 'hour' } });
-    const s = useStatsRange({ fetchStats });
+    const range = useStatsRange({ fetchStats });
 
-    expect(s.chartFixedLength.value).toBe(7);
-    expect(s.rangeOptions).toBe(STATS_RANGE_OPTIONS);
+    expect(range.chartFixedLength.value).toBe(7);
+    expect(range.rangeOptions).toBe(STATS_RANGE_OPTIONS);
 
-    s.activeRange.value = '30d';
-    expect(s.chartFixedLength.value).toBe(30);
+    range.activeRange.value = '30d';
+    expect(range.chartFixedLength.value).toBe(30);
 
-    s.activeRange.value = 'custom';
-    s.customTo.value = '2026-09-07';
-    expect(s.chartEndDate.value).toBe('2026-09-07');
+    range.activeRange.value = 'custom';
+    range.customTo.value = '2026-09-07';
+    expect(range.chartEndDate.value).toBe('2026-09-07');
   });
 
   it('takes the heatmap granularity from the response, defaulting to day', async () => {
     const { fetchStats } = recordingFetch({ heatmap: { granularity: 'hour' } });
-    const s = useStatsRange({ fetchStats });
+    const range = useStatsRange({ fetchStats });
 
-    expect(s.heatmapGranularity.value).toBe('day');
+    expect(range.heatmapGranularity.value).toBe('day');
 
-    await s.load();
-    expect(s.heatmapGranularity.value).toBe('hour');
+    await range.load();
+    expect(range.heatmapGranularity.value).toBe('hour');
 
-    s.stats.value = { heatmap: {} };
-    expect(s.heatmapGranularity.value).toBe('day');
-    s.stats.value = {};
-    expect(s.heatmapGranularity.value).toBe('day');
+    range.stats.value = { heatmap: {} };
+    expect(range.heatmapGranularity.value).toBe('day');
+    range.stats.value = {};
+    expect(range.heatmapGranularity.value).toBe('day');
   });
 });

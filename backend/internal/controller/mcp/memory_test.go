@@ -437,7 +437,7 @@ func TestMemoryToolsReportStorageFailures(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("save", func(t *testing.T) {
-		ps := newMemoryServer(t, &memoryStore{saveErr: errors.New("disk on fire")})
+		ps := newMemoryServer(t, &memoryStore{saveErr: errors.New("memory store unavailable")})
 
 		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{Content: "x"})
 
@@ -446,13 +446,13 @@ func TestMemoryToolsReportStorageFailures(t *testing.T) {
 		}
 		// The agent has to hear that its notes did not land; reporting success
 		// would leave it trusting a memory that was never written.
-		if !res.IsError || !strings.Contains(resultText(t, res), "disk on fire") {
+		if !res.IsError || !strings.Contains(resultText(t, res), "memory store unavailable") {
 			t.Errorf("got %q", resultText(t, res))
 		}
 	})
 
 	t.Run("load", func(t *testing.T) {
-		ps := newMemoryServer(t, &memoryStore{loadErr: errors.New("disk on fire")})
+		ps := newMemoryServer(t, &memoryStore{loadErr: errors.New("memory store unavailable")})
 
 		res, _, err := ps.handleLoadMemory(ctx, &mcp.CallToolRequest{}, LoadMemoryParams{})
 
@@ -461,13 +461,13 @@ func TestMemoryToolsReportStorageFailures(t *testing.T) {
 		}
 		// Distinct from a miss: "nothing saved yet" and "could not read" call
 		// for different responses from the agent.
-		if !res.IsError || !strings.Contains(resultText(t, res), "disk on fire") {
+		if !res.IsError || !strings.Contains(resultText(t, res), "memory store unavailable") {
 			t.Errorf("got %q", resultText(t, res))
 		}
 	})
 
 	t.Run("delete", func(t *testing.T) {
-		ps := newMemoryServer(t, &memoryStore{deleteErr: errors.New("disk on fire")})
+		ps := newMemoryServer(t, &memoryStore{deleteErr: errors.New("memory store unavailable")})
 
 		res, _, err := ps.handleDeleteMemory(ctx, &mcp.CallToolRequest{}, DeleteMemoryParams{})
 
@@ -476,7 +476,7 @@ func TestMemoryToolsReportStorageFailures(t *testing.T) {
 		}
 		// Distinct from a miss: "nothing to remove" and "could not delete" call
 		// for different responses from the agent.
-		if !res.IsError || !strings.Contains(resultText(t, res), "disk on fire") {
+		if !res.IsError || !strings.Contains(resultText(t, res), "memory store unavailable") {
 			t.Errorf("got %q", resultText(t, res))
 		}
 	})

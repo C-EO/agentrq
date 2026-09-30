@@ -232,11 +232,11 @@ describe('useTaskLatency', () => {
 
     const third = state.load();
     const fourth = state.load();
-    resolvers[2].reject(new Error('old'));
+    resolvers[2].reject(new Error('superseded request failed'));
     await third;
     expect(onError).toHaveBeenCalledTimes(1);
     expect(state.data.value).not.toBe(null); // the stale failure did not clear it
-    resolvers[3].reject(new Error('new'));
+    resolvers[3].reject(new Error('latest request failed'));
     await fourth;
     expect(state.data.value).toBe(null);
     stop();
@@ -244,7 +244,7 @@ describe('useTaskLatency', () => {
 
   it('logs to the console without an error handler', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { state, stop } = setup(async () => { throw new Error('down'); });
+    const { state, stop } = setup(async () => { throw new Error('network unreachable'); });
     await state.load();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();

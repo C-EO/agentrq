@@ -123,7 +123,7 @@ func TestFindOrCreateUser_NotFound_SupervisorWorkspaceError(t *testing.T) {
 	e.idgen.EXPECT().NextID().Return(int64(999))
 	e.repo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(model.User{ID: 999, Email: "new@example.com"}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(1000))
-	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{}, fmt.Errorf("db error"))
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{}, fmt.Errorf("database unavailable"))
 
 	_, err := e.controller.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
 		Email: "new@example.com",
@@ -137,7 +137,7 @@ func TestFindOrCreateUser_NotFound_SupervisorWorkspaceError(t *testing.T) {
 func TestFindOrCreateUser_RepoError(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().FindUserByEmail(gomock.Any(), gomock.Any()).Return(model.User{}, fmt.Errorf("db error"))
+	e.repo.EXPECT().FindUserByEmail(gomock.Any(), gomock.Any()).Return(model.User{}, fmt.Errorf("database unavailable"))
 
 	_, err := e.controller.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{Email: "e@e.com"})
 	if err == nil {

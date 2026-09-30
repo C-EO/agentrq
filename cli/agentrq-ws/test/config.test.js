@@ -39,7 +39,7 @@ test('findConfigFile returns null when no ancestor has one', () => {
 test('findConfigFile stops when the parent stops changing', () => {
   // Guards the loop's second exit: a readFile that always throws must not spin.
   const readFile = () => {
-    throw new Error('nope')
+    throw new Error('ENOENT: no such file or directory')
   }
   assert.equal(findConfigFile('/', { readFile }), null)
 })

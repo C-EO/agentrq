@@ -542,7 +542,7 @@ describe('deleteTasks', () => {
   it('reports nothing removed rather than throwing when the delete cannot run', async () => {
     const broken = {
       transaction() {
-        throw new Error('gone')
+        throw new Error('the database connection is closing')
       },
     }
 

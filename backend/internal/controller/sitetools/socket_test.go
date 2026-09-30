@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	errStore  = errors.New("store down")
+	errStore  = errors.New("site share store unavailable")
 	wsID      = monoflake.ID(testWorkspace).String()
 	otherWSID = monoflake.ID(otherUserWS).String()
 )

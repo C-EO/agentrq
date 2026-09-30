@@ -79,7 +79,7 @@ func TestSessionLookupNamesAnAnonymousViewer(t *testing.T) {
 		Return(model.Session{ID: 500, UserID: userID, MachineID: 11, WorkspaceID: 70}, nil)
 	repo.EXPECT().GetMachine(gomock.Any(), int64(11), userID).
 		Return(model.Machine{ID: 11, UserID: userID}, nil)
-	repo.EXPECT().SystemGetUser(gomock.Any(), userID).Return(model.User{}, errors.New("gone"))
+	repo.EXPECT().SystemGetUser(gomock.Any(), userID).Return(model.User{}, errors.New("user not found"))
 
 	tokens := newTestTokenService(t)
 	r := httptest.NewRequest(http.MethodGet, "/x", nil)

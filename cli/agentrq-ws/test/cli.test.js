@@ -86,7 +86,7 @@ test('an unknown command suggests the real ones', async () => {
 })
 
 test('a bad flag is reported with the command usage', async () => {
-  const { code, err } = await cli(['workspace', '--nope'])
+  const { code, err } = await cli(['workspace', '--no-such-flag'])
   assert.equal(code, 1)
   assert.match(err, /Usage: agentrq-ws workspace/)
 })
@@ -164,7 +164,7 @@ test('the session is closed even when the command fails', async () => {
   let closed = 0
   const createClient = () => ({
     async callTool() {
-      throw new Error('boom')
+      throw new Error('server unavailable')
     },
     async close() {
       closed += 1

@@ -219,7 +219,7 @@ describe('useForkActions: merging', () => {
   });
 
   it('still opens when the counts cannot be read, without a number', async () => {
-    const { actions } = setup({ fetchTaskCounts: vi.fn(() => Promise.reject(new Error('down'))) });
+    const { actions } = setup({ fetchTaskCounts: vi.fn(() => Promise.reject(new Error('network unreachable'))) });
     await actions.startMerge(fork);
     expect(actions.state.merging.taskCount).toBe(undefined);
   });

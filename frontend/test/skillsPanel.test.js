@@ -117,7 +117,7 @@ describe('the Skills tab', () => {
     let el = await mount();
     expect(text(el)).toContain('No skills yet.');
 
-    api.searchWorkspaceSkills.mockRejectedValueOnce(new Error('boom'));
+    api.searchWorkspaceSkills.mockRejectedValueOnce(new Error('network unreachable'));
     el = await mount();
     expect(text(el)).toContain("Could not load this workspace's skills.");
     const retry = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Try again');

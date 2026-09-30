@@ -246,7 +246,7 @@ describe('githubImportUrlValid', () => {
 describe('skillsState', () => {
   it('checks failure before emptiness', () => {
     expect(skillsState({ loading: true, error: null, skills: [] })).toBe(SkillsState.Loading);
-    expect(skillsState({ loading: false, error: new Error('x'), skills: [] })).toBe(SkillsState.Failed);
+    expect(skillsState({ loading: false, error: new Error('network unreachable'), skills: [] })).toBe(SkillsState.Failed);
     expect(skillsState({ loading: false, error: null, skills: [] })).toBe(SkillsState.Empty);
     expect(skillsState({ loading: false, error: null, skills: undefined })).toBe(SkillsState.Empty);
     expect(skillsState({ loading: false, error: null, skills: [{}] })).toBe(SkillsState.Ready);

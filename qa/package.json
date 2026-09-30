@@ -1,0 +1,14 @@
+{
+  "name": "agentrq-qa",
+  "private": true,
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "End-to-end sanity checks that drive the real web app against a real backend",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

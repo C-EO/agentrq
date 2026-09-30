@@ -84,7 +84,7 @@ func TestAuthenticateMachineRefusesWhatItShould(t *testing.T) {
 		// A database failure is answered the same as an unknown token. The
 		// caller says only that it was not accepted; distinguishing them here
 		// would tell a caller when the database is down.
-		{"store failure", &fakeStore{getErr: errors.New("db down")}, "tok-good", ErrUnknownToken},
+		{"store failure", &fakeStore{getErr: errors.New("database unavailable")}, "tok-good", ErrUnknownToken},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -145,11 +145,11 @@ func TestTouchAndReleasePassThroughToTheStore(t *testing.T) {
 		t.Errorf("released = %+v", st.released)
 	}
 
-	st.touchErr = errors.New("db down")
+	st.touchErr = errors.New("database unavailable")
 	if err := a.Touch(t.Context(), 7, time.Now(), "pod-a"); err == nil {
 		t.Error("Touch swallowed a store failure")
 	}
-	st.releaseErr = errors.New("db down")
+	st.releaseErr = errors.New("database unavailable")
 	if err := a.Release(t.Context(), 7, "pod-a"); err == nil {
 		t.Error("Release swallowed a store failure")
 	}

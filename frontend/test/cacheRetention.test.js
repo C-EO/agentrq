@@ -119,10 +119,10 @@ describe('getRetentionDays and setRetentionDays', () => {
   it('reports it could not record the choice', () => {
     const throwing = {
       setItem() {
-        throw new Error('full')
+        throw new Error('QuotaExceededError: storage is full')
       },
       removeItem() {
-        throw new Error('full')
+        throw new Error('QuotaExceededError: storage is full')
       },
     }
 

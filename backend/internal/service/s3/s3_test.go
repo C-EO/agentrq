@@ -22,7 +22,9 @@ import (
 
 type failingReader struct{}
 
-func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read error") }
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("reading the upload body failed")
+}
 
 func TestS3(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -51,7 +53,7 @@ func TestS3(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "", etag)
 
-		mockS3.EXPECT().PutObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("s3 error"))
+		mockS3.EXPECT().PutObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("S3 unavailable"))
 		_, err = s.PutPrivate(context.Background(), "ns", "key", []byte("data"), "text/plain")
 		assert.Error(t, err)
 	})
@@ -64,7 +66,7 @@ func TestS3(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("test-data"), data)
 
-		mockS3.EXPECT().GetObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("s3 error"))
+		mockS3.EXPECT().GetObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("S3 unavailable"))
 		_, err = s.Get(context.Background(), "ns", "key")
 		assert.Error(t, err)
 
@@ -84,7 +86,7 @@ func TestS3(t *testing.T) {
 		})
 		assert.NoError(t, s.Delete(context.Background(), "ns", "key"))
 
-		mockS3.EXPECT().DeleteObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("s3 error"))
+		mockS3.EXPECT().DeleteObject(gomock.Any(), gomock.Any()).Return(nil, errors.New("S3 unavailable"))
 		assert.Error(t, s.Delete(context.Background(), "ns", "key"))
 	})
 
@@ -94,7 +96,7 @@ func TestS3(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, svc)
 
-		mockConfig.EXPECT().Populate("s3", gomock.Any()).Return(errors.New("config error"))
+		mockConfig.EXPECT().Populate("s3", gomock.Any()).Return(errors.New("no s3 section in the config"))
 		_, err = New(Params{Config: mockConfig})
 		assert.Error(t, err)
 
