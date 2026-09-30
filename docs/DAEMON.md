@@ -340,7 +340,9 @@ Those agents come back as **the same sessions in new terminals**: same agent,
 same folder, same settings, still listed on the machine's page. A claude-code
 agent resumes its conversation where it stopped. An ACP Gateway agent starts
 fresh. Either way the scrollback and anything half-typed are gone, and the
-panel marks the sessions as restored so it is clear why the terminal is empty.
+panel marks the sessions as restored so it is clear why the terminal starts
+over. Like every launch, the new terminal opens with the command the agent was
+started with.
 
 Before anything is replaced, the daemon:
 

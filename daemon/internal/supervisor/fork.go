@@ -46,21 +46,24 @@ func ForkBranch(id string) string { return "agentrq/fork-" + id }
 // A git worktree on its own branch when from is inside a repository (the dir
 // is then the same subfolder of it that from is of its repository), a copy of
 // from otherwise. An existing folder is reused as it is, which is a relaunch.
-func PrepareForkDir(home, from, id string) (dir string, created bool, err error) {
+//
+// step says what was done to make the folder, for the person watching the
+// terminal: the git command run, or the copy. Empty when it was reused.
+func PrepareForkDir(home, from, id string) (dir, step string, err error) {
 	if !forkIDPattern.MatchString(id) {
-		return "", false, fmt.Errorf("%w: id=%q", ErrBadFork, id)
+		return "", "", fmt.Errorf("%w: id=%q", ErrBadFork, id)
 	}
 	if !filepath.IsAbs(home) {
-		return "", false, fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+		return "", "", fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
 	}
 	from, err = workspaceDir(from)
 	if err != nil {
-		return "", false, err
+		return "", "", err
 	}
 	// Already absolute and clean; refusing ".." outright is what lets a
 	// path from the server be walked and copied without a second look.
 	if strings.Contains(from, "..") {
-		return "", false, fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
+		return "", "", fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
 	}
 
 	target := filepath.Join(home, ".agentrq", "forks", id)
@@ -72,23 +75,26 @@ func PrepareForkDir(home, from, id string) (dir string, created bool, err error)
 	dir = filepath.Join(target, rel)
 
 	if _, err := os.Lstat(target); err == nil {
-		return dir, false, nil
+		return dir, "", nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", false, fmt.Errorf("supervisor: fork folder %s: %w", target, err)
+		return "", "", fmt.Errorf("supervisor: fork folder %s: %w", target, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return "", false, fmt.Errorf("supervisor: fork folder: %w", err)
+		return "", "", fmt.Errorf("supervisor: fork folder: %w", err)
 	}
 
 	if inRepo {
-		err = addWorktree(root, target, id)
+		var argv []string
+		argv, err = addWorktree(root, target, id)
+		step = CommandLine(root, argv)
 	} else {
 		err = copyTree(from, target, filepath.Join(home, ".agentrq"))
+		step = "copied " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository"
 	}
 	if err != nil {
-		return "", false, err
+		return "", "", err
 	}
-	return dir, true, nil
+	return dir, step, nil
 }
 
 // RemoveForkDir deletes the folder PrepareForkDir made for a fork, and nothing
@@ -140,20 +146,23 @@ func sameFolder(a, b string) bool {
 // addWorktree checks out HEAD of the repository at root into target on the
 // fork's branch. A branch left by an earlier fork of the same id is checked
 // out again rather than refused; -f covers its worktree still being
-// registered after somebody deleted the folder.
-func addWorktree(root, target, id string) error {
+// registered after somebody deleted the folder. It returns the command that
+// made the worktree.
+func addWorktree(root, target, id string) ([]string, error) {
 	branch := ForkBranch(id)
-	out, err := runGit(root, "worktree", "add", "-b", branch, "--", target, "HEAD")
+	args := []string{"worktree", "add", "-b", branch, "--", target, "HEAD"}
+	out, err := runGit(root, args...)
 	if err == nil {
-		return nil
+		return append([]string{"git"}, args...), nil
 	}
 	if !strings.Contains(out, "already exists") {
-		return fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+		return nil, fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
 	}
-	if out, err := runGit(root, "worktree", "add", "-f", "--", target, branch); err != nil {
-		return fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+	args = []string{"worktree", "add", "-f", "--", target, branch}
+	if out, err := runGit(root, args...); err != nil {
+		return nil, fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
 	}
-	return nil
+	return append([]string{"git"}, args...), nil
 }
 
 // configPointsElsewhere reports whether the config at path names serverName
