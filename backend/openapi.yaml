@@ -2787,6 +2787,12 @@ components:
         toState:
           type: string
           description: A task status, or needsinput while a question to the human is pending.
+        agent:
+          type: string
+          description: The agent that made the change, as it names itself (e.g. claude-code). Absent when a person or the server made it.
+        agentModel:
+          type: string
+          description: The model that agent was running, when it reported one.
         createdAt: { type: string, format: date-time }
 
     TaskTiming:

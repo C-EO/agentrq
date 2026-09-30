@@ -29,6 +29,15 @@ type (
 		Limiter      ratelimit.Limiter
 		// SkillImport reads skills from GitHub. Nil turns importing off.
 		SkillImport skillimport.Service
+		// TaskAgents names the agents in a task's history. Nil leaves them
+		// unnamed.
+		TaskAgents TaskAgentNames
+	}
+
+	// TaskAgentNames is the part of the taskagent controller a task's
+	// history reads.
+	TaskAgentNames interface {
+		Names(ctx context.Context, agentIDs, modelIDs []int64) (agents, models map[int64]string, err error)
 	}
 
 	Controller interface {
@@ -60,6 +69,7 @@ type (
 
 		skillStorage storage.Service
 		skillImport  skillimport.Service
+		taskAgents   TaskAgentNames
 	}
 )
 
@@ -78,6 +88,7 @@ func New(p Params) Controller {
 
 		skillStorage: skillStorage,
 		skillImport:  p.SkillImport,
+		taskAgents:   p.TaskAgents,
 	}
 }
 

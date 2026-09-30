@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -116,6 +117,20 @@ type AgentModelsSnapshot struct {
 // willing the gateway says it is.
 func (s AgentModelsSnapshot) Selectable() bool {
 	return s.CanSet && s.ConfigID != ""
+}
+
+// currentModelName is the display name of the model the session is running:
+// the name its list gives the current ID, or the ID itself, or "".
+func (s AgentModelsSnapshot) currentModelName() string {
+	if s.CurrentModel == "" {
+		return ""
+	}
+	for _, m := range s.Models {
+		if m.ID == s.CurrentModel && strings.TrimSpace(m.Name) != "" {
+			return strings.TrimSpace(m.Name)
+		}
+	}
+	return s.CurrentModel
 }
 
 // currentModelID is the model the payload says is selected.

@@ -130,6 +130,10 @@ type Repository interface {
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
+	CreateAgents(ctx context.Context, agents []model.Agent) error
+	CreateAgentModels(ctx context.Context, models []model.AgentModel) error
+	ListAgents(ctx context.Context, ids []int64) ([]model.Agent, error)
+	ListAgentModels(ctx context.Context, ids []int64) ([]model.AgentModel, error)
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)

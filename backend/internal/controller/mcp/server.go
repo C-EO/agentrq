@@ -44,6 +44,10 @@ import (
 // The controller layer provides this so the MCP package doesn't import the controller.
 type CreateTaskFunc func(ctx context.Context, task model.Task) (model.Task, error)
 type UpdateTaskStatusFunc func(ctx context.Context, taskID int64, status string) (model.Task, error)
+
+// RegisterTaskAgentFunc files the names of the agent behind a status change
+// and returns it with the IDs the change records.
+type RegisterTaskAgentFunc func(ctx context.Context, a entity.TaskAgent) entity.TaskAgent
 type GetTaskFunc func(ctx context.Context, taskID int64) (model.Task, error)
 
 // ListTasksFilter specifies optional filters for listing tasks.
@@ -112,6 +116,7 @@ type WorkspaceServer struct {
 	streamServer          *mcp.StreamableHTTPHandler
 	createTask            CreateTaskFunc
 	updateStatus          UpdateTaskStatusFunc
+	registerTaskAgent     RegisterTaskAgentFunc
 	getTask               GetTaskFunc
 	listTasks             ListTasksFunc
 	getNextTask           GetNextTaskFunc
@@ -414,6 +419,7 @@ func NewWorkspaceServer(
 	baseURL string,
 	createTask CreateTaskFunc,
 	updateStatus UpdateTaskStatusFunc,
+	registerTaskAgent RegisterTaskAgentFunc,
 	getTask GetTaskFunc,
 	listTasks ListTasksFunc,
 	getNextTask GetNextTaskFunc,
@@ -448,6 +454,7 @@ func NewWorkspaceServer(
 		done:                   make(chan struct{}),
 		createTask:             createTask,
 		updateStatus:           updateStatus,
+		registerTaskAgent:      registerTaskAgent,
 		getTask:                getTask,
 		listTasks:              listTasks,
 		getNextTask:            getNextTask,
@@ -1508,7 +1515,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 		}
 	}
 
-	updated, err := ps.updateStatus(ctx, taskID, params.Status)
+	updated, err := ps.updateStatus(ps.withTaskAgent(ctx, req), taskID, params.Status)
 	if err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,

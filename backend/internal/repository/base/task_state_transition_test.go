@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -65,6 +66,70 @@ func TestTaskStateTransitions_RecordedOnCreateAndStatusChange(t *testing.T) {
 		if r.TaskID != dtTaskID || r.WorkspaceID != dtWorkspaceID || r.UserID != dtUserID || r.CreatedAt.IsZero() {
 			t.Errorf("transition %d = %+v, want it keyed to the task and dated", i, r)
 		}
+	}
+}
+
+// A change made under a registered agent records its IDs; one made without
+// records none.
+func TestTaskStateTransitions_RecordTheAgentIDs(t *testing.T) {
+	db := deleteTaskDB(t)
+	repo := New(&mockDB{db: db})
+	now := time.Now()
+
+	task, err := repo.CreateTask(context.Background(), model.Task{ID: dtTaskID, CreatedAt: now, UpdatedAt: now, WorkspaceID: dtWorkspaceID, UserID: dtUserID, Status: "notstarted"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	task.Status = "ongoing"
+	ctx := entity.WithTaskAgent(context.Background(), entity.TaskAgent{Name: "gemini", ID: 7, ModelID: 9})
+	if _, err = repo.UpdateTask(ctx, task); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	rows := transitionsOf(t, repo, dtTaskID)
+	if len(rows) != 2 {
+		t.Fatalf("transitions = %+v, want the creation and the change to ongoing", rows)
+	}
+	if rows[0].AgentID != 0 || rows[0].AgentModelID != 0 {
+		t.Errorf("creation = %+v, want no agent IDs", rows[0])
+	}
+	if rows[1].AgentID != 7 || rows[1].AgentModelID != 9 {
+		t.Errorf("change to ongoing = %+v, want agent ID 7 and model ID 9", rows[1])
+	}
+}
+
+// A name is stored once: storing it again leaves the first row as it was.
+func TestAgentAndModelNameTables(t *testing.T) {
+	db := deleteTaskDB(t)
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+
+	if err := repo.CreateAgents(ctx, []model.Agent{{ID: 1, Name: "claude-code"}, {ID: 2, Name: "gemini"}}); err != nil {
+		t.Fatalf("create agents: %v", err)
+	}
+	if err := repo.CreateAgents(ctx, []model.Agent{{ID: 1, Name: "renamed"}}); err != nil {
+		t.Fatalf("create agents again: %v", err)
+	}
+	for _, m := range []model.AgentModel{{ID: 3, Name: "Opus"}, {ID: 3, Name: "renamed"}} {
+		if err := repo.CreateAgentModels(ctx, []model.AgentModel{m}); err != nil {
+			t.Fatalf("create model: %v", err)
+		}
+	}
+
+	all, err := repo.ListAgents(ctx, nil)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all agents = %+v, %v; want claude-code and gemini", all, err)
+	}
+	some, err := repo.ListAgents(ctx, []int64{1, 42})
+	if err != nil || len(some) != 1 || some[0].Name != "claude-code" {
+		t.Errorf("agents 1 and 42 = %+v, %v; want only agent 1, still named claude-code", some, err)
+	}
+	models, err := repo.ListAgentModels(ctx, nil)
+	if err != nil || len(models) != 1 || models[0].Name != "Opus" {
+		t.Errorf("all models = %+v, %v; want only Opus, not renamed", models, err)
+	}
+	if none, err := repo.ListAgentModels(ctx, []int64{42}); err != nil || len(none) != 0 {
+		t.Errorf("model 42 = %+v, %v; want no rows", none, err)
 	}
 }
 

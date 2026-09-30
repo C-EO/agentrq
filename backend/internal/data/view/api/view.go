@@ -258,9 +258,11 @@ type (
 	}
 
 	TaskStateTransition struct {
-		FromState string    `json:"fromState"`
-		ToState   string    `json:"toState"`
-		CreatedAt time.Time `json:"createdAt"`
+		FromState  string    `json:"fromState"`
+		ToState    string    `json:"toState"`
+		Agent      string    `json:"agent,omitempty"`
+		AgentModel string    `json:"agentModel,omitempty"`
+		CreatedAt  time.Time `json:"createdAt"`
 	}
 
 	TaskTiming struct {

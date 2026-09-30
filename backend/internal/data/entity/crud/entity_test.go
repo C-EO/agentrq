@@ -4,7 +4,10 @@
 
 package crud
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // Every case in Action.String() exists to give a raw stored value a name in
 // a log line; a case silently missing an entry falls through to "unknown"
@@ -88,5 +91,19 @@ func TestActionString(t *testing.T) {
 			}
 			seen[tc.action] = true
 		}
+	}
+}
+
+func TestTaskAgentContext(t *testing.T) {
+	//nolint:staticcheck // a nil context is what GetTaskAgent guards against
+	if got := GetTaskAgent(nil); got != (TaskAgent{}) {
+		t.Errorf("GetTaskAgent(nil) = %+v, want zero", got)
+	}
+	if got := GetTaskAgent(context.Background()); got != (TaskAgent{}) {
+		t.Errorf("GetTaskAgent(empty) = %+v, want zero", got)
+	}
+	want := TaskAgent{Name: "claude-code", Model: "Opus"}
+	if got := GetTaskAgent(WithTaskAgent(context.Background(), want)); got != want {
+		t.Errorf("GetTaskAgent = %+v, want %+v", got, want)
 	}
 }

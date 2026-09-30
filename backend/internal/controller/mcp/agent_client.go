@@ -10,6 +10,8 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -131,6 +133,46 @@ func (ps *WorkspaceServer) AgentClient() *AgentClientInfo {
 		return info
 	}
 	return nil
+}
+
+// callingAgent names the agent behind a tool call, and the model it last said
+// it was running, for the task history to record.
+//
+// The same precedence as AgentClient, but for the calling session only: a
+// status change belongs to whoever made it, not to whichever agent happens to
+// be listed first. A bridge that has not said what it drives names nobody.
+func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAgent {
+	if req == nil || req.Session == nil {
+		return entity.TaskAgent{}
+	}
+	sess := req.Session
+	var agent entity.TaskAgent
+	if reported := ps.reportedAgent(sess.ID()); reported != nil {
+		agent.Name = reported.Name
+	} else if info := clientInfoFrom(sess.InitializeParams()); info != nil && !isBridge(info.Name) {
+		agent.Name = info.Name
+	}
+	if agent.Name == "" {
+		return agent
+	}
+
+	ps.agentModelsMu.RLock()
+	snapshot, ok := ps.agentModels[sess.ID()]
+	ps.agentModelsMu.RUnlock()
+	if ok {
+		agent.Model = snapshot.currentModelName()
+	}
+	return agent
+}
+
+// withTaskAgent attaches the calling agent, registered, for a status change to
+// record.
+func (ps *WorkspaceServer) withTaskAgent(ctx context.Context, req *mcp.CallToolRequest) context.Context {
+	agent := ps.callingAgent(req)
+	if agent.Name == "" || ps.registerTaskAgent == nil {
+		return ctx
+	}
+	return entity.WithTaskAgent(ctx, ps.registerTaskAgent(ctx, agent))
 }
 
 // bridgeClients names the MCP clients that are a way through to an agent rather

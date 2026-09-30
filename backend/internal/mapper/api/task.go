@@ -73,7 +73,13 @@ func FromHTTPRequestToGetTaskRequestEntity(c *fiber.Ctx) *entity.GetTaskRequest 
 func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte {
 	transitions := make([]view.TaskStateTransition, len(rs.StateTransitions))
 	for i, tr := range rs.StateTransitions {
-		transitions[i] = view.TaskStateTransition{FromState: tr.FromState, ToState: tr.ToState, CreatedAt: tr.CreatedAt}
+		transitions[i] = view.TaskStateTransition{
+			FromState:  tr.FromState,
+			ToState:    tr.ToState,
+			Agent:      tr.Agent,
+			AgentModel: tr.AgentModel,
+			CreatedAt:  tr.CreatedAt,
+		}
 	}
 	payload, _ := json.Marshal(view.GetTaskResponse{
 		Task:             FromEntityTaskToView(rs.Task),

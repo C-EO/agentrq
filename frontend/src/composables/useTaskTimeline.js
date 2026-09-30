@@ -84,6 +84,24 @@ export function timelineTotals(segments) {
 }
 
 /**
+ * What the worked total is called: the agent that last changed the task's
+ * status, as it names itself, and its model when it reported one — "claude-code
+ * worked", "gemini (Gemini 3 Flash) working" — or plain "Worked" when no agent
+ * has. "Working" while the task is still ongoing.
+ *
+ * @param {Array<{agent?: string, agentModel?: string}>} transitions  oldest first
+ * @param {TimelineSegment[]} segments
+ * @returns {string}
+ */
+export function timelineWorkedLabel(transitions, segments) {
+  const last = segments[segments.length - 1];
+  const verb = last?.state === 'ongoing' ? 'working' : 'worked';
+  const by = Array.isArray(transitions) ? [...transitions].reverse().find((tr) => tr?.agent) : null;
+  if (!by) return verb === 'working' ? 'Working' : 'Worked';
+  return `${by.agent}${by.agentModel ? ` (${by.agentModel})` : ''} ${verb}`;
+}
+
+/**
  * When a transition happened, as short as it can be said: the time alone on
  * the day it is, the date as well on any other.
  *
