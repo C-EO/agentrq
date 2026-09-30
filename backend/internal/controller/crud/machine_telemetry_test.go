@@ -112,7 +112,7 @@ func TestCreateEnrolmentCodeDoesNotCountAFailedWrite(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
 	env.idgen.EXPECT().NextID().Return(int64(31))
 	env.repo.EXPECT().CreateEnrolmentCode(gomock.Any(), gomock.Any()).
-		Return(model.EnrolmentCode{}, errors.New("db down"))
+		Return(model.EnrolmentCode{}, errors.New("database unavailable"))
 
 	if _, err := env.controller.CreateEnrolmentCode(t.Context(), entity.CreateEnrolmentCodeRequest{UserID: testUserIDStr}); err == nil {
 		t.Fatal("expected the failure to be reported")
@@ -193,7 +193,7 @@ func TestDeleteMachineCountsTheRemoval(t *testing.T) {
 // A delete that failed removed nothing.
 func TestDeleteMachineDoesNotCountAFailure(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
-	env.repo.EXPECT().DeleteMachine(gomock.Any(), int64(9), testUserID).Return(errors.New("db down"))
+	env.repo.EXPECT().DeleteMachine(gomock.Any(), int64(9), testUserID).Return(errors.New("database unavailable"))
 
 	err := env.controller.DeleteMachine(t.Context(), entity.DeleteMachineRequest{
 		UserID: testUserIDStr, MachineID: monoflake.ID(9).String(),
@@ -379,7 +379,7 @@ func TestUpdateSessionStateWithoutAUserStillRecordsTheState(t *testing.T) {
 // succeeds — the row is what the daemon came to write.
 func TestUpdateSessionStateSurvivesAnUnreadableSession(t *testing.T) {
 	env := newMachineTelemetryEnv(t)
-	env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).Return(model.Session{}, errors.New("gone"))
+	env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).Return(model.Session{}, errors.New("session not found"))
 	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).Return(nil)
 
 	err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
@@ -401,7 +401,7 @@ func TestUpdateSessionStateDoesNotCountAFailedWrite(t *testing.T) {
 	env.repo.EXPECT().GetSession(gomock.Any(), int64(500), testUserID).
 		Return(model.Session{ID: 500, UserID: testUserID, WorkspaceID: testWorkspaceID}, nil)
 	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(500), machinerules.SessionRunning, gomock.Any(), gomock.Any(), false).
-		Return(errors.New("db down"))
+		Return(errors.New("database unavailable"))
 
 	err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: monoflake.ID(500).String(),

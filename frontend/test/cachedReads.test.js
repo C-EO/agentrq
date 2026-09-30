@@ -173,7 +173,7 @@ describe('readAllCachedTasks', () => {
       await readAllCachedTasks(
         {
           transaction() {
-            throw new Error('gone')
+            throw new Error('the database connection is closing')
           },
         },
         { storage: allOn }

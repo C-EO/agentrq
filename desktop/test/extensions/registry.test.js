@@ -108,7 +108,7 @@ describe('createRegistry', () => {
     registry.add('bad', {
       id: 'b',
       value: () => {
-        throw new Error('nope')
+        throw new Error('the entry\'s value() crashed')
       },
     })
 
@@ -127,7 +127,7 @@ describe('createRegistry', () => {
 
   it('resolves with no error handler given', () => {
     const registry = build()
-    registry.add('bad', { id: 'b', value: () => { throw new Error('nope') } })
+    registry.add('bad', { id: 'b', value: () => { throw new Error('the entry\'s value() crashed') } })
 
     expect(registry.resolve({})).toEqual([])
   })

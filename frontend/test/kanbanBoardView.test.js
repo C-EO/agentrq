@@ -181,12 +181,12 @@ describe('KanbanBoardView', () => {
   })
 
   it('puts a card back where it was when the move into Done fails', async () => {
-    updateTaskStatus.mockRejectedValue(new Error('nope'))
+    updateTaskStatus.mockRejectedValue(new Error('network unreachable'))
     const { inColumn, drag } = await mount()
     await drag('Task o1', { into: 'Done' })
 
     const { useToasts } = await import('../src/composables/useToasts')
-    expect(useToasts().toasts.value.at(-1).message).toContain('nope')
+    expect(useToasts().toasts.value.at(-1).message).toContain('network unreachable')
     expect(inColumn('Ongoing', 'Task o1')).toBe(true)
     expect(inColumn('Done', 'Task o1')).toBe(false)
   })

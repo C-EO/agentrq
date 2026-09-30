@@ -228,7 +228,7 @@ describe('callTool', () => {
   })
 
   it('gives up after the second refusal rather than reconnecting forever', async () => {
-    const { server, client } = build({ 'tools/call': () => ({ status: 404, json: { error: { message: 'gone' } } }) })
+    const { server, client } = build({ 'tools/call': () => ({ status: 404, json: { error: { message: 'session not found' } } }) })
 
     const answer = await client.callTool('getWorkspace', {})
 
@@ -343,7 +343,7 @@ describe('callTool', () => {
     // badly has still opened the session.
     const { client } = build({
       'notifications/initialized': () => {
-        throw new Error('nope')
+        throw new Error('server refused the notification')
       },
     })
 

@@ -127,7 +127,7 @@ func TestSaveSubscription_WithTypes(t *testing.T) {
 func TestSaveSubscription_RepoError(t *testing.T) {
 	c, mockRepo, mockIDGen := newTestController(t, Config{})
 	mockIDGen.EXPECT().NextID().Return(int64(1))
-	mockRepo.EXPECT().SavePushSubscription(gomock.Any(), gomock.Any()).Return(errors.New("db error"))
+	mockRepo.EXPECT().SavePushSubscription(gomock.Any(), gomock.Any()).Return(errors.New("database unavailable"))
 
 	err := c.SaveSubscription(context.Background(), entity.SavePushSubscriptionRequest{Endpoint: "x"})
 	if err == nil {

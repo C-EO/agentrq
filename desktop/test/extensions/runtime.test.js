@@ -267,7 +267,7 @@ describe('inspect', () => {
   it('says what is missing rather than failing obscurely', async () => {
     const { runtime } = build({ readManifest: async () => null })
 
-    expect((await runtime.inspect('/tmp/nope')).reason).toContain('no agentrq-extension.json')
+    expect((await runtime.inspect('/tmp/folder-without-a-manifest')).reason).toContain('no agentrq-extension.json')
   })
 
   it('carries a filesystem failure through as a sentence', async () => {
@@ -1099,21 +1099,21 @@ describe('entries and invoke', () => {
 
   it('reports a predicate that threw against the extension that owns it', () => {
     const { runtime, logger } = withEntries([
-      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw new Error('boom') } },
+      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw new Error('the extension\'s when() crashed') } },
     ])
 
     expect(runtime.entries('task-menu', {})).toEqual([])
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('digest'), 'boom')
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('digest'), 'the extension\'s when() crashed')
   })
 
   it('has something to say about a predicate that threw nothing readable', () => {
     const { runtime, logger } = withEntries([
-      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw 'boom' } }, // eslint-disable-line no-throw-literal
+      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw 'when() threw a bare string' } }, // eslint-disable-line no-throw-literal
     ])
 
     runtime.entries('task-menu', {})
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'boom')
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'when() threw a bare string')
   })
 })
 

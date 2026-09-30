@@ -39,7 +39,7 @@ describe('appliesTo', () => {
     // One extension deciding badly must not empty a menu other extensions are
     // in, and a thrown error is not a reason to show a row whose own author
     // could not say whether it belonged.
-    const thrower = entry({ when: () => { throw new Error('nope'); } });
+    const thrower = entry({ when: () => { throw new Error('the extension\'s when() crashed'); } });
 
     expect(appliesTo(thrower, task)).toBe(false);
   });

@@ -20,7 +20,7 @@ import (
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 )
 
-var errRepo = errors.New("db down")
+var errRepo = errors.New("database unavailable")
 
 func newSiteShareStore(t *testing.T) (siteShareStore, *mock_repository.MockRepository, *mock_idgen.MockService) {
 	t.Helper()

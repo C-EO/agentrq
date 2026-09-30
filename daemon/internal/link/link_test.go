@@ -539,7 +539,7 @@ func TestRemoveForkDirDoesNotBlockTheSocket(t *testing.T) {
 	h.sup.RemoveDir = func(_, forkID string) error {
 		<-release
 		removed <- forkID
-		return errors.New("already gone")
+		return errors.New("fork folder already removed")
 	}
 	b.send(t, controlFrame(t, wire.OpRemoveForkDir, wire.RemoveForkDir{ForkID: "f1"}))
 

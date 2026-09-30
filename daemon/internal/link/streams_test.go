@@ -26,10 +26,10 @@ func TestRebindReportsARepaintThatCouldNotBeSent(t *testing.T) {
 	t.Cleanup(func() { _ = w.Close() })
 	s.add(7, 80, 24, r, failingSender{})
 
-	boom := errors.New("socket is gone")
-	errs := s.rebind(failingSender{err: boom}, func(uint64) bool { return true })
-	if len(errs) != 1 || !errors.Is(errs[0], boom) {
-		t.Fatalf("rebind reported %v, want the send failure", errs)
+	errSocket := errors.New("socket closed")
+	errs := s.rebind(failingSender{err: errSocket}, func(uint64) bool { return true })
+	if len(errs) != 1 || !errors.Is(errs[0], errSocket) {
+		t.Fatalf("rebind reported %v, want only the socket error %v", errs, errSocket)
 	}
 }
 

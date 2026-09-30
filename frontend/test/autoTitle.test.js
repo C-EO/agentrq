@@ -106,7 +106,7 @@ describe('useAutoTitle', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { title, auto } = setup()
     auto.generateTitle()
-    answer('ERROR', { error: 'boom' })
+    answer('ERROR', { error: 'title model failed to load' })
     expect(auto.isGenerating.value).toBe(false)
     expect(title.value).toBe('')
     expect(error).toHaveBeenCalled()

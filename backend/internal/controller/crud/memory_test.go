@@ -110,7 +110,7 @@ func TestMemories_NotReadableByAnotherAccount(t *testing.T) {
 
 func TestMemories_AccessCheckFailureIsReported(t *testing.T) {
 	e := newTestController(t)
-	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(false, errors.New("db down"))
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(false, errors.New("database unavailable"))
 
 	_, err := e.controller.ListMemories(context.Background(), entity.ListMemoriesRequest{WorkspaceID: 1, UserID: testUserIDStr})
 
@@ -157,7 +157,7 @@ func TestMemories_ReportStorageFailures(t *testing.T) {
 		e := newTestController(t)
 		e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
 		expectOwnWorkspace(e, 1)
-		e.repo.EXPECT().ListMemoriesByWorkspace(gomock.Any(), testUserID, int64(1)).Return(nil, errors.New("db down"))
+		e.repo.EXPECT().ListMemoriesByWorkspace(gomock.Any(), testUserID, int64(1)).Return(nil, errors.New("database unavailable"))
 
 		if _, err := e.controller.ListMemories(context.Background(), entity.ListMemoriesRequest{WorkspaceID: 1, UserID: testUserIDStr}); err == nil {
 			t.Error("expected an error")

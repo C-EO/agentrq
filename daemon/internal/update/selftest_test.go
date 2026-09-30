@@ -46,7 +46,7 @@ func itoa(n int) string {
 func TestSelfTestAcceptsABinaryThatRunsAndIsTheRightVersion(t *testing.T) {
 	path := stub(t, t.TempDir(), "agentrqd", "agentrqd 0.7.1 (linux/arm64)", 0)
 	if err := SelfTest(context.Background(), path, "0.7.1"); err != nil {
-		t.Errorf("SelfTest: %v", err)
+		t.Errorf("SelfTest refused a binary that runs and is 0.7.1: %v", err)
 	}
 }
 
@@ -57,15 +57,15 @@ func TestSelfTestRefusesABinaryThatDoesNotRun(t *testing.T) {
 	dir := t.TempDir()
 
 	t.Run("it exits non-zero", func(t *testing.T) {
-		path := stub(t, dir, "broken", "boom", 1)
+		path := stub(t, dir, "broken", "Segmentation fault", 1)
 		if err := SelfTest(context.Background(), path, "0.7.1"); !errors.Is(err, ErrSelfTestFailed) {
-			t.Errorf("error = %v, want ErrSelfTestFailed", err)
+			t.Errorf("SelfTest returned %v, want ErrSelfTestFailed", err)
 		}
 	})
 
 	t.Run("it is not there at all", func(t *testing.T) {
 		if err := SelfTest(context.Background(), filepath.Join(dir, "nothing"), "0.7.1"); !errors.Is(err, ErrSelfTestFailed) {
-			t.Errorf("error = %v, want ErrSelfTestFailed", err)
+			t.Errorf("SelfTest returned %v, want ErrSelfTestFailed", err)
 		}
 	})
 }
@@ -77,11 +77,11 @@ func TestSelfTestRefusesTheWrongVersion(t *testing.T) {
 	path := stub(t, t.TempDir(), "agentrqd", "agentrqd 0.6.4 (linux/arm64)", 0)
 	err := SelfTest(context.Background(), path, "0.7.1")
 	if !errors.Is(err, ErrSelfTestFailed) {
-		t.Fatalf("error = %v, want ErrSelfTestFailed", err)
+		t.Fatalf("SelfTest returned %v, want ErrSelfTestFailed", err)
 	}
 	// The reason names both versions, or the log line is useless.
 	if got := err.Error(); !contains(got, "0.6.4") || !contains(got, "0.7.1") {
-		t.Errorf("error = %q, want both versions named", got)
+		t.Errorf("the error reads %q, want it to name both 0.6.4 and 0.7.1", got)
 	}
 }
 

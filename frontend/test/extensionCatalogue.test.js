@@ -999,10 +999,10 @@ describe('useExtensionCatalogue', () => {
       expect(refusing.error.value).toBe('EBUSY');
 
       const throwing = useExtensionCatalogue({
-        bridge: fakeBridge({ setEnabled: vi.fn(async () => { throw new Error('gone'); }) }),
+        bridge: fakeBridge({ setEnabled: vi.fn(async () => { throw new Error('bridge disconnected'); }) }),
       });
       await throwing.setEnabled('standup', true);
-      expect(throwing.error.value).toBe('gone');
+      expect(throwing.error.value).toBe('bridge disconnected');
     });
 
     it('has something to say about a failure that carried no message', async () => {

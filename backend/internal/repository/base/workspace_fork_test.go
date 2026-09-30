@@ -99,38 +99,38 @@ func TestMergeForkIntoParent_MovesEverythingAndDeletesTheFork(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 	if len(moved) != 3 || moved[0] != 200 || moved[1] != 300 || moved[2] != 400 {
-		t.Fatalf("moved = %v, want [200 300 400]", moved)
+		t.Fatalf("the merge moved tasks %v, want [200 300 400]", moved)
 	}
 	for _, m := range followTask {
 		if n := countIn(t, db, m, wfParent); n != 4 {
-			t.Errorf("%T in parent = %d, want 4", m, n)
+			t.Errorf("the parent has %d rows of %T, want 4", n, m)
 		}
 		if n := countIn(t, db, m, wfFork); n != 0 {
-			t.Errorf("%T left in fork = %d", m, n)
+			t.Errorf("the fork still has %d rows of %T, want 0", n, m)
 		}
 	}
 	var msgs int64
 	db.Model(&model.Message{}).Count(&msgs)
 	if msgs != 4 {
-		t.Errorf("messages = %d, want 4: a moved task keeps its thread", msgs)
+		t.Errorf("there are %d messages, want 4: a moved task keeps its thread", msgs)
 	}
 	var cron model.Task
 	db.First(&cron, 400)
 	if cron.WorkspaceID != wfParent || cron.Status != "cron" {
-		t.Errorf("cron template = %+v, want it in the parent and still a schedule", cron)
+		t.Errorf("the cron template is %+v, want it in the parent and still a schedule", cron)
 	}
 	var parent model.Task
 	db.First(&parent, 100)
 	if parent.Status != "ongoing" || parent.Title != "ongoing" {
 		t.Errorf("the parent's own task changed: %+v", parent)
 	}
-	var ws int64
-	db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&ws)
-	if ws != 0 {
+	var remaining int64
+	db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&remaining)
+	if remaining != 0 {
 		t.Error("the fork row survived its merge")
 	}
-	db.Model(&model.SiteShare{}).Where("workspace_id = ?", wfFork).Count(&ws)
-	if ws != 0 {
+	db.Model(&model.SiteShare{}).Where("workspace_id = ?", wfFork).Count(&remaining)
+	if remaining != 0 {
 		t.Error("the fork's site share survived its merge")
 	}
 	if n := countIn(t, db, &model.ForkFolder{}, wfFork); n != 0 {
@@ -147,19 +147,19 @@ func TestMergeForkIntoParent_RefusesAnUnfinishedTaskAndMovesNothing(t *testing.T
 
 			_, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
 			if !errors.Is(err, entity.ErrForkUnfinished) {
-				t.Fatalf("err = %v, want ErrForkUnfinished", err)
+				t.Fatalf("the merge returned %v, want ErrForkUnfinished", err)
 			}
 			if err.Error() != "1 task in this fork is not finished" {
-				t.Errorf("message = %q", err.Error())
+				t.Errorf("the error says %q, want \"1 task in this fork is not finished\"", err.Error())
 			}
 			for _, m := range followTask {
 				if n := countIn(t, db, m, wfFork); n != 2 {
-					t.Errorf("%T in fork = %d, want 2: a refused merge moves nothing", m, n)
+					t.Errorf("the fork has %d rows of %T, want 2: a refused merge moves nothing", n, m)
 				}
 			}
-			var ws int64
-			db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&ws)
-			if ws != 1 {
+			var forks int64
+			db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&forks)
+			if forks != 1 {
 				t.Error("a refused merge deleted the fork")
 			}
 		})
@@ -172,7 +172,7 @@ func TestMergeForkIntoParent_CountsSeveralUnfinished(t *testing.T) {
 	seedForkTask(t, db, wfFork, 300, "blocked")
 	_, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
 	if err == nil || err.Error() != "2 tasks in this fork are not finished" {
-		t.Fatalf("err = %v", err)
+		t.Fatalf("the merge returned %v, want \"2 tasks in this fork are not finished\"", err)
 	}
 }
 
@@ -180,11 +180,11 @@ func TestMergeForkIntoParent_EmptyForkIsJustDeleted(t *testing.T) {
 	db, repo := forkDB(t)
 	moved, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
 	if err != nil || len(moved) != 0 {
-		t.Fatalf("moved = %v, err = %v", moved, err)
+		t.Fatalf("the merge moved %v and returned %v, want nothing moved and no error", moved, err)
 	}
-	var ws int64
-	db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&ws)
-	if ws != 0 {
+	var remaining int64
+	db.Model(&model.Workspace{}).Where("id = ?", wfFork).Count(&remaining)
+	if remaining != 0 {
 		t.Error("the empty fork survived its merge")
 	}
 }
@@ -194,10 +194,10 @@ func TestMergeForkIntoParent_EmptyForkIsJustDeleted(t *testing.T) {
 func TestMergeForkIntoParent_NotAForkOfThatParent(t *testing.T) {
 	_, repo := forkDB(t)
 	if _, err := repo.MergeForkIntoParent(context.Background(), wfParent, wfFork); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+		t.Fatalf("merging a workspace that is not a fork returned %v, want ErrNotFound", err)
 	}
 	if _, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfOther); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+		t.Fatalf("merging a fork into another workspace returned %v, want ErrNotFound", err)
 	}
 }
 
@@ -211,7 +211,7 @@ func TestMergeForkIntoParent_ErrorsRollBack(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent); err == nil {
-				t.Fatal("expected an error")
+				t.Fatalf("the merge with the %s table dropped returned no error", table)
 			}
 		})
 	}
@@ -219,24 +219,24 @@ func TestMergeForkIntoParent_ErrorsRollBack(t *testing.T) {
 
 // Failing the Nth statement of the merge reaches every error return in turn.
 func TestMergeForkIntoParent_EachStatementCanFail(t *testing.T) {
-	boom := errors.New("boom")
+	errStatement := errors.New("statement failed")
 	for n := 1; n <= 8; n++ {
 		db, repo := forkDB(t)
 		seedForkTask(t, db, wfFork, 200, "completed")
 		seen := 0
-		cb := func(tx *gorm.DB) {
+		failNth := func(tx *gorm.DB) {
 			seen++
 			if seen == n {
-				_ = tx.AddError(boom)
+				_ = tx.AddError(errStatement)
 			}
 		}
-		_ = db.Callback().Query().Before("gorm:query").Register("fail", cb)
-		_ = db.Callback().Update().Before("gorm:update").Register("fail", cb)
+		_ = db.Callback().Query().Before("gorm:query").Register("fail", failNth)
+		_ = db.Callback().Update().Before("gorm:update").Register("fail", failNth)
 		_, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
-		if !errors.Is(err, boom) {
-			t.Errorf("statement %d: err = %v, want boom", n, err)
+		if !errors.Is(err, errStatement) {
+			t.Errorf("failing statement %d, the merge returned %v, want %v", n, err, errStatement)
 		}
-		if n := countIn(t, db, &model.Task{}, wfFork); n != 1 {
+		if left := countIn(t, db, &model.Task{}, wfFork); left != 1 {
 			t.Errorf("statement %d: the task moved anyway", n)
 		}
 	}
@@ -263,11 +263,11 @@ func TestUpdateWorkspace_WritesInheritedSettingsToForks(t *testing.T) {
 	var fork model.Workspace
 	db.First(&fork, wfFork)
 	if fork.Name != "parent fork" {
-		t.Errorf("fork name = %q: its name is its own", fork.Name)
+		t.Errorf("the fork's name is %q, want \"parent fork\": a fork keeps its own name", fork.Name)
 	}
 	for k, v := range parent.ForkSettings() {
 		if got := fork.ForkSettings()[k]; string(toBytes(got)) != string(toBytes(v)) {
-			t.Errorf("fork %s = %v, want %v", k, got, v)
+			t.Errorf("the fork's %s is %v, want the parent's %v", k, got, v)
 		}
 	}
 	db.First(&other, wfOther)
@@ -296,25 +296,25 @@ func toBytes(v any) []byte {
 	}
 }
 
-func TestUpdateWorkspace_Errors(t *testing.T) {
+func TestUpdateWorkspace_ReturnsAFailedForksUpdateOrSave(t *testing.T) {
 	db, repo := forkDB(t)
 	var parent model.Workspace
 	db.First(&parent, wfParent)
 	db.Callback().Update().Before("gorm:update").Register("fail", func(tx *gorm.DB) {
 		if tx.Statement.Schema != nil && tx.Statement.Dest != nil {
 			if _, ok := tx.Statement.Dest.(map[string]any); ok {
-				_ = tx.AddError(errors.New("forks"))
+				_ = tx.AddError(errors.New("updating the forks failed"))
 			}
 		}
 	})
-	if _, err := repo.UpdateWorkspace(context.Background(), parent); err == nil || err.Error() != "forks" {
-		t.Fatalf("err = %v, want the forks update's", err)
+	if _, err := repo.UpdateWorkspace(context.Background(), parent); err == nil || err.Error() != "updating the forks failed" {
+		t.Fatalf("UpdateWorkspace returned %v, want the forks update's error", err)
 	}
 	if err := db.Migrator().DropTable(&model.Workspace{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.UpdateWorkspace(context.Background(), parent); err == nil {
-		t.Fatal("expected the save to fail")
+		t.Fatal("UpdateWorkspace with the workspaces table dropped returned no error")
 	}
 }
 
@@ -325,15 +325,15 @@ func TestListAndCountForks(t *testing.T) {
 
 	forks, err := repo.ListForks(context.Background(), wfParent, wfUser)
 	if err != nil || len(forks) != 2 || forks[0].ID != wfOther || forks[1].ID != wfFork {
-		t.Fatalf("forks = %+v, err = %v; want newest first, the owner's only", forks, err)
+		t.Fatalf("ListForks returned %+v and error %v, want the owner's 2 forks, newest first", forks, err)
 	}
-	n, err := repo.CountForks(context.Background(), wfParent, wfUser)
-	if err != nil || n != 2 {
-		t.Fatalf("count = %d, %v", n, err)
+	count, err := repo.CountForks(context.Background(), wfParent, wfUser)
+	if err != nil || count != 2 {
+		t.Fatalf("CountForks returned %d and error %v, want 2 and no error", count, err)
 	}
-	n, _ = repo.CountForks(context.Background(), wfFork, wfUser)
-	if n != 0 {
-		t.Fatalf("a fork has %d forks", n)
+	count, _ = repo.CountForks(context.Background(), wfFork, wfUser)
+	if count != 0 {
+		t.Fatalf("a fork has %d forks, want 0", count)
 	}
 }
 
@@ -350,11 +350,11 @@ func TestCountUnfinishedTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got[wfFork] != 2 || got[wfParent] != 1 || len(got) != 2 {
-		t.Fatalf("got %v", got)
+		t.Fatalf("the unfinished counts are %v, want 2 for the fork and 1 for the parent only", got)
 	}
 	got, err = repo.CountUnfinishedTasks(context.Background(), nil)
 	if err != nil || len(got) != 0 {
-		t.Fatalf("empty = %v, %v", got, err)
+		t.Fatalf("counting no workspaces returned %v and error %v, want nothing and no error", got, err)
 	}
 }
 
@@ -364,15 +364,15 @@ func TestDeleteWorkspaceRows_LastDeletesCanFail(t *testing.T) {
 		db, repo := forkDB(t)
 		_ = db.Callback().Delete().Before("gorm:delete").Register("fail", func(tx *gorm.DB) {
 			if tx.Statement.Table == table {
-				_ = tx.AddError(errors.New("boom"))
+				_ = tx.AddError(errors.New("delete failed"))
 			}
 		})
-		if err := repo.DeleteWorkspace(context.Background(), wfParent, wfUser); err == nil || err.Error() != "boom" {
-			t.Errorf("%s: err = %v, want boom", table, err)
+		if err := repo.DeleteWorkspace(context.Background(), wfParent, wfUser); err == nil || err.Error() != "delete failed" {
+			t.Errorf("with the %s delete failing, DeleteWorkspace returned %v, want \"delete failed\"", table, err)
 		}
 	}
 	_, repo := forkDB(t)
 	if err := repo.DeleteWorkspace(context.Background(), wfParent, wfUser+1); !errors.Is(err, ErrNotFound) {
-		t.Errorf("someone else's workspace: err = %v, want ErrNotFound", err)
+		t.Errorf("deleting someone else's workspace returned %v, want ErrNotFound", err)
 	}
 }

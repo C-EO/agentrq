@@ -420,7 +420,7 @@ describe('tellShellToForgetAll', () => {
       await tellShellToForgetAll({
         attachments: {
           forgetAll: async () => {
-            throw new Error('gone')
+            throw new Error('shell bridge disconnected')
           },
         },
       })

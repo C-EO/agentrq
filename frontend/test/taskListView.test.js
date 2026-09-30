@@ -150,14 +150,14 @@ describe('the sidebar task list', () => {
   })
 
   it('says so when a delete fails, and keeps the row', async () => {
-    deleteTask.mockRejectedValueOnce(new Error('nope'))
+    deleteTask.mockRejectedValueOnce(new Error('network unreachable'))
     const { useToasts } = await import('../src/composables/useToasts')
     const el = await mount(TaskListView)
     rowOf(el, 'task a1').querySelector('[title="Delete Task"]').click()
     await settle()
     button(el, 'Delete').click()
     await settle()
-    expect(useToasts().toasts.value.at(-1).message).toContain('nope')
+    expect(useToasts().toasts.value.at(-1).message).toContain('network unreachable')
     expect(rows(el)).toContain('task a1')
   })
 

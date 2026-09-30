@@ -127,7 +127,7 @@ func TestSocketRefusesWithoutAGoodToken(t *testing.T) {
 				t.Fatal("the connection was accepted")
 			}
 			if resp == nil || resp.StatusCode != tc.want {
-				t.Errorf("status = %v, want %d", resp, tc.want)
+				t.Errorf("the machine was answered %v, want %d", resp, tc.want)
 			}
 		})
 	}
@@ -148,7 +148,7 @@ func TestDisabledMachineIsToldSoAndUnknownTokenIsNot(t *testing.T) {
 		t.Fatal("a disabled machine was allowed to connect")
 	}
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Errorf("status = %v, want 403 for a disabled machine", resp)
+		t.Errorf("the machine was answered %v, want 403 for a disabled machine", resp)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestContradictoryIdentityHeaderIsRefused(t *testing.T) {
 		t.Fatal("a contradictory header was accepted")
 	}
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Errorf("status = %v, want 403", resp)
+		t.Errorf("the machine was answered %v, want 403", resp)
 	}
 }
 
@@ -313,7 +313,7 @@ func TestRejectedFrameEndsTheConnection(t *testing.T) {
 	r := NewRegistry("pod-a")
 	auth := &liveAuth{token: "good", identity: Identity{MachineID: 7}}
 	srv := newServer(t, testHandler(auth, r, func(context.Context, *Session, wire.Frame) error {
-		return errors.New("no")
+		return errors.New("unexpected frame from the machine")
 	}))
 
 	ws, _, err := dial(t, srv, http.Header{"Authorization": []string{"Bearer good"}})

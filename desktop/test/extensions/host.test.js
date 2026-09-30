@@ -296,14 +296,14 @@ describe('createHost', () => {
     const { host } = build({
       module: moduleWith((ctx) => {
         ctx.ui.add({ id: 'index' })
-        throw new Error('boom')
+        throw new Error('apply() crashed after adding its first entry')
       }),
     })
 
     const { ok, reason } = await host.start(installation())
 
     expect(ok).toBe(false)
-    expect(reason).toBe('boom')
+    expect(reason).toBe('apply() crashed after adding its first entry')
     expect(host.registries.ui.list()).toEqual([])
   })
 
@@ -362,7 +362,7 @@ describe('createHost', () => {
     // can see from outside.
     const { host, onDisabled } = build({
       module: moduleWith(() => {
-        throw new Error('always')
+        throw new Error('apply() fails on every load')
       }),
     })
 
@@ -375,7 +375,7 @@ describe('createHost', () => {
     const last = await host.start(installation())
 
     expect(last.disabled).toBe(true)
-    expect(onDisabled).toHaveBeenCalledWith('linear', 'always')
+    expect(onDisabled).toHaveBeenCalledWith('linear', 'apply() fails on every load')
   })
 
   it('tolerates a transient failure rather than switching off on the first one', async () => {
@@ -383,7 +383,7 @@ describe('createHost', () => {
     // somebody relies on.
     const { host, onDisabled } = build({
       module: moduleWith(() => {
-        throw new Error('blip')
+        throw new Error('network blip during apply()')
       }),
     })
 
@@ -398,7 +398,7 @@ describe('createHost', () => {
     let broken = true
     const { host, onDisabled } = build({
       module: moduleWith(() => {
-        if (broken) throw new Error('blip')
+        if (broken) throw new Error('network blip during apply()')
       }),
     })
 
@@ -436,7 +436,7 @@ describe('createHost', () => {
     // Production may not care to be told; the disabling still has to happen.
     const host = createHost({
       load: async () => moduleWith(() => {
-        throw new Error('always')
+        throw new Error('apply() fails on every load')
       }),
       readConfig: async () => ({}),
       logger: { info: vi.fn(), warn: vi.fn() },
@@ -462,26 +462,26 @@ describe('createHost', () => {
   it('reports an entry that throws while being resolved, without losing the rest', async () => {
     const { host, logger } = build({
       module: moduleWith((ctx) => {
-        ctx.ui.add({ id: 'bad', value: () => { throw new Error('nope') } })
+        ctx.ui.add({ id: 'bad', value: () => { throw new Error('the entry\'s value() crashed') } })
       }),
     })
     await host.start(installation())
 
     expect(host.resolve('ui', {})).toEqual([])
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[linear]'), 'nope')
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[linear]'), 'the entry\'s value() crashed')
   })
 
   it('reports a resolve failure that is not an Error', async () => {
     const { host, logger } = build({
       module: moduleWith((ctx) => {
-        ctx.ui.add({ id: 'bad', value: () => { throw 'a string' } })
+        ctx.ui.add({ id: 'bad', value: () => { throw 'value() threw a bare string' } })
       }),
     })
     await host.start(installation())
 
     host.resolve('ui', {})
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[linear]'), 'a string')
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[linear]'), 'value() threw a bare string')
   })
 
   it('answers with nothing for a registry that does not exist', () => {

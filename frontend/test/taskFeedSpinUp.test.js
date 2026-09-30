@@ -95,7 +95,7 @@ describe('Spin up on a task row', () => {
   })
 
   it('keeps the row when the move is what failed', async () => {
-    moveTask.mockImplementationOnce(() => Promise.reject(new Error('nope')))
+    moveTask.mockImplementationOnce(() => Promise.reject(new Error('task not found')))
     const { row } = await mount(PARENT)
     row('Fix login').querySelector('[title="Spin up in a fork"]').click()
     await settle()

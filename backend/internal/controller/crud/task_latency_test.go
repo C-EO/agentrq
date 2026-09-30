@@ -45,7 +45,7 @@ func seconds(v entity.TaskLatencyValue) int64 {
 // the task rows, and a bucket both touch merges them.
 func TestGetTaskLatencyStats_RollupsThenTail(t *testing.T) {
 	e := newTestController(t)
-	s2c := int64(1800)
+	startToClose := int64(1800)
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{ID: 1}, nil)
 	e.repo.EXPECT().LatestTelemetryAggregation(gomock.Any(), tasklatency.ClaimHourly).Return("2026-09-27T09", true, nil)
@@ -56,29 +56,29 @@ func TestGetTaskLatencyStats_RollupsThenTail(t *testing.T) {
 		}, nil)
 	e.repo.EXPECT().ListTaskLatencies(gomock.Any(), int64(1), testUserID, latencyHour(10), latencyHour(24)).
 		Return([]model.TaskLatency{
-			{TaskID: 5, ClosedAt: latencyHour(10) + 60, StartToCloseSeconds: &s2c, WorkedSeconds: 60, BlockedSeconds: 30},
+			{TaskID: 5, ClosedAt: latencyHour(10) + 60, StartToCloseSeconds: &startToClose, WorkedSeconds: 60, BlockedSeconds: 30},
 		}, nil)
 
-	res, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(1, tasklatency.AggregateMax))
+	stats, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(1, tasklatency.AggregateMax))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res.Granularity != "hour" || res.Aggregate != "max" || len(res.Points) != 24 {
-		t.Fatalf("granularity %s, aggregate %s, %d points", res.Granularity, res.Aggregate, len(res.Points))
+	if stats.Granularity != "hour" || stats.Aggregate != "max" || len(stats.Points) != 24 {
+		t.Fatalf("got granularity %q, aggregate %q and %d points, want hour, max and 24", stats.Granularity, stats.Aggregate, len(stats.Points))
 	}
-	nine, ten := res.Points[9], res.Points[10]
+	nine, ten := stats.Points[9], stats.Points[10]
 	if nine.PeriodStart != latencyHour(9) || nine.Closed != 2 || seconds(nine.Worked) != 1200 || seconds(nine.Blocked) != 0 {
-		t.Fatalf("09:00 = %+v", nine)
+		t.Fatalf("the 09:00 bucket is %+v, want 2 closed, 1200s worked and 0s blocked from the rollups", nine)
 	}
 	// No task in the rollup had a start-to-close: a gap, not zero.
 	if nine.StartToClose.Seconds != nil || seconds(ten.StartToClose) != 1800 || seconds(ten.Blocked) != 30 {
-		t.Fatalf("09:00, 10:00 = %+v, %+v", nine, ten)
+		t.Fatalf("the 09:00 bucket is %+v and the 10:00 bucket %+v, want no start-to-close at 09:00, and 1800s start-to-close and 30s blocked at 10:00", nine, ten)
 	}
-	if res.Points[0].Worked.Seconds != nil || res.Points[0].Closed != 0 {
-		t.Fatalf("an empty hour must be a gap: %+v", res.Points[0])
+	if stats.Points[0].Worked.Seconds != nil || stats.Points[0].Closed != 0 {
+		t.Fatalf("an empty hour must be a gap, got %+v", stats.Points[0])
 	}
-	if s := res.Summary; s.Closed != 3 || seconds(s.Worked) != 1200 || seconds(s.Blocked) != 30 || s.StartToClose.Count != 1 {
-		t.Fatalf("summary = %+v", s)
+	if s := stats.Summary; s.Closed != 3 || seconds(s.Worked) != 1200 || seconds(s.Blocked) != 30 || s.StartToClose.Count != 1 {
+		t.Fatalf("the summary is %+v, want 3 closed, 1200s worked, 30s blocked and one start-to-close", s)
 	}
 }
 
@@ -94,12 +94,12 @@ func TestGetTaskLatencyStats_NoRollupYet(t *testing.T) {
 			{ClosedAt: latencyHour(3) + 20, WorkedSeconds: 50},
 		}, nil)
 
-	res, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(0, tasklatency.AggregateMin))
+	stats, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(0, tasklatency.AggregateMin))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p := res.Points[3]; p.Closed != 3 || seconds(p.Worked) != 50 {
-		t.Fatalf("03:00 = %+v", p)
+	if p := stats.Points[3]; p.Closed != 3 || seconds(p.Worked) != 50 {
+		t.Fatalf("the 03:00 bucket is %+v, want 3 closed and a minimum of 50s worked", p)
 	}
 }
 
@@ -111,39 +111,39 @@ func TestGetTaskLatencyStats_ClaimPastThePeriod(t *testing.T) {
 	e.repo.EXPECT().ListTaskLatencyRollups(gomock.Any(), tasklatency.Hour, int64(0), testUserID, latencyHour(0), latencyHour(24)).Return(nil, nil)
 	e.repo.EXPECT().ListTaskLatencies(gomock.Any(), int64(0), testUserID, latencyHour(24), latencyHour(24)).Return(nil, nil)
 
-	res, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(0, tasklatency.AggregateP50))
-	if err != nil || res.Summary.Closed != 0 || res.Summary.Worked.Seconds != nil {
-		t.Fatalf("res = %+v, %v", res, err)
+	stats, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(0, tasklatency.AggregateP50))
+	if err != nil || stats.Summary.Closed != 0 || stats.Summary.Worked.Seconds != nil {
+		t.Fatalf("got stats %+v and error %v, want an empty summary and no error", stats, err)
 	}
 }
 
 func TestGetTaskLatencyStats_Errors(t *testing.T) {
-	boom := errors.New("boom")
+	errDB := errors.New("database unavailable")
 	for _, tc := range []struct {
 		name  string
 		setup func(e *testEnv)
 		ws    int64
 	}{
-		{"not the caller's workspace", func(e *testEnv) {
-			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, boom)
+		{"a workspace the caller cannot read fails the request", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, errDB)
 		}, 1},
-		{"claim lookup", func(e *testEnv) {
-			e.repo.EXPECT().LatestTelemetryAggregation(gomock.Any(), gomock.Any()).Return("", false, boom)
+		{"a failed aggregation claim lookup fails the request", func(e *testEnv) {
+			e.repo.EXPECT().LatestTelemetryAggregation(gomock.Any(), gomock.Any()).Return("", false, errDB)
 		}, 0},
-		{"rollups", func(e *testEnv) {
+		{"failing to list the rollups fails the request", func(e *testEnv) {
 			e.repo.EXPECT().LatestTelemetryAggregation(gomock.Any(), gomock.Any()).Return("2026-09-27T05", true, nil)
-			e.repo.EXPECT().ListTaskLatencyRollups(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, boom)
+			e.repo.EXPECT().ListTaskLatencyRollups(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errDB)
 		}, 0},
-		{"task rows", func(e *testEnv) {
+		{"failing to list the task rows fails the request", func(e *testEnv) {
 			e.repo.EXPECT().LatestTelemetryAggregation(gomock.Any(), gomock.Any()).Return("", false, nil)
-			e.repo.EXPECT().ListTaskLatencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, boom)
+			e.repo.EXPECT().ListTaskLatencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errDB)
 		}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newTestController(t)
 			tc.setup(e)
-			if _, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(tc.ws, "p50")); !errors.Is(err, boom) {
-				t.Fatalf("got %v, want boom", err)
+			if _, err := e.controller.GetTaskLatencyStats(context.Background(), latencyDayRequest(tc.ws, "p50")); !errors.Is(err, errDB) {
+				t.Fatalf("GetTaskLatencyStats returned %v, want the database error %v", err, errDB)
 			}
 		})
 	}

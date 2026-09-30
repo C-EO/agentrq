@@ -40,16 +40,16 @@ func TestItReportsWhatTheMachineHasLeft(t *testing.T) {
 
 	hb, _ := c.Snapshot()
 	if hb.MemTotal != 16<<30 || hb.MemAvailable != 4<<30 {
-		t.Errorf("memory = %d/%d", hb.MemAvailable, hb.MemTotal)
+		t.Errorf("the heartbeat reports %d bytes available of %d, want 4 GiB of 16 GiB", hb.MemAvailable, hb.MemTotal)
 	}
 	if hb.CPUPercent != 37.4 {
-		t.Errorf("cpu = %v", hb.CPUPercent)
+		t.Errorf("the heartbeat reports CPU at %v%%, want 37.4%%", hb.CPUPercent)
 	}
 	if hb.UptimeSec != 918273 {
-		t.Errorf("uptime = %d", hb.UptimeSec)
+		t.Errorf("the heartbeat reports an uptime of %ds, want 918273s", hb.UptimeSec)
 	}
 	if len(hb.LoadAvg) != 3 {
-		t.Errorf("loadAvg = %v", hb.LoadAvg)
+		t.Errorf("the heartbeat reports the load average %v, want three values", hb.LoadAvg)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestAPlatformWithNoLoadAverageReportsNone(t *testing.T) {
 	measureOnce(t, c)
 
 	if hb, _ := c.Snapshot(); hb.LoadAvg != nil {
-		t.Errorf("loadAvg = %v, want nothing at all", hb.LoadAvg)
+		t.Errorf("the heartbeat reports the load average %v, want nothing at all", hb.LoadAvg)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestAPlatformWithNoLoadAverageReportsNone(t *testing.T) {
 // whose disks cannot be read still has memory worth reporting.
 func TestOneBrokenSourceDoesNotLoseTheOthers(t *testing.T) {
 	c := fake()
-	c.Memory = func() (int64, int64, error) { return 0, 0, errors.New("no") }
-	c.Partitions = func() ([]Partition, error) { return nil, errors.New("no") }
+	c.Memory = func() (int64, int64, error) { return 0, 0, errors.New("cannot read /proc/meminfo") }
+	c.Partitions = func() ([]Partition, error) { return nil, errors.New("cannot list the disk partitions") }
 	measureOnce(t, c)
 
 	hb, _ := c.Snapshot()
@@ -107,10 +107,10 @@ func TestOnlyRealFilesystemsAreReported(t *testing.T) {
 	// Sorted, because the map they come from is not and an unsorted list
 	// reshuffles the UI on every heartbeat.
 	if len(hb.Disks) != 2 || hb.Disks[0].Mount != "/" || hb.Disks[1].Mount != "/srv" {
-		t.Fatalf("disks = %+v", hb.Disks)
+		t.Fatalf("the heartbeat reports the disks %+v, want / and then /srv", hb.Disks)
 	}
 	if hb.Disks[0].Total != 100 || hb.Disks[0].Free != 40 {
-		t.Errorf("usage = %+v", hb.Disks[0])
+		t.Errorf("the / disk is reported as %+v, want 100 bytes total and 40 free", hb.Disks[0])
 	}
 }
 
@@ -131,7 +131,7 @@ func TestAWorkspaceMountIsReportedEvenWhenItsKindIsFiltered(t *testing.T) {
 
 	hb, _ := c.Snapshot()
 	if len(hb.Disks) != 2 {
-		t.Fatalf("disks = %+v", hb.Disks)
+		t.Fatalf("the heartbeat reports the disks %+v, want / and the overlay the workspace sits on", hb.Disks)
 	}
 }
 
@@ -152,7 +152,7 @@ func TestAnUnmeasurableMountIsOmittedRatherThanReportedEmpty(t *testing.T) {
 
 	hb, _ := c.Snapshot()
 	if len(hb.Disks) != 1 || hb.Disks[0].Mount != "/" {
-		t.Errorf("disks = %+v", hb.Disks)
+		t.Errorf("the heartbeat reports the disks %+v, want only /", hb.Disks)
 	}
 }
 
@@ -256,11 +256,11 @@ func TestTheRealMachineAnswers(t *testing.T) {
 		t.Skipf("no memory readings on this platform: %v", err)
 	}
 	if total <= 0 || available <= 0 || available > total {
-		t.Errorf("memory = %d available of %d", available, total)
+		t.Errorf("realMemory reports %d bytes available of %d, want both positive and available no more than total", available, total)
 	}
 
 	if up, err := realUptime(); err == nil && up <= 0 {
-		t.Errorf("uptime = %d", up)
+		t.Errorf("realUptime reports %ds, want a positive uptime", up)
 	}
 	if _, err := realCPU(10 * time.Millisecond); err != nil {
 		t.Errorf("cpu: %v", err)
@@ -283,6 +283,6 @@ func TestTheRealMachineAnswers(t *testing.T) {
 			t.Errorf("load: %v", err)
 		}
 	} else if len(avg) != 3 {
-		t.Errorf("loadAvg = %v", avg)
+		t.Errorf("realLoad reports %v, want three values", avg)
 	}
 }

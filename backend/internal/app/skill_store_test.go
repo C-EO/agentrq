@@ -135,7 +135,7 @@ func TestSkillStore_LoadSubFileIsOneLookup(t *testing.T) {
 
 func TestSkillStore_Errors(t *testing.T) {
 	refusal := &crud.SkillError{Kind: crud.SkillReadOnly, Message: "read-only here"}
-	other := errors.New("db down")
+	other := errors.New("database unavailable")
 	ctx := context.Background()
 
 	isRefusal := func(err error) bool {

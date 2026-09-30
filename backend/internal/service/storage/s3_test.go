@@ -39,8 +39,8 @@ func TestS3Storage(t *testing.T) {
 		if err := s.Save("skill-1", b64); err != nil {
 			t.Fatal(err)
 		}
-		client.EXPECT().PutPrivate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("s3 down"))
-		if err := s.Save("skill-1", b64); err == nil || err.Error() != "s3 down" {
+		client.EXPECT().PutPrivate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("S3 unavailable"))
+		if err := s.Save("skill-1", b64); err == nil || err.Error() != "S3 unavailable" {
 			t.Errorf("got %v", err)
 		}
 	})
@@ -55,7 +55,7 @@ func TestS3Storage(t *testing.T) {
 		if err != nil || enc != b64 {
 			t.Fatalf("load: %q, %v", enc, err)
 		}
-		client.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("missing"))
+		client.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("object not found"))
 		if _, err := s.Load("skill-1"); err == nil {
 			t.Error("want error")
 		}
@@ -112,7 +112,7 @@ func TestS3PublicStorage(t *testing.T) {
 	}
 
 	// A failed upload has no link.
-	client.EXPECT().PutPrivate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("s3 down"))
+	client.EXPECT().PutPrivate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return("", errors.New("S3 unavailable"))
 	if got, err := SaveAttachment(s, 1, 2, id, b64, "image/png"); err == nil || got != "" {
 		t.Fatalf("got %q, %v", got, err)
 	}

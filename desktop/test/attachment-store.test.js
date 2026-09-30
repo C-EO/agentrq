@@ -298,7 +298,7 @@ describe('evict', () => {
     await store(fs).write(A, 'BYTES', png)
     const original = fs.stat.bind(fs)
     fs.stat = async (p) => {
-      if (p.endsWith('0iCt6L19zvN')) throw new Error('vanished')
+      if (p.endsWith('0iCt6L19zvN')) throw new Error('ENOENT: the file was removed mid-sweep')
       return original(p)
     }
 
@@ -370,7 +370,7 @@ describe('forgetTask', () => {
   it('reports failure rather than throwing', async () => {
     const fs = makeFs()
     fs.rm = async () => {
-      throw new Error('busy')
+      throw new Error('EBUSY: resource busy or locked')
     }
 
     expect(await store(fs).forgetTask('0iCYS9XKlnN', '0iCYTqxKOqv')).toBe(false)
@@ -404,7 +404,7 @@ describe('forgetWorkspace', () => {
   it('reports failure rather than throwing', async () => {
     const fs = makeFs()
     fs.rm = async () => {
-      throw new Error('busy')
+      throw new Error('EBUSY: resource busy or locked')
     }
 
     expect(await store(fs).forgetWorkspace('0iCYS9XKlnN')).toBe(false)
@@ -425,7 +425,7 @@ describe('forgetAll', () => {
   it('reports failure rather than throwing', async () => {
     const fs = makeFs()
     fs.rm = async () => {
-      throw new Error('busy')
+      throw new Error('EBUSY: resource busy or locked')
     }
 
     expect(await store(fs).forgetAll()).toBe(false)

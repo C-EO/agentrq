@@ -43,13 +43,13 @@ func (s *fakeSender) all() []wire.Frame {
 }
 
 func (s *fakeSender) ofType(t wire.Type) []wire.Frame {
-	var out []wire.Frame
+	var matching []wire.Frame
 	for _, f := range s.all() {
 		if f.Type == t {
-			out = append(out, f)
+			matching = append(matching, f)
 		}
 	}
-	return out
+	return matching
 }
 
 func newTestPump(t *testing.T) (*Pump, *fakeSender, *time.Time) {
@@ -100,7 +100,7 @@ func TestAttachSendsARedrawNotHistory(t *testing.T) {
 
 	replays := snd.ofType(wire.TypeReplay)
 	if len(replays) != 1 {
-		t.Fatalf("replays = %d", len(replays))
+		t.Fatalf("attach produced %d replays, want 1", len(replays))
 	}
 	// One line's worth, not a thousand.
 	if n := len(replays[0].Payload); n > 2048 {
@@ -129,12 +129,12 @@ func TestOutputIsSentOnceTheWindowCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outs := snd.ofType(wire.TypeOutput)
-	if len(outs) != 1 {
-		t.Fatalf("output frames = %d, want 1", len(outs))
+	outputs := snd.ofType(wire.TypeOutput)
+	if len(outputs) != 1 {
+		t.Fatalf("the closed window produced %d output frames, want 1", len(outputs))
 	}
-	if got := string(outs[0].Payload); got != "hello world" {
-		t.Errorf("payload = %q, want the whole batch", got)
+	if got := string(outputs[0].Payload); got != "hello world" {
+		t.Errorf("the output frame carries %q, want the whole batch \"hello world\"", got)
 	}
 }
 
@@ -154,12 +154,12 @@ func TestArbitraryBytesSurviveThePump(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outs := snd.ofType(wire.TypeOutput)
-	if len(outs) != 1 {
-		t.Fatalf("frames = %d", len(outs))
+	outputs := snd.ofType(wire.TypeOutput)
+	if len(outputs) != 1 {
+		t.Fatalf("the flush produced %d output frames, want 1", len(outputs))
 	}
-	if !bytes.Equal(outs[0].Payload, payload) {
-		t.Errorf("payload changed:\n got %#v\nwant %#v", outs[0].Payload, payload)
+	if !bytes.Equal(outputs[0].Payload, payload) {
+		t.Errorf("payload changed:\n got %#v\nwant %#v", outputs[0].Payload, payload)
 	}
 }
 
@@ -189,13 +189,13 @@ func TestBackpressureResyncsRatherThanDropping(t *testing.T) {
 	}
 
 	if p.Resyncs() != 1 {
-		t.Errorf("resyncs = %d, want 1", p.Resyncs())
+		t.Errorf("the pump counted %d resyncs, want 1", p.Resyncs())
 	}
 	// A redraw arrived in place of the dropped batch, so the viewer's screen
 	// is correct rather than missing a chunk.
 	replays := snd.ofType(wire.TypeReplay)
 	if len(replays) < 2 { // one from Attach, one from the resync
-		t.Fatalf("replays = %d, want a resync redraw", len(replays))
+		t.Fatalf("%d replays were sent, want at least 2: one from Attach and one resync redraw", len(replays))
 	}
 	if !bytes.Contains(replays[len(replays)-1].Payload, []byte("some output")) {
 		t.Error("the resync redraw does not show the current screen")
@@ -218,14 +218,14 @@ func TestAFailedResyncDoesNotEndTheSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := p.Flush(); err != nil {
-		t.Errorf("Flush = %v, want nil — a failed resync must not kill the session", err)
+		t.Errorf("Flush returned %v, want nil — a failed resync must not kill the session", err)
 	}
 }
 
 // A broken connection and backpressure want opposite responses.
 func TestARealSendFailureIsReported(t *testing.T) {
-	boom := errors.New("socket gone")
-	snd := &fakeSender{err: boom}
+	errSocket := errors.New("socket closed")
+	snd := &fakeSender{err: errSocket}
 	p := NewPump(7, NewScreen(40, 10), snd)
 	p.Now = func() time.Time { return t0 }
 	p.attached = true
@@ -233,8 +233,8 @@ func TestARealSendFailureIsReported(t *testing.T) {
 	if err := p.Feed([]byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Flush(); !errors.Is(err, boom) {
-		t.Errorf("Flush = %v, want the underlying failure", err)
+	if err := p.Flush(); !errors.Is(err, errSocket) {
+		t.Errorf("Flush returned %v, want the socket error %v", err, errSocket)
 	}
 }
 
@@ -287,9 +287,9 @@ func TestRunShipsEverythingBeforeItReturns(t *testing.T) {
 	if err := p.Run(bytes.NewReader([]byte("final output"))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	outs := snd.ofType(wire.TypeOutput)
-	if len(outs) != 1 || string(outs[0].Payload) != "final output" {
-		t.Errorf("frames = %+v, want the final batch", outs)
+	outputs := snd.ofType(wire.TypeOutput)
+	if len(outputs) != 1 || string(outputs[0].Payload) != "final output" {
+		t.Errorf("Run sent the output frames %+v, want one carrying \"final output\"", outputs)
 	}
 }
 

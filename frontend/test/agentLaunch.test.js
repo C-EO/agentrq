@@ -677,7 +677,7 @@ describe('the last launch of each workspace', () => {
   })
 
   it('survives storage that throws', () => {
-    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError: storage is full') })
     expect(() => rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code' })).not.toThrow()
     set.mockRestore()
   })

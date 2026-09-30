@@ -31,26 +31,26 @@ func TestStatsWindow(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		rng       string
+		rangeName string
 		from, to  int64
 		wantStart int64
 		wantEnd   int64
 	}{
 		{
 			name:      "1d looks back exactly a day",
-			rng:       "1d",
+			rangeName: "1d",
 			wantStart: now.AddDate(0, 0, -1).Unix(),
 			wantEnd:   now.Unix(),
 		},
 		{
 			name:      "7d looks back exactly a week",
-			rng:       "7d",
+			rangeName: "7d",
 			wantStart: now.AddDate(0, 0, -7).Unix(),
 			wantEnd:   now.Unix(),
 		},
 		{
 			name:      "30d looks back exactly 30 days",
-			rng:       "30d",
+			rangeName: "30d",
 			wantStart: now.AddDate(0, 0, -30).Unix(),
 			wantEnd:   now.Unix(),
 		},
@@ -58,19 +58,19 @@ func TestStatsWindow(t *testing.T) {
 			// Monday the 7th through the end of Sunday the 13th, not the
 			// trailing seven days from Wednesday.
 			name:      "week is the whole calendar week from Monday",
-			rng:       "week",
+			rangeName: "week",
 			wantStart: midnight(2026, 9, 7).Unix(),
 			wantEnd:   midnight(2026, 9, 14).Unix() - 1,
 		},
 		{
 			name:      "month is the whole calendar month",
-			rng:       "month",
+			rangeName: "month",
 			wantStart: midnight(2026, 9, 1).Unix(),
 			wantEnd:   midnight(2026, 10, 1).Unix() - 1,
 		},
 		{
 			name:      "custom uses the timestamps given",
-			rng:       "custom",
+			rangeName: "custom",
 			from:      1000,
 			to:        2000,
 			wantStart: 1000,
@@ -80,20 +80,20 @@ func TestStatsWindow(t *testing.T) {
 			// An open-ended custom range runs up to now rather than to zero,
 			// which would otherwise produce an empty window.
 			name:      "custom without an end runs to now",
-			rng:       "custom",
+			rangeName: "custom",
 			from:      1000,
 			wantStart: 1000,
 			wantEnd:   now.Unix(),
 		},
 		{
 			name:      "an unknown range falls back to 7d",
-			rng:       "not-a-range",
+			rangeName: "not-a-range",
 			wantStart: now.AddDate(0, 0, -7).Unix(),
 			wantEnd:   now.Unix(),
 		},
 		{
 			name:      "an empty range falls back to 7d",
-			rng:       "",
+			rangeName: "",
 			wantStart: now.AddDate(0, 0, -7).Unix(),
 			wantEnd:   now.Unix(),
 		},
@@ -101,12 +101,12 @@ func TestStatsWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			start, end := statsWindow(tt.rng, tt.from, tt.to, now)
+			start, end := statsWindow(tt.rangeName, tt.from, tt.to, now)
 			if start != tt.wantStart {
-				t.Errorf("start: want %d, got %d", tt.wantStart, start)
+				t.Errorf("the window starts at %d, want %d", start, tt.wantStart)
 			}
 			if end != tt.wantEnd {
-				t.Errorf("end: want %d, got %d", tt.wantEnd, end)
+				t.Errorf("the window ends at %d, want %d", end, tt.wantEnd)
 			}
 		})
 	}
@@ -124,7 +124,7 @@ func TestStatsWindow_WeekStartsMondayWhicheverDayItIs(t *testing.T) {
 		day := monday.AddDate(0, 0, i)
 		start, end := statsWindow("week", 0, 0, day)
 		if start != wantStart || end != wantEnd {
-			t.Errorf("%s: want [%d,%d], got [%d,%d]", day.Weekday(), wantStart, wantEnd, start, end)
+			t.Errorf("on a %s the week is [%d,%d], want [%d,%d]", day.Weekday(), start, end, wantStart, wantEnd)
 		}
 	}
 }
@@ -142,26 +142,26 @@ func TestGetDetailedUserStats(t *testing.T) {
 			},
 		}, nil)
 
-	res, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
+	stats, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
 		UserID: testUserIDStr,
 		Range:  "7d",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res.Summary.TasksCompleted != 9 || res.Summary.Messages != 4 {
-		t.Errorf("summary should pass through unchanged, got %+v", res.Summary)
+	if stats.Summary.TasksCompleted != 9 || stats.Summary.Messages != 4 {
+		t.Errorf("summary should pass through unchanged, got %+v", stats.Summary)
 	}
-	if len(res.Workspaces) != 1 {
-		t.Fatalf("expected 1 workspace in the breakdown, got %d", len(res.Workspaces))
+	if len(stats.Workspaces) != 1 {
+		t.Fatalf("expected 1 workspace in the breakdown, got %d", len(stats.Workspaces))
 	}
 	// The raw ID must be re-encoded: the API speaks base62 everywhere else, and
 	// a numeric ID here would not resolve against any route.
-	if want := monoflake.ID(wsID).String(); res.Workspaces[0].WorkspaceID != want {
-		t.Errorf("expected base62 workspace ID %q, got %q", want, res.Workspaces[0].WorkspaceID)
+	if want := monoflake.ID(wsID).String(); stats.Workspaces[0].WorkspaceID != want {
+		t.Errorf("expected base62 workspace ID %q, got %q", want, stats.Workspaces[0].WorkspaceID)
 	}
-	if res.Workspaces[0].Name != "busy" {
-		t.Errorf("expected the name to pass through, got %q", res.Workspaces[0].Name)
+	if stats.Workspaces[0].Name != "busy" {
+		t.Errorf("expected the name to pass through, got %q", stats.Workspaces[0].Name)
 	}
 }
 
@@ -217,20 +217,20 @@ func TestGetDetailedUserStats_PassesTheRequestedWindow(t *testing.T) {
 func TestGetDetailedUserStats_RepositoryError(t *testing.T) {
 	e := newTestController(t)
 
-	boom := errors.New("boom")
+	errDB := errors.New("database unavailable")
 	e.repo.EXPECT().
 		GetDetailedUserStats(gomock.Any(), testUserID, gomock.Any(), gomock.Any()).
-		Return(entity.GetDetailedUserStatsRows{}, boom)
+		Return(entity.GetDetailedUserStatsRows{}, errDB)
 
-	res, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
+	stats, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
 		UserID: testUserIDStr,
 		Range:  "7d",
 	})
-	if !errors.Is(err, boom) {
+	if !errors.Is(err, errDB) {
 		t.Errorf("expected the repository error to surface, got %v", err)
 	}
-	if res != nil {
-		t.Errorf("expected no response alongside an error, got %+v", res)
+	if stats != nil {
+		t.Errorf("expected no stats alongside an error, got %+v", stats)
 	}
 }
 
@@ -244,17 +244,17 @@ func TestGetDetailedUserStats_EmptyBreakdownIsNotNil(t *testing.T) {
 		GetDetailedUserStats(gomock.Any(), testUserID, gomock.Any(), gomock.Any()).
 		Return(entity.GetDetailedUserStatsRows{}, nil)
 
-	res, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
+	stats, err := e.controller.GetDetailedUserStats(context.Background(), entity.GetUserStatsRequest{
 		UserID: testUserIDStr,
 		Range:  "7d",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res.Workspaces == nil {
+	if stats.Workspaces == nil {
 		t.Error("expected an empty slice, got nil")
 	}
-	if len(res.Workspaces) != 0 {
-		t.Errorf("expected an empty breakdown, got %+v", res.Workspaces)
+	if len(stats.Workspaces) != 0 {
+		t.Errorf("expected an empty breakdown, got %+v", stats.Workspaces)
 	}
 }

@@ -116,7 +116,7 @@ describe('followFileLink', () => {
   it('names the file when the bridge threw something with no message', async () => {
     const result = await followFileLink(
       'file:///Users/mt/plan.md',
-      desktop(vi.fn().mockRejectedValue('nope'))
+      desktop(vi.fn().mockRejectedValue('bridge rejected with a bare string'))
     );
 
     expect(result.tone).toBe('error');

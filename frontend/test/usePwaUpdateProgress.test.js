@@ -222,7 +222,7 @@ describe('withUpdateProgress', () => {
   })
 
   it('puts the offer back when the update could not start', async () => {
-    const base = registered({ updateServiceWorker: vi.fn(async () => { throw new Error('gone') }) })
+    const base = registered({ updateServiceWorker: vi.fn(async () => { throw new Error('service worker unregistered') }) })
     const sw = withUpdateProgress(base, fakeContainer())
 
     await sw.updateServiceWorker(true)

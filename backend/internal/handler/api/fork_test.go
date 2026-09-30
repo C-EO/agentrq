@@ -68,23 +68,23 @@ func TestForkTask_OngoingAndPushedWhenTheAgentHasRoom(t *testing.T) {
 	resp := postFork(t, ctrl, srv, `{"messageId":"`+monoflake.ID(5).String()+`"}`)
 
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, want 201", resp.StatusCode)
+		t.Fatalf("the request answered status %d, want 201", resp.StatusCode)
 	}
 	if ctrl.got.Status != "ongoing" || ctrl.got.WorkspaceID != 1 || ctrl.got.TaskID != 9 || ctrl.got.MessageID != 5 {
-		t.Errorf("fork request = %+v", ctrl.got)
+		t.Errorf("the controller was asked for %+v, want an ongoing fork of task 9 in workspace 1 from message 5", ctrl.got)
 	}
 	if srv.notifiedTaskID != 77 || !strings.Contains(srv.notifiedContent, "Forked from task") {
-		t.Errorf("pushed task %d with %q", srv.notifiedTaskID, srv.notifiedContent)
+		t.Errorf("the agent was pushed task %d with %q, want task 77 with its \"Forked from task\" body", srv.notifiedTaskID, srv.notifiedContent)
 	}
-	var out struct {
+	var forked struct {
 		Task struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
 		} `json:"task"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	if out.Task.ID != monoflake.ID(77).String() || out.Task.Status != "ongoing" {
-		t.Errorf("response task = %+v", out.Task)
+	_ = json.NewDecoder(resp.Body).Decode(&forked)
+	if forked.Task.ID != monoflake.ID(77).String() || forked.Task.Status != "ongoing" {
+		t.Errorf("the response task is %+v, want task 77, ongoing", forked.Task)
 	}
 }
 
@@ -96,13 +96,13 @@ func TestForkTask_WaitsAsNotStartedWhileTheAgentIsBusy(t *testing.T) {
 	resp := postFork(t, ctrl, srv, `{"messageId":"`+monoflake.ID(5).String()+`"}`)
 
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, want 201", resp.StatusCode)
+		t.Fatalf("the request answered status %d, want 201", resp.StatusCode)
 	}
 	if ctrl.got.Status != "notstarted" {
-		t.Errorf("status = %q, want notstarted", ctrl.got.Status)
+		t.Errorf("the fork was requested as %q, want notstarted", ctrl.got.Status)
 	}
 	if len(srv.calls) != 0 {
-		t.Errorf("calls = %v, want no push while busy", srv.calls)
+		t.Errorf("the agent was sent %v, want no push while it is busy", srv.calls)
 	}
 }
 
@@ -110,26 +110,27 @@ func TestForkTask_RejectsAMissingMessageID(t *testing.T) {
 	for _, body := range []string{`{}`, `not json`} {
 		resp := postFork(t, &mockCrudForkTask{}, &fakeWorkspaceServer{}, body)
 		if resp.StatusCode != http.StatusUnprocessableEntity {
-			t.Errorf("%s: status = %d, want 422", body, resp.StatusCode)
+			t.Errorf("the body %s answered status %d, want 422", body, resp.StatusCode)
 		}
 	}
 }
 
-func TestForkTask_NotFound(t *testing.T) {
+func TestForkTask_AMissingTaskIsNotFoundAndPushesNothing(t *testing.T) {
 	srv := &fakeWorkspaceServer{}
 	resp := postFork(t, &mockCrudForkTask{forkErr: base.ErrNotFound}, srv, `{"messageId":"`+monoflake.ID(5).String()+`"}`)
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", resp.StatusCode)
+		t.Fatalf("the request answered status %d, want 404", resp.StatusCode)
 	}
 	if len(srv.calls) != 0 {
-		t.Errorf("calls = %v, want nothing pushed for a failed fork", srv.calls)
+		t.Errorf("the agent was sent %v, want nothing pushed for a failed fork", srv.calls)
 	}
 }
 
-func TestForkTask_ServerError(t *testing.T) {
-	resp := postFork(t, &mockCrudForkTask{forkErr: errors.New("boom")}, &fakeWorkspaceServer{}, `{"messageId":"`+monoflake.ID(5).String()+`"}`)
+func TestForkTask_AFailedForkIsAServerError(t *testing.T) {
+	errDB := errors.New("database unavailable")
+	resp := postFork(t, &mockCrudForkTask{forkErr: errDB}, &fakeWorkspaceServer{}, `{"messageId":"`+monoflake.ID(5).String()+`"}`)
 	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", resp.StatusCode)
+		t.Fatalf("the request answered status %d, want 500", resp.StatusCode)
 	}
 }
 
@@ -154,13 +155,13 @@ func TestPushTaskToAgent_EventInstruction(t *testing.T) {
 	h := &handler{crud: &mockCrudPushEvent{}, mcpManager: &fakeMCPManager{server: srv}}
 	h.pushTaskToAgent(context.Background(), monoflake.ID(100).String(), task)
 	if !strings.Contains(srv.notifiedContent, "deployed") || !strings.Contains(srv.notifiedContent, "log.txt") {
-		t.Errorf("content = %q, want the attachment and the event instruction", srv.notifiedContent)
+		t.Errorf("the agent was pushed %q, want the attachment and the event instruction", srv.notifiedContent)
 	}
 
 	srv = &fakeWorkspaceServer{}
-	h = &handler{crud: &mockCrudPushEvent{err: errors.New("gone")}, mcpManager: &fakeMCPManager{server: srv}}
+	h = &handler{crud: &mockCrudPushEvent{err: errors.New("event store unavailable")}, mcpManager: &fakeMCPManager{server: srv}}
 	h.pushTaskToAgent(context.Background(), monoflake.ID(100).String(), task)
 	if srv.notifiedTaskID != 7 || strings.Contains(srv.notifiedContent, "deployed") {
-		t.Errorf("pushed %d with %q", srv.notifiedTaskID, srv.notifiedContent)
+		t.Errorf("the agent was pushed task %d with %q, want task 7 without the event instruction", srv.notifiedTaskID, srv.notifiedContent)
 	}
 }
