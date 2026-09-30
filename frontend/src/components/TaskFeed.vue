@@ -152,6 +152,7 @@ import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
 import ExtensionViewPanel from './ExtensionViewPanel.vue';
 import DeleteModal from './DeleteModal.vue';
 import MoveTaskModal from './MoveTaskModal.vue';
+import { orderForStep } from '../composables/useKanbanOrder';
 import ContextMenu from './ContextMenu.vue';
 import LoadMoreButton from './LoadMoreButton.vue';
 import { canEditTask, canDeleteTask, taskEditPath } from '../composables/useTaskRowActions';
@@ -780,22 +781,12 @@ async function onMoveConfirm(destinationWorkspaceId) {
 async function reorderTask(task, direction) {
   const group = displayGroups.value.find(g => g.title === 'Not Started');
   if (!group) return;
-  
-  const idx = group.tasks.findIndex(x => x.id === task.id);
-  if (idx === -1) return;
-  
-  const targetIdx = idx + direction;
-  if (targetIdx < 0 || targetIdx >= group.tasks.length) return;
-  
-  const neighbor = group.tasks[targetIdx];
-  const neighborOrder = getTaskOrder(neighbor);
-  let newOrder = direction === -1 ? neighborOrder + 0.001 : neighborOrder - 0.001;
-  
+  const newOrder = orderForStep(group.tasks, task, direction);
+  if (newOrder === null) return;
+
   try {
-    const res = await updateTaskOrder(props.workspaceId, task.id, newOrder);
-    if (direction === -1 || direction === 1) {
-      await fetchGroup('notstarted');
-    }
+    await updateTaskOrder(props.workspaceId, task.id, newOrder);
+    await fetchGroup('notstarted');
   } catch (err) {
     notifyError('Reorder Error: ' + err.message);
   }

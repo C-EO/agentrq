@@ -211,6 +211,7 @@ import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
 import { buildTaskGroups, pendingOnHuman } from '../composables/useTaskGroups';
+import { orderForStep } from '../composables/useKanbanOrder';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -453,23 +454,10 @@ const handleAction = async (task, action) => {
   }
 };
 
-const getTaskOrder = (t) => {
-  if (t.sortOrder) return t.sortOrder;
-  if (!t.createdAt) return Date.now() / 1000.0;
-  return new Date(t.createdAt).getTime() / 1000.0;
-};
-
 const reorderTask = async (groupTasks, task, direction) => {
-  const idx = groupTasks.findIndex(x => x.id === task.id);
-  if (idx === -1) return;
-  
-  const targetIdx = idx + direction;
-  if (targetIdx < 0 || targetIdx >= groupTasks.length) return;
-  
-  const neighbor = groupTasks[targetIdx];
-  const neighborOrder = getTaskOrder(neighbor);
-  let newOrder = direction === -1 ? neighborOrder + 0.001 : neighborOrder - 0.001;
-  
+  const newOrder = orderForStep(groupTasks, task, direction);
+  if (newOrder === null) return;
+
   try {
     await updateTaskOrder(task.workspaceId, task.id, newOrder);
     await fetchInitial();

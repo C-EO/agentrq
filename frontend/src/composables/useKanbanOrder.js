@@ -38,3 +38,18 @@ export function orderBetween(prev, next) {
   if (!next) return getOrder(prev) + 1;
   return (getOrder(prev) + getOrder(next)) / 2;
 }
+
+/**
+ * The sort order that moves `task` one place up (-1) or down (1) in `tasks`, a
+ * manual column in the order shown, or null when it is already at that end.
+ * Passing a neighbour means landing between it and the card beyond it: a step
+ * relative to the neighbour alone never gets past it.
+ */
+export function orderForStep(tasks, task, direction) {
+  const idx = tasks.findIndex(t => String(t.id) === String(task.id));
+  const target = idx + direction;
+  if (idx === -1 || target < 0 || target >= tasks.length) return null;
+  return direction < 0
+    ? orderBetween(tasks[target - 1], tasks[target])
+    : orderBetween(tasks[target], tasks[target + 1]);
+}
