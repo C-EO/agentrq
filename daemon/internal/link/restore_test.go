@@ -119,6 +119,14 @@ func TestARestoredSessionSaysItWasRestored(t *testing.T) {
 	if _, err := h.sup.Get(9); err != nil {
 		t.Errorf("the session did not come back: %v", err)
 	}
+	// And its terminal opens on the command it came back as.
+	p, ok := h.link.streams.get(9)
+	if !ok {
+		t.Fatal("the restored session has no stream")
+	}
+	if screen := string(p.Screen.Redraw()); !strings.Contains(screen, "agentrqd: $ cd ") {
+		t.Errorf("the restored terminal does not show its command: %q", screen)
+	}
 }
 
 // A session that does not come back is reported failed, once, rather than

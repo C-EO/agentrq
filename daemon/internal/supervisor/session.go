@@ -96,9 +96,9 @@ type Session struct {
 	state    State
 	exitCode int
 	err      error
-	// notices are things the person launching this needs told and did not
-	// ask about — a folder whose .mcp.json already named one of our servers,
-	// which was kept as it was.
+	// notices are things the person launching this needs told: how a fork's
+	// folder was made, a folder whose .mcp.json already named one of our
+	// servers and was kept as it was, and the command the agent runs as.
 	//
 	// Kept on the session rather than only logged because the daemon's log is
 	// on the machine and the person is not: these are put into the terminal
@@ -185,7 +185,7 @@ type Supervisor struct {
 	RemoveDir func(home, forkID string) error
 	// PrepareDir makes a fork's folder; nil is [PrepareForkDir]. A field for
 	// the same reason.
-	PrepareDir func(home, from, forkID string) (dir string, created bool, err error)
+	PrepareDir func(home, from, forkID string) (dir, step string, err error)
 	// ClaudeDir is where claude-code keeps its conversations; empty means
 	// $CLAUDE_CONFIG_DIR, or ~/.claude.
 	ClaudeDir string
@@ -339,7 +339,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		if prepare == nil {
 			prepare = PrepareForkDir
 		}
-		dir, _, err := prepare(home, req.Fork.From, req.Fork.ID)
+		dir, step, err := prepare(home, req.Fork.From, req.Fork.ID)
 		if err == nil {
 			dir, err = workspaceDir(dir)
 		}
@@ -355,6 +355,10 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		sess.Dir = dir
 		s.mu.Unlock()
 		req.Dir = dir
+		if step == "" {
+			step = "reusing this fork's folder " + quoteArg(dir)
+		}
+		sess.addNotice(step)
 	}
 
 	servers := []MCPEntry{{Name: req.Params.ServerName, URL: req.MCPURL}}
@@ -441,8 +445,12 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	// WithoutCancel rather than Background so anything carried in the context
 	// — a logger, a trace — survives; only the cancellation is dropped. What
 	// ends a session is Kill, the process itself, or StopAll at shutdown.
+	argv := slices.Concat(cmd.Argv, s.conversationArgs(req))
+	// The command itself, last, so the terminal says what is about to run in
+	// it. No argument carries a credential: the token is in the MCP config.
+	sess.addNotice(CommandLine(req.Dir, argv))
 	tty, err := s.start(context.WithoutCancel(ctx), pty.Spec{
-		Argv: slices.Concat(cmd.Argv, s.conversationArgs(req)),
+		Argv: argv,
 		Dir:  req.Dir,
 		Cols: req.Cols,
 		Rows: req.Rows,
@@ -827,8 +835,7 @@ func (sess *Session) addNotice(text string) {
 	sess.notices = append(sess.notices, text)
 }
 
-// Notices are the things the launch decided and nobody asked for, for the
-// streaming layer to put at the top of the terminal.
+// Notices are what the launch did and decided, for the streaming layer to put at the top of the terminal.
 //
 // The terminal rather than the log, because the log is on the machine and the
 // person is in a browser. Written into the stream, so the agent's own process

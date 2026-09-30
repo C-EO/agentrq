@@ -63,13 +63,16 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 	root := gitRepo(t, map[string]string{"app/main.go": "package main\n", "README": "hi\n"})
 	home := t.TempDir()
 
-	dir, created, err := PrepareForkDir(home, filepath.Join(root, "app"), forkID)
+	dir, step, err := PrepareForkDir(home, filepath.Join(root, "app"), forkID)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
 	target := filepath.Join(home, ".agentrq", "forks", forkID)
-	if !created || dir != filepath.Join(target, "app") {
-		t.Errorf("dir = %q created=%v, want the same subfolder of the worktree", dir, created)
+	if dir != filepath.Join(target, "app") {
+		t.Errorf("dir = %q, want the same subfolder of the worktree", dir)
+	}
+	if want := CommandLine(root, []string{"git", "worktree", "add", "-b", ForkBranch(forkID), "--", target, "HEAD"}); step != want {
+		t.Errorf("step = %q, want %q", step, want)
 	}
 	if got := readFile(t, filepath.Join(dir, "main.go")); got != "package main\n" {
 		t.Errorf("main.go = %q", got)
@@ -89,9 +92,9 @@ func TestAnExistingForkFolderIsReused(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(first, "work-in-progress"), "keep me")
 
-	again, created, err := PrepareForkDir(home, root, forkID)
-	if err != nil || created || again != first {
-		t.Fatalf("relaunch = %q created=%v err=%v, want the same folder, reused", again, created, err)
+	again, step, err := PrepareForkDir(home, root, forkID)
+	if err != nil || step != "" || again != first {
+		t.Fatalf("relaunch = %q step=%q err=%v, want the same folder, reused", again, step, err)
 	}
 	if readFile(t, filepath.Join(again, "work-in-progress")) != "keep me" {
 		t.Error("a relaunch lost the fork's work")
@@ -110,9 +113,10 @@ func TestAForkWhoseBranchIsLeftOverChecksItOutAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	again, created, err := PrepareForkDir(home, root, forkID)
-	if err != nil || !created {
-		t.Fatalf("PrepareForkDir after the folder went: created=%v err=%v", created, err)
+	again, step, err := PrepareForkDir(home, root, forkID)
+	target := filepath.Join(home, ".agentrq", "forks", forkID)
+	if err != nil || step != CommandLine(root, []string{"git", "worktree", "add", "-f", "--", target, ForkBranch(forkID)}) {
+		t.Fatalf("PrepareForkDir after the folder went: step=%q err=%v", step, err)
 	}
 	if readFile(t, filepath.Join(again, "a")) != "1" {
 		t.Error("the leftover branch was not checked out")
@@ -265,12 +269,15 @@ func TestAForkOfAPlainFolderIsACopy(t *testing.T) {
 	writeFile(t, filepath.Join(from, ".agentrq", "forks", "x", "f"), "no")
 	home := t.TempDir()
 
-	dir, created, err := PrepareForkDir(home, from, forkID)
+	dir, step, err := PrepareForkDir(home, from, forkID)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
-	if !created || dir != filepath.Join(home, ".agentrq", "forks", forkID) {
-		t.Errorf("dir = %q created=%v", dir, created)
+	if dir != filepath.Join(home, ".agentrq", "forks", forkID) {
+		t.Errorf("dir = %q", dir)
+	}
+	if want := "copied " + quoteArg(from) + " to " + quoteArg(dir) + ", which is not in a git repository"; step != want {
+		t.Errorf("step = %q, want %q", step, want)
 	}
 	if readFile(t, filepath.Join(dir, "src", "main.go")) != "package main\n" {
 		t.Error("the file was not copied")
@@ -470,10 +477,10 @@ func TestAForkKilledWhileItsFolderIsMadeNeverStarts(t *testing.T) {
 	s.Home = t.TempDir()
 	made := t.TempDir()
 	preparing, release := make(chan struct{}), make(chan struct{})
-	s.PrepareDir = func(string, string, string) (string, bool, error) {
+	s.PrepareDir = func(string, string, string) (string, string, error) {
 		close(preparing)
 		<-release
-		return made, true, nil
+		return made, "made", nil
 	}
 
 	errc := make(chan error, 1)
@@ -503,8 +510,8 @@ func TestAForkWhoseFolderIsUnusableIsRefused(t *testing.T) {
 	st := &recordingStarter{}
 	s := New(st.start, 0, 0)
 	s.Home = t.TempDir()
-	s.PrepareDir = func(string, string, string) (string, bool, error) {
-		return filepath.Join(s.Home, "never-made"), true, nil
+	s.PrepareDir = func(string, string, string) (string, string, error) {
+		return filepath.Join(s.Home, "never-made"), "made", nil
 	}
 	if _, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir())); err == nil {
 		t.Fatal("a fork started in a folder that does not exist")

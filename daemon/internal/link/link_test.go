@@ -568,9 +568,9 @@ func TestAForkLaunchDoesNotBlockTheSocket(t *testing.T) {
 	made := t.TempDir()
 	release := make(chan struct{})
 	h.sup.Home = t.TempDir()
-	h.sup.PrepareDir = func(string, string, string) (string, bool, error) {
+	h.sup.PrepareDir = func(string, string, string) (string, string, error) {
 		<-release
-		return made, true, nil
+		return made, "", nil
 	}
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: "acp-gateway", Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
@@ -968,5 +968,27 @@ func TestAKeptEntryIsAnnouncedInTheTerminal(t *testing.T) {
 	// Nor may it carry the credential that is in the URL.
 	if outputContains(b, "token=") {
 		t.Error("a notice carried a token into the terminal")
+	}
+}
+
+// The terminal opens on the command the agent was started with, so the person
+// watching knows what is running and where.
+func TestALaunchShowsItsCommandInTheTerminal(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Agent: "a", Model: "m",
+		ServerName: "agentrq-workspace", MCPURL: "https://agentrq.example/mcp/ws?token=test",
+		Cols: 200, Rows: 24,
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool {
+		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a --model m")
+	}, "the command was never shown in the terminal")
+	if len(h.tty.written()) != 0 {
+		t.Errorf("the command reached the terminal's input: %q", h.tty.written())
 	}
 }

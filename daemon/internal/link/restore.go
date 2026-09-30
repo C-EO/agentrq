@@ -129,6 +129,6 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		if cols == 0 || rows == 0 {
 			cols, rows = 80, 24
 		}
-		l.streams.add(s.ID, cols, rows, tty, conn)
+		announce(l.streams.add(s.ID, cols, rows, tty, conn), sess.Notices(), l.Log)
 	}
 }
